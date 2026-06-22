@@ -1,0 +1,1 @@
+export default function GeneratePage() { return <div className="p-8 font-bold">Trang tạo nội dung (Generate) đang phát triển...</div> }
