@@ -43,14 +43,14 @@ from backend.core.config import (
     logger,
 )
 from backend.core.prompts import (
-    SYLLABUS_PROMPT,
-    JSON_QUESTION_FORMAT_INSTRUCTION,
-    LATEX_SLIDE_INSTRUCTION,
+    COURSE_GENERATION_PROMPT,
+    QUIZ_V2_PROMPT,
+    SLIDES_V2_PROMPT,
+    SUMMARY_V2_PROMPT, 
+    FLASHCARDS_V2_PROMPT, 
     PODCAST_SCRIPT_PROMPT,
     STUDY_GUIDE_PROMPT,
     CONTINUE_GUIDE_PROMPT,
-    SUMMARY_PROMPT,
-    FLASHCARDS_PROMPT,
 )
 from backend.vector_db.faiss_manager import create_or_load_faiss, load_existing_faiss
 
@@ -149,19 +149,17 @@ class RAGChains:
         return chain, retriever
 
     def _build_json_chain(self) -> Tuple[Any, Any]:
-        """Build JSON output chain (for questions)."""
+        """Build JSON output chain (Sử dụng cho Quiz V2)."""
         llm = get_llm(temperature=0.1, max_output_tokens=8192)
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 20})
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", JSON_QUESTION_FORMAT_INSTRUCTION),
-            ("human", "BẮT BUỘC: Tạo ĐÚNG {quantity} câu trắc nghiệm MCQ mới về: {topic}. Đánh ID từ: {start_id}. (Tuyệt đối không làm thiếu số lượng)"),
-        ])
+        # SỬA: Dùng QUIZ_V2_PROMPT thay vì JSON_QUESTION_FORMAT_INSTRUCTION
+        prompt = ChatPromptTemplate.from_template(QUIZ_V2_PROMPT)
         chain = (
             {
                 "context": (lambda x: x["topic"]) | retriever | format_docs,
                 "quantity": lambda x: x["quantity"],
                 "topic": lambda x: x["topic"],
-                "start_id": lambda x: x["start_id"],
+                "difficulty": lambda x: x.get("difficulty", "medium"),
             }
             | prompt
             | llm
@@ -170,13 +168,11 @@ class RAGChains:
         return chain, retriever
 
     def _build_slide_chain(self) -> Any:
-        """Build LaTeX slide generation chain."""
+        """Build Slide chain (Sử dụng cho JSON Slides thay vì LaTeX)."""
         llm = get_llm(temperature=0.1, max_output_tokens=8192)
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 18})
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", LATEX_SLIDE_INSTRUCTION),
-            ("human", "Soạn bộ slide khoảng {num_slides} trang về chủ đề: {topic}"),
-        ])
+        # SỬA: Dùng SLIDES_V2_PROMPT thay vì LATEX_SLIDE_INSTRUCTION
+        prompt = ChatPromptTemplate.from_template(SLIDES_V2_PROMPT)
         chain = (
             {
                 "context": (lambda x: x["topic"]) | retriever | format_docs,
@@ -193,7 +189,7 @@ class RAGChains:
         """Build summary generation chain."""
         llm = get_llm(temperature=0.1)
         prompt = ChatPromptTemplate.from_messages([
-            ("system", SUMMARY_PROMPT),
+            ("system", SUMMARY_V2_PROMPT),
             ("human", "Hãy tạo bản tóm tắt súc tích cho tài liệu này."),
         ])
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
@@ -205,15 +201,17 @@ class RAGChains:
         )
 
     def _build_syllabus_chain(self) -> Any:
-        """Build syllabus generation chain."""
+        """Build Syllabus chain (Sử dụng cho Course Generation)."""
         llm = get_llm(temperature=0.1, max_output_tokens=8192)
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", SYLLABUS_PROMPT),
-            ("human", "Tạo syllabus cho tài liệu này."),
-        ])
+        # SỬA: Dùng COURSE_GENERATION_PROMPT thay vì SYLLABUS_PROMPT
+        prompt = ChatPromptTemplate.from_template(COURSE_GENERATION_PROMPT)
         chain = (
-            {"context": retriever | format_docs}
+            {
+                "context": retriever | format_docs,
+                "user_prompt": lambda x: x.get("user_prompt", "Không có"),
+                "target_audience": lambda x: x.get("target_audience", "sinh viên"),
+            }
             | prompt
             | llm
             | StrOutputParser()
@@ -257,7 +255,7 @@ class RAGChains:
         llm = get_llm(temperature=0.2, max_output_tokens=16384)
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
         prompt = ChatPromptTemplate.from_messages([
-            ("system", FLASHCARDS_PROMPT),
+            ("system", FLASHCARDS_V2_PROMPT),
             ("human", "Tạo ĐÚNG 25 flashcards phân phối đều khái niệm quan trọng trong tài liệu."),
         ])
         chain = (
