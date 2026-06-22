@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import UploadBox from "@/components/UploadBox";
 import FeatureSelector, { type FeatureType } from "@/components/FeatureSelector";
 import PromptInput from "@/components/PromptInput";
@@ -11,6 +12,11 @@ export default function GeneratePage() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handlePromptSubmit = async (prompt: string) => {
+    if (!selectedFeature) {
+      toast.error("Vui lòng chọn một tính năng trước khi gửi yêu cầu.");
+      return;
+    }
+
     setIsProcessing(true);
     // TODO: Call API endpoint based on selectedFeature and prompt
     // e.g. if (selectedFeature === "course") await generateCourse(prompt);

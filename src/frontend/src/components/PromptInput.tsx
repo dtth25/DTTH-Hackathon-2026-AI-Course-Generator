@@ -30,10 +30,10 @@ export default function PromptInput({
     setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDER_SUGGESTIONS.length);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (prompt.trim()) {
-      onSubmit(prompt.trim());
+      await onSubmit(prompt.trim());
     }
   };
 

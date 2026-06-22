@@ -19,29 +19,6 @@ export const ENDPOINTS = {
 export type Endpoint = keyof typeof ENDPOINTS;
 
 /**
- * Generic fetch wrapper for API calls.
- */
-export async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const response = await fetch(endpoint, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    ...options,
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(errorData?.message || `Lỗi API: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
  * Upload files to backend.
  */
 export async function uploadFiles(files: File[]): Promise<{ message: string }> {

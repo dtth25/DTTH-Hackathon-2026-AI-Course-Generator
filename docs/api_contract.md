@@ -568,7 +568,7 @@ POST /api/generate-slides
 
 ### 4.6. Generate Mind Map
 
-Tạo bản đồ tư duy từ nội dung tài liệu.
+Tạo bản đồ tư duy dạng cây từ nội dung tài liệu. Mind map được tổ chức theo cấu trúc **node** đệ quy với các trường `name` và `children`.
 
 ```
 POST /api/generate-mindmap
@@ -582,10 +582,12 @@ POST /api/generate-mindmap
 }
 ```
 
+
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | course_id | string | required | ID của course |
 | max_depth | integer | 2-5, optional, default 3 | Độ sâu tối đa của mind map |
+
 
 **Response** (`MindmapResponse`):
 ```json
@@ -614,11 +616,15 @@ POST /api/generate-mindmap
 }
 ```
 
+
 ---
 
-### 4.7. Custom Prompt
+### 4.7. Custom Prompt 
 
-Xử lý prompt tùy chỉnh của người dùng.
+Xử lý prompt tùy chỉnh của người dùng với hệ thống prompt 3 lớp:
+1. **CORE**: System prompt cốt định (chống ảo giác, kiểm soát ngôn ngữ, độ dài)
+2. **FORMAT**: Tự động phân loại prompt → 5 format: TABLE, LIST, EXPLAIN, JSON, CODE
+3. **FEW-SHOT**: 4 ví dụ mẫu giúp LLM hiểu đúng format đầu ra
 
 ```
 POST /api/custom-prompt
@@ -641,13 +647,34 @@ POST /api/custom-prompt
 ```json
 {
   "course_id": "abc123",
-  "result": "Nội dung AI trả lời theo prompt...",
+  "prompt": "Tóm tắt tài liệu này trong 5 ý chính dành cho học sinh cấp 3",
+  "prompt_type": "LIST",
+  "result": "- Ý chính 1: ...\n- Ý chính 2: ...\n- Ý chính 3: ...\n- Ý chính 4: ...\n- Ý chính 5: ...",
   "citations": [
     {"page": 1, "source": "tailieu.pdf", "chunk_id": "chunk_1"},
     {"page": 3, "source": "tailieu.pdf", "chunk_id": "chunk_9"}
   ]
 }
 ```
+
+**Cơ chế phân loại prompt tự động**:
+
+| Loại | Từ khóa kích hoạt | Format output | Temperature |
+|------|-------------------|---------------|-------------|
+| `TABLE` | "bảng", "so sánh", "đối chiếu", "thống kê", "tổng hợp" | Markdown table | 0.1 |
+| `LIST` | "danh sách", "liệt kê", "các bước", "quy trình", "các ý chính" | Ordered/Unordered list | 0.2 |
+| `EXPLAIN` | (default) — "giải thích", "phân tích", "trình bày" | Markdown sections | 0.3 |
+| `JSON` | "json", "cấu trúc dữ liệu", "machine-readable", "parse" | Raw JSON array/object | 0.1 |
+| `CODE` | "code", "ví dụ code", "implementation", "chạy thử" | Code block with language | 0.2 |
+
+**Xử lý prompt mơ hồ**: Nếu prompt không rõ ràng, AI tự chọn format EXPLAIN và kết thúc câu trả lời bằng gợi ý: *"> 💡 Bạn có muốn tôi trình bày theo một format khác (bảng, danh sách, tóm tắt ngắn) không?"*
+
+**Status Codes**:
+- `200`: OK
+- `404`: Không tìm thấy course
+- `500`: Lỗi xử lý
+
+**Lưu kết quả**: Mỗi lần chạy thành công sẽ lưu cặp file vào `custom_prompts/course_{id}/{timestamp}.json` và `.md`.
 
 ---
 
@@ -831,6 +858,7 @@ Truy xuất nội dung đã được generate từ trước (đã lưu vào ổ 
 | GET | `/api/course/{course_id}/study-guide` | Lấy study guide |
 | GET | `/api/course/{course_id}/syllabus` | Lấy syllabus đã lưu |
 | GET | `/api/course/{course_id}/audio` | Lấy podcast script |
+| GET | `/api/course/{course_id}/custom-prompts` | Lấy lịch sử custom prompt |
 | GET | `/api/course/{course_id}/files` | List tất cả files đã generate |
 | GET | `/api/course/{course_id}/stats` | Thống kê course |
 
@@ -879,6 +907,34 @@ GET /api/course/{course_id}/stats
   "has_study_guide": true,
   "has_mindmap": false,
   "has_podcast": true
+}
+```
+
+### 7.3. List Custom Prompt History
+
+```
+GET /api/course/{course_id}/custom-prompts
+```
+
+**Response**:
+```json
+{
+  "course_id": "abc123",
+  "custom_prompts": [
+    {
+      "filename": "20260622_212020.json",
+      "prompt": "Tóm tắt tài liệu này trong 5 ý chính",
+      "prompt_type": "LIST",
+      "created_at": "2026-06-22T21:20:20"
+    },
+    {
+      "filename": "20260622_213659.json",
+      "prompt": "So sánh cơ học cổ điển và lượng tử",
+      "prompt_type": "TABLE",
+      "created_at": "2026-06-22T21:36:59"
+    }
+  ],
+  "total": 2
 }
 ```
 
@@ -954,10 +1010,11 @@ GET /api/course/{course_id}/stats
 | GET | `/api/course/{course_id}/study-guide` | Lấy study guide |
 | GET | `/api/course/{course_id}/syllabus` | Lấy syllabus |
 | GET | `/api/course/{course_id}/audio` | Lấy podcast script |
+| GET | `/api/course/{course_id}/custom-prompts` | Lấy lịch sử custom prompt |
 | GET | `/api/course/{course_id}/files` | List tất cả files |
 | GET | `/api/course/{course_id}/stats` | Thống kê course |
 
-**Tổng cộng**: **36 endpoints** (4 + 2 + 1 + 10 + 7 + 1 + 11).
+**Tổng cộng**: **37 endpoints** (4 + 2 + 1 + 10 + 7 + 1 + 12).
 
 ---
 
