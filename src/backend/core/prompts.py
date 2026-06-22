@@ -204,57 +204,131 @@ QUY TẮC CỰC KỲ QUAN TRỌNG:
 {context}
 """
 
-SUMMARY_PROMPT = """\
-BẠN LÀ CHUYÊN GIA TỔNG HỢP VĂN BẢN SÚC TÍCH.
-NHIỆM VỤ: Đọc hiểu [CONTEXT] và tạo bản tóm tắt gọn gàng, không quá 800 từ.
+"""
+AI Prompt templates for all generation features - Restructured for API Contract v3.0
+"""
 
-YÊU CẦU CẤU TRÚC (MARKDOWN):
-# 📝 BẢN TÓM TẮT: [Tên tài liệu]
+# ─── 4.1 GENERATE COURSE (SYLLABUS) ──────────────────────────────────────────
+COURSE_GENERATION_PROMPT = """\
+BẠN LÀ CHUYÊN GIA THIẾT KẾ CHƯƠNG TRÌNH ĐÀO TẠO CẤP CAO.
+NHIỆM VỤ: Phân tích [CONTEXT] và xây dựng một khóa học hoàn chỉnh cho đối tượng "{target_audience}".
+YÊU CẦU BỔ SUNG: {user_prompt}
 
-## 1. TÓM TẮT NGẮN
-(Viết 1 đoạn văn duy nhất, tối đa 100 từ, bao quát mục đích chính.)
-
-## 2. TÓM TẮT CHI TIẾT
-(Viết tối đa 3 đoạn văn tóm lược các phần nội dung quan trọng nhất. Tập trung vào logic thay vì liệt kê.)
-
-## 3. DANH SÁCH Ý CHÍNH
-(Sử dụng tối đa 10 gạch đầu dòng cho các kiến thức quan trọng nhất. Mỗi dòng không quá 2 câu.)
-
-## 4. KẾT LUẬN QUAN TRỌNG
-(1-2 câu chốt về thông điệp cuối cùng.)
+YÊU CẦU ĐẦU RA (CHỈ XUẤT RAW JSON):
+{{
+  "title": "Tên khóa học (súc tích, hấp dẫn)",
+  "description": "Mô tả tổng quan khóa học (2-3 câu)",
+  "chapters": [
+    {{
+      "title": "Chương X: [Tên chương]",
+      "lessons": [
+        {{ "title": "Bài Y: [Tên bài học cụ thể]" }}
+      ]
+    }}
+  ]
+}}
 
 QUY TẮC:
-- NGHIÊM CẤM viết dài dòng. 
-- Tổng dung lượng đầu ra phải NGẮN HƠN bản gốc ít nhất 10 lần.
-- Chỉ lấy thông tin cốt lõi, bỏ qua các ví dụ và diễn giải phụ.
+- Chia từ 4-8 chương.
+- Mỗi chương có 2-4 bài học nhỏ.
+- Nội dung logic từ cơ bản đến nâng cao dựa trên tài liệu.
 
 [CONTEXT]:
 {context}
 """
 
-FLASHCARDS_PROMPT = """\
-Bạn là chuyên gia spaced repetition (Anki/Quizlet). Tạo ĐÚNG 25 flashcards từ nội dung sau.
+# ─── 4.2 GENERATE SUMMARY (Tiêu chí 6.4) ─────────────────────────────────────
+SUMMARY_V2_PROMPT = """\
+BẠN LÀ CHUYÊN GIA TỔNG HỢP VÀ PHÂN TÍCH VĂN BẢN CAO CẤP.
+NHIỆM VỤ: Đọc hiểu [CONTEXT] và tạo bản tóm tắt theo yêu cầu: "{type}".
 
-QUAN TRỌNG: PHẢI TẠO ĐỦ 25 FLASHCARDS, KHÔNG ÍT HƠN.
+QUY TẮC NỘI DUNG (BẮT BUỘC):
+1. Bám sát tài liệu gốc, không thêm thông tin bên ngoài.
+2. Ngôn ngữ chuyên nghiệp, sư phạm, dễ hiểu.
+3. Yêu cầu cụ thể cho loại "{type}":
+   - "short": 1 đoạn văn (50-100 từ) bao quát mục đích chính.
+   - "detailed": 3-5 đoạn văn phân tích sâu các phần quan trọng nhất.
+   - "key_points": Danh sách 5-10 gạch đầu dòng các luận điểm cốt lõi.
+   - "conclusion": 1-2 câu chốt về giá trị hoặc thông điệp cuối cùng.
 
-YÊU CẦU:
-1. CHỈ xuất RAW JSON ARRAY, không markdown, không giải thích.
-2. Mỗi flashcard có: "id" (int, 1-25), "front" (câu hỏi/khái niệm), "back" (đáp án 2-3 câu), "difficulty" (Easy/Medium/Hard), "tags" (mảng 2-3 từ khóa lowercase).
-3. Phân bổ: 40% Easy, 40% Medium, 20% Hard.
-4. "id" phải tăng dần từ 1 đến 25.
-5. Escape dấu ngoặc kép: \\".
+YÊU CẦU ĐỊNH DẠNG:
+- Xuất ra định dạng Markdown.
+- Tiêu đề chính: # 📝 BẢN TÓM TẮT TÀI LIỆU
 
-VÍ DỤ:
-[
-  {{"id": 1, "front": "Định nghĩa A", "back": "A là...", "difficulty": "Easy", "tags": ["tu_khoa_1", "tu_khoa_2"]}},
-  {{"id": 2, "front": "Giải thích B", "back": "B được hiểu là...", "difficulty": "Medium", "tags": ["tu_khoa_3"]}}
-]
-
-BẮT BUỘC 25 ITEMS.\\
-
-NGỮ CẢNH:
+[CONTEXT]:
 {context}
 """
+
+# ─── 4.3 GENERATE FLASHCARDS ────────────────────────────────────────────────
+FLASHCARDS_V2_PROMPT = """\
+BẠN LÀ CHUYÊN GIA SPACED REPETITION (ANKI/QUIZLET).
+NHIỆM VỤ: Tạo ĐÚNG {count} flashcards từ nội dung [CONTEXT].
+
+QUY TẮC CHẤT LƯỢNG:
+1. Tính đa dạng: Bao phủ các khái niệm, định nghĩa, công thức hoặc sự kiện.
+2. Súc tích: Mặt trước là câu hỏi, mặt sau là câu trả lời ngắn gọn (2-3 câu).
+
+YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
+[
+  {{
+    "question": "Câu hỏi ở mặt trước",
+    "answer": "Câu trả lời ở mặt sau"
+  }}
+]
+
+[CONTEXT]:
+{context}
+"""
+
+# ─── 4.4 GENERATE QUIZ (MCQ - Tiêu chí 6.5) ──────────────────────────────────
+QUIZ_V2_PROMPT = r"""
+BẠN LÀ CHUYÊN GIA GIÁO DỤC ĐA LĨNH VỰC VÀ BIÊN SOẠN ĐỀ THI.
+NHIỆM VỤ: Tạo {quantity} câu hỏi trắc nghiệm (MCQ) về "{topic}" với độ khó "{difficulty}".
+
+QUY TẮC NỘI DUNG (KHÔNG ĐƯỢC VI PHẠM):
+1. ĐÁP ÁN ĐỘC LẬP: Chỉ duy nhất một đáp án đúng. Các phương án nhiễu phải hợp lý nhưng SAI hoàn toàn.
+2. CHI TIẾT: Phần giải thích (explanation) phải nêu rõ tại sao chọn đáp án đó dựa trên tài liệu.
+3. LATEX: Sử dụng dấu $ cho ký hiệu toán học (ví dụ: $x$, $\in$).
+
+YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
+[
+  {{
+    "question": "Câu hỏi cụ thể, rõ ràng",
+    "options": ["Lựa chọn 0", "Lựa chọn 1", "Lựa chọn 2", "Lựa chọn 3"],
+    "correct": (Số nguyên 0-3 tương ứng với vị trí trong mảng options),
+    "explanation": "Giải thích chi tiết vì sao chọn đáp án đó..."
+  }}
+]
+
+[CONTEXT]:
+{context}
+"""
+
+# ─── 4.5 GENERATE SLIDES (Tiêu chí 6.6) ──────────────────────────────────────
+SLIDES_V2_PROMPT = """\
+BẠN LÀ CHUYÊN GIA SƯ PHẠM VÀ THIẾT KẾ TRÌNH CHIẾU CẤP CAO.
+NHIỆM VỤ: Thiết kế nội dung cho {num_slides} trang slide về chủ đề "{topic}" từ [CONTEXT].
+
+QUY TẮC TOÀN VẸN NỘI DUNG:
+1. KHÔNG CẮT XÉN: Phải đi qua đầy đủ các phần của chủ đề được yêu cầu.
+2. MỖI SLIDE MỘT Ý TƯỞNG: Mỗi slide chỉ chứa duy nhất một khối nội dung hoặc 1 định nghĩa/ví dụ để tránh tràn chữ.
+3. CẤU TRÚC SƯ PHẠM: Giới thiệu -> Nội dung chi tiết (phân cấp) -> Ví dụ -> Kết luận.
+
+YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
+[
+  {{
+    "title": "Tiêu đề Slide",
+    "content": "Nội dung chính (Dùng Markdown gạch đầu dòng, tối đa 4-5 dòng)",
+    "layout_hint": "title-and-content" hoặc "two-column",
+    "image_suggestion": "Mô tả hình ảnh hoặc sơ đồ minh họa phù hợp"
+  }}
+]
+
+[CONTEXT]:
+{context}
+"""
+
+
 MINDMAP_PROMPT = """\
 BẠN LÀ MỘT KỸ SƯ DỮ LIỆU VÀ CHUYÊN GIA TỔ CHỨC KIẾN THỨC.
 

@@ -128,6 +128,30 @@ class ChatResponse(BaseModel):
     answer: str
     course_id: str
 
+class GenerateCourseRequest(BaseModel):
+    course_id: str
+    user_prompt: Optional[str] = ""
+    target_audience: Optional[str] = "sinh viên"
+
+class GenerateSummaryRequest(BaseModel):
+    course_id: str
+    type: str = "detailed"
+
+class GenerateFlashcardsRequest(BaseModel):
+    course_id: str
+    count: int = 20
+
+class GenerateQuizRequest(BaseModel):
+    course_id: str
+    topic: str
+    quantity: int = 20
+    difficulty: str = "medium"
+
+class GenerateSlidesRequest(BaseModel):
+    course_id: str
+    topic: str
+    num_slides: int = 10
+
 
 class GenerateQuestionsRequest(BaseModel):
     course_id: str
@@ -151,17 +175,6 @@ class GenerateQuestionsResponse(BaseModel):
     total_questions: int
 
 
-class GenerateSlidesRequest(BaseModel):
-    course_id: str
-    topic: str
-    num_slides: Optional[int] = Field(default=None, ge=3, le=30)
-
-    @field_validator("topic")
-    @classmethod
-    def validate_topic(cls, v):
-        if not v or not v.strip():
-            raise ValueError("Chủ đề không được để trống.")
-        return sanitize_input(v)
     
 class GenerateMindmapRequest(BaseModel):
     course_id: str
@@ -309,17 +322,43 @@ def run_background_task(task_id: str, course_id: str, task_type: str, **kwargs):
             return script
 
         task_handlers = {
-            "syllabus": lambda: rag.generate_syllabus(),
-            "questions": lambda: res_gen.generate_questions(kwargs["topic"], kwargs["quantity"]),
-            "slides": lambda: {
-                "latex_code": res_gen.generate_slides(kwargs["topic"], kwargs.get("num_slides"))[0],
-                "filename": res_gen.generate_slides(kwargs["topic"], kwargs.get("num_slides"))[1],
-            },
+            "syllabus": lambda: rag.get_resource_generator().generate_course_structure(
+                kwargs.get("user_prompt", ""), 
+                kwargs.get("target_audience", "sinh viên")
+            ),
+            
+            # 4.4 Questions/Quiz: Dùng bản v2 và truyền thêm difficulty
+            "questions": lambda: res_gen.generate_quiz_v2(
+                kwargs["topic"], 
+                kwargs["quantity"],
+                kwargs.get("difficulty", "medium")
+            ),
+            
+            # 4.5 Slides: Trả về JSON list (bỏ latex_code cũ)
+            "slides": lambda: res_gen.generate_slides_v2(
+                kwargs["topic"], 
+                kwargs.get("num_slides", 10)
+            ),
+            
             "podcast": handle_podcast,
+            
+            # 4.8 Study Guide
             "study_guide": lambda: res_gen.generate_study_guide(),
-            "summary": lambda: res_gen.generate_summary(),
-            "flashcards": lambda: res_gen.generate_flashcards(),
-            "mindmap": lambda: rag.get_mindmap_generator().generate_mindmap(),
+            
+            # 4.2 Summary: Truyền thêm type (short/detailed...)
+            "summary": lambda: res_gen.generate_summary_v2(
+                summary_type=kwargs.get("type", "detailed")
+            ),
+            
+            # 4.3 Flashcards: Truyền thêm count
+            "flashcards": lambda: res_gen.generate_flashcards_v2(
+                count=kwargs.get("count", 20)
+            ),
+            
+            # 4.6 Mindmap: CẦN SỬA ĐỂ NHẬN MAX_DEPTH
+            "mindmap": lambda: rag.get_mindmap_generator().generate_mindmap(
+                max_depth=kwargs.get("max_depth", 3)
+            ),
             "custom_prompt": lambda: rag.get_custom_processor().process(kwargs.get("prompt", "")),
         }
 
@@ -360,7 +399,7 @@ def _build_course_info(course_id: str) -> dict:
 
 # ─── Health & Management ───────────────────────────────────────────────────────
 
-@app.get("/health", response_model=StatusResponse)
+@app.get("/api/health", response_model=StatusResponse)
 async def health():
     """System health check."""
     if not course_manager:
@@ -372,7 +411,7 @@ async def health():
     )
 
 
-@app.get("/courses", response_model=StatusResponse)
+@app.get("/api/courses", response_model=StatusResponse)
 async def list_courses():
     """List all registered courses."""
     if not course_manager:
@@ -383,7 +422,7 @@ async def list_courses():
     )
 
 
-@app.get("/courses/all")
+@app.get("/api/courses/all")
 async def list_all_courses_with_meta():
     """List all courses with detailed metadata."""
     if not course_manager:
@@ -427,7 +466,7 @@ async def delete_course(course_id: str):
 
 # ─── Upload ────────────────────────────────────────────────────────────────────
 
-@app.post("/upload", response_model=UploadResponse)
+@app.post("/api/upload", response_model=UploadResponse)
 async def upload(file: UploadFile = File(...)):
     """
     Yêu cầu 6.1: Upload tài liệu (PDF, DOCX, TXT) và xử lý background.
@@ -489,7 +528,7 @@ async def upload(file: UploadFile = File(...)):
     )
 
 
-@app.get("/course/{course_id}/status")
+@app.get("/api/course/{course_id}/status")
 async def get_course_status(course_id: str):
     """Check processing status."""
     if not course_manager:
@@ -515,7 +554,7 @@ async def get_course_status(course_id: str):
 
 # ─── Chat ──────────────────────────────────────────────────────────────────────
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """Chat with course content."""
     rag = get_course(req.course_id)
@@ -527,8 +566,37 @@ async def chat(req: ChatRequest):
 
 
 # ─── Generation Endpoints (Sync) ───────────────────────────────────────────────
+@app.post("/api/generate-course")
+async def api_generate_course(req: GenerateCourseRequest):
+    rag = get_course(req.course_id)
+    result = rag.get_resource_generator().generate_course_structure(req.user_prompt, req.target_audience)
+    return {"course_id": req.course_id, **result}
 
-@app.post("/generate-podcast/{course_id}", response_model=PodcastScriptResponse)
+@app.post("/api/generate-summary")
+async def api_generate_summary(req: GenerateSummaryRequest):
+    rag = get_course(req.course_id)
+    result = rag.get_resource_generator().generate_summary_v2(req.type)
+    return {"course_id": req.course_id, "filename": "summary.md", **result}
+
+@app.post("/api/generate-flashcards")
+async def api_generate_flashcards(req: GenerateFlashcardsRequest):
+    rag = get_course(req.course_id)
+    result = rag.get_resource_generator().generate_flashcards_v2(req.count)
+    return {"course_id": req.course_id, "total": req.count, **result}
+
+@app.post("/api/generate-quiz")
+async def api_generate_quiz(req: GenerateQuizRequest):
+    rag = get_course(req.course_id)
+    result = rag.get_resource_generator().generate_quiz_v2(req.topic, req.quantity, req.difficulty)
+    return {"course_id": req.course_id, "topic": req.topic, "difficulty": req.difficulty, "total_questions": req.quantity, **result}
+
+@app.post("/api/generate-slides")
+async def api_generate_slides(req: GenerateSlidesRequest):
+    rag = get_course(req.course_id)
+    result = rag.get_resource_generator().generate_slides_v2(req.topic, req.num_slides)
+    return {"course_id": req.course_id, "topic": req.topic, "total_slides": req.num_slides, **result}
+
+@app.post("/api/generate-podcast/{course_id}", response_model=PodcastScriptResponse)
 async def generate_podcast_endpoint(course_id: str):
     """Generate podcast script."""
     rag = get_course(course_id)
@@ -547,7 +615,7 @@ async def generate_podcast_endpoint(course_id: str):
         raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo podcast: {str(e)}")
 
 
-@app.post("/generate-study-guide/{course_id}", response_model=StudyGuideResponse)
+@app.post("/api/generate-study-guide/{course_id}", response_model=StudyGuideResponse)
 async def generate_study_guide_endpoint(course_id: str):
     """Generate comprehensive study guide."""
     rag = get_course(course_id)
@@ -564,96 +632,8 @@ async def generate_study_guide_endpoint(course_id: str):
         raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo study guide: {str(e)}")
 
 
-@app.post("/generate-summary/{course_id}", response_model=SummaryResponse)
-async def generate_summary_endpoint(course_id: str):
-    """
-    Yêu cầu 6.4: Tạo bản tóm tắt (Ngắn, Chi tiết, Ý chính, Kết luận).
-    """
-    rag = get_course(course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        summary = res_gen.generate_summary()
-        return SummaryResponse(
-            course_id=course_id,
-            summary=summary,
-            filename="summary.md"
-        )
-    except Exception as e:
-        raise HTTPException(500, f"Lỗi tạo tóm tắt: {str(e)}")
 
-
-@app.post("/generate-flashcards/{course_id}", response_model=FlashcardsResponse)
-async def generate_flashcards_endpoint(course_id: str):
-    """Generate flashcards for spaced repetition."""
-    rag = get_course(course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        cards = res_gen.generate_flashcards()
-        return FlashcardsResponse(
-            course_id=course_id,
-            flashcards=cards,
-            total=len(cards),
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo flashcards: {str(e)}")
-
-
-@app.post("/generate-syllabus/{course_id}", response_model=GenerateSyllabusResponse)
-async def generate_syllabus_endpoint(course_id: str):
-    """Generate course syllabus."""
-    rag = get_course(course_id)
-    try:
-        syllabus = rag.generate_syllabus()
-        return GenerateSyllabusResponse(
-            course_id=course_id,
-            syllabus=syllabus,
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo syllabus: {str(e)}")
-
-
-@app.post("/generate-questions", response_model=GenerateQuestionsResponse)
-async def generate_questions(req: GenerateQuestionsRequest):
-    """Generate MCQ questions."""
-    rag = get_course(req.course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        questions = res_gen.generate_questions(req.topic, req.quantity)
-        q_path = get_course_path(req.course_id)["questions"]
-        total = 0
-        if os.path.exists(q_path):
-            try:
-                with open(q_path, "r", encoding="utf-8") as f:
-                    total = len(json.load(f))
-            except Exception:
-                total = len(questions)
-        return GenerateQuestionsResponse(
-            course_id=req.course_id,
-            topic=req.topic,
-            questions=questions,
-            total_questions=total,
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo câu hỏi: {str(e)}")
-
-
-@app.post("/generate-slides", response_model=GenerateSlidesResponse)
-async def generate_slides(req: GenerateSlidesRequest):
-    """Generate LaTeX slides."""
-    rag = get_course(req.course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        latex_code, filename = res_gen.generate_slides(req.topic, req.num_slides)
-        return GenerateSlidesResponse(
-            course_id=req.course_id,
-            topic=req.topic,
-            latex_code=latex_code,
-            filename=filename,
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo slides: {str(e)}")
-    
-@app.post("/generate-mindmap")
+@app.post("/api/generate-mindmap")
 async def generate_mindmap_api(req: GenerateMindmapRequest):
     """
     Tạo bản đồ tư duy và trả về kết quả ngay lập tức (Sync).
@@ -667,7 +647,7 @@ async def generate_mindmap_api(req: GenerateMindmapRequest):
     except Exception as e:
         raise HTTPException(500, f"Lỗi tạo bản đồ tư duy: {str(e)}")
     
-@app.post("/custom-prompt")
+@app.post("/api/custom-prompt")
 async def custom_prompt_sync(req: CustomPromptRequest):
     """
     Xử lý prompt tùy chỉnh (Sync).
@@ -737,96 +717,105 @@ async def generate_study_guide_async(course_id: str, background_tasks: Backgroun
     return TaskResponse(task_id=task_id, status="processing")
 
 
-@app.post("/generate-summary-async/{course_id}", response_model=TaskResponse)
-async def generate_summary_async(course_id: str, background_tasks: BackgroundTasks):
-    """
-    Yêu cầu 6.4: Tạo bản tóm tắt trong background (tránh Timeout).
-    """
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "summary")
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/generate-flashcards-async/{course_id}", response_model=TaskResponse)
-async def generate_flashcards_async(course_id: str, background_tasks: BackgroundTasks):
-    """Generate flashcards in background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "flashcards")
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/generate-syllabus-async/{course_id}", response_model=TaskResponse)
-async def generate_syllabus_async(course_id: str, background_tasks: BackgroundTasks):
-    """Generate syllabus in background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "syllabus")
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/generate-questions-async/{course_id}", response_model=TaskResponse)
-async def generate_questions_async(
-    course_id: str,
-    topic: str = "Kiến thức tổng quát",
-    quantity: int = 5,
-    background_tasks: BackgroundTasks = None,  # type: ignore[arg-type]
+@app.post("/api/generate-course-async", response_model=TaskResponse)
+async def generate_course_async(
+    req: GenerateCourseRequest, # Dùng Model để nhận body
+    background_tasks: BackgroundTasks
 ):
-    """Generate questions in background."""
+    """Tạo cấu trúc khóa học (Syllabus) trong background."""
     course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-
-    topic = sanitize_input(topic)
-    if not topic:
-        topic = "Kiến thức tổng quát"
-    if quantity < 1 or quantity > 20:
-        raise HTTPException(400, "Số lượng câu hỏi phải từ 1 đến 20.")
-
+    _validate_course_ready(course_mgr, req.course_id)
     task_id = uuid.uuid4().hex[:12]
     background_tasks.add_task(
-        run_background_task,
-        task_id, course_id, "questions",
-        topic=topic,
-        quantity=quantity,
+        run_background_task, 
+        task_id, req.course_id, "syllabus", 
+        user_prompt=req.user_prompt, 
+        target_audience=req.target_audience
     )
     return TaskResponse(task_id=task_id, status="processing")
 
+@app.post("/api/generate-summary-async", response_model=TaskResponse)
+async def generate_summary_async(
+    req: GenerateSummaryRequest, 
+    background_tasks: BackgroundTasks
+):
+    """Tạo bản tóm tắt trong background (Hỗ trợ type: short/detailed/...)."""
+    course_mgr = _get_course_mgr()
+    _validate_course_ready(course_mgr, req.course_id)
+    task_id = uuid.uuid4().hex[:12]
+    background_tasks.add_task(
+        run_background_task, 
+        task_id, req.course_id, "summary", 
+        type=req.type
+    )
+    return TaskResponse(task_id=task_id, status="processing")
 
-@app.post("/generate-slides-async/{course_id}", response_model=TaskResponse)
+@app.post("/api/generate-flashcards-async", response_model=TaskResponse)
+async def generate_flashcards_async(
+    req: GenerateFlashcardsRequest, 
+    background_tasks: BackgroundTasks
+):
+    """Tạo flashcards trong background (Hỗ trợ số lượng count)."""
+    course_mgr = _get_course_mgr()
+    _validate_course_ready(course_mgr, req.course_id)
+    task_id = uuid.uuid4().hex[:12]
+    background_tasks.add_task(
+        run_background_task, 
+        task_id, req.course_id, "flashcards", 
+        count=req.count
+    )
+    return TaskResponse(task_id=task_id, status="processing")
+
+@app.post("/api/generate-quiz-async", response_model=TaskResponse)
+async def generate_quiz_async(
+    req: GenerateQuizRequest, 
+    background_tasks: BackgroundTasks
+):
+    """Tạo Quiz MCQ trong background (Hỗ trợ độ khó và số lượng)."""
+    course_mgr = _get_course_mgr()
+    _validate_course_ready(course_mgr, req.course_id)
+    task_id = uuid.uuid4().hex[:12]
+    background_tasks.add_task(
+        run_background_task, 
+        task_id, req.course_id, "questions", 
+        topic=req.topic, 
+        quantity=req.quantity,
+        difficulty=req.difficulty
+    )
+    return TaskResponse(task_id=task_id, status="processing")
+
+@app.post("/api/generate-slides-async", response_model=TaskResponse)
 async def generate_slides_async(
-    course_id: str,
-    topic: str = "Kiến thức tổng quát",
-    num_slides: Optional[int] = None,
-    background_tasks: BackgroundTasks = None,  # type: ignore[arg-type]
+    req: GenerateSlidesRequest, 
+    background_tasks: BackgroundTasks
 ):
-    """Generate slides in background."""
+    """Tạo nội dung Slide JSON trong background."""
     course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-
-    topic = sanitize_input(topic)
-    if not topic:
-        topic = "Kiến thức tổng quát"
-
+    _validate_course_ready(course_mgr, req.course_id)
     task_id = uuid.uuid4().hex[:12]
     background_tasks.add_task(
-        run_background_task,
-        task_id, course_id, "slides",
-        topic=topic,
-        num_slides=num_slides,
+        run_background_task, 
+        task_id, req.course_id, "slides", 
+        topic=req.topic, 
+        num_slides=req.num_slides
     )
     return TaskResponse(task_id=task_id, status="processing")
 
-@app.post("/generate-mindmap-async/{course_id}", response_model=TaskResponse)
-async def generate_mindmap_async(course_id: str, background_tasks: BackgroundTasks):
-    """Tạo bản đồ tư duy trong background."""
+
+@app.post("/api/generate-mindmap-async", response_model=TaskResponse)
+async def generate_mindmap_async(
+    req: GenerateMindmapRequest, 
+    background_tasks: BackgroundTasks
+):
+    """Tạo bản đồ tư duy trong background (Hỗ trợ max_depth)."""
     course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
+    _validate_course_ready(course_mgr, req.course_id)
     task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "mindmap")
+    background_tasks.add_task(
+        run_background_task, 
+        task_id, req.course_id, "mindmap", 
+        max_depth=req.max_depth
+    )
     return TaskResponse(task_id=task_id, status="processing")
 
 # ─── Task Polling ──────────────────────────────────────────────────────────────

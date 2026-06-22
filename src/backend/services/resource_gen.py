@@ -26,13 +26,14 @@ from backend.core.config import (
     logger,
 )
 from backend.core.prompts import (
-    JSON_QUESTION_FORMAT_INSTRUCTION,
-    LATEX_SLIDE_INSTRUCTION,
+    COURSE_GENERATION_PROMPT,
+    QUIZ_V2_PROMPT,
+    SLIDES_V2_PROMPT,
+    SUMMARY_V2_PROMPT, 
+    FLASHCARDS_V2_PROMPT, 
     PODCAST_SCRIPT_PROMPT,
     STUDY_GUIDE_PROMPT,
     CONTINUE_GUIDE_PROMPT,
-    SUMMARY_PROMPT,
-    FLASHCARDS_PROMPT,
 )
 
 
@@ -50,103 +51,82 @@ class ResourceGenerator:
         self.rag = rag_chains
         self.course_id = rag_chains.course_id
         self.vectorstore = rag_chains.vectorstore
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # QUESTIONS (Quiz) — Feature 6.5 [11]
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    def generate_questions(self, topic: str, quantity: int = 20) -> list:
-        """Generate MCQ questions with batching."""
-        self.rag._require_ready()
-        batch_size = 5
-        all_questions = []
-        q_path = get_course_path(self.course_id)["questions"]
-
-        existing = []
-        if os.path.exists(q_path):
-            try:
-                with open(q_path, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                existing = []
-
-        for i in range(0, quantity, batch_size):
-            qty_to_gen = min(batch_size, quantity - i)
-            start_id = len(existing) + 1
-
-            raw_answer = self.rag.json_chain.invoke({
-                "quantity": qty_to_gen, "topic": topic, "start_id": start_id
-            })
-
-            clean_json = extract_json(raw_answer)
-            try:
-                data = json.loads(clean_json, strict=False)
-                batch_questions = []
-                if isinstance(data, list):
-                    batch_questions = data
-                elif isinstance(data, dict):
-                    for val in data.values():
-                        if isinstance(val, list):
-                            batch_questions = val
-                            break
-
-                if batch_questions:
-                    for q in batch_questions:
-                        q["id"] = len(existing) + 1
-                        existing.append(q)
-                        all_questions.append(q)
-
-                    with open(q_path, "w", encoding="utf-8") as f:
-                        json.dump(existing, f, indent=2, ensure_ascii=False)
-                    logger.info(f" -> Đã lưu {len(batch_questions)} câu vào file.")
-            except Exception as e:
-                logger.error(f"Lỗi xử lý JSON batch {i}: {e}")
-
-            time.sleep(2)
-        return all_questions
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SLIDES — Feature 6.6 [13]
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    def generate_slides(self, topic: str, num_slides: Optional[int] = None) -> Tuple[str, str]:
-        """Generate LaTeX slides and save to file."""
-        self.rag._require_ready()
-        num_slides_str = f"đúng {num_slides} trang" if num_slides else "số lượng trang tối ưu"
-        latex_code = self.rag.slide_chain.invoke({
-            "topic": topic,
-            "num_slides": num_slides_str,
+        
+    def _get_citations(self, docs):
+        """Tạo danh sách trích dẫn từ Metadata của tài liệu."""
+        return [
+            {
+                "page": d.metadata.get("page", 1),
+                "source": os.path.basename(d.metadata.get("source", "unknown.pdf")),
+                "chunk_id": f"chunk_{hash(d.page_content) % 1000}"
+            } for d in docs[:3]
+        ]
+        
+    def generate_course_structure(self, user_prompt: str, target_audience: str):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})
+        docs = retriever.invoke(user_prompt or "tổng quan")
+        prompt = ChatPromptTemplate.from_template(COURSE_GENERATION_PROMPT)
+        chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+        res = chain.invoke({
+            "context": format_docs(docs),
+            "user_prompt": user_prompt or "Không có",
+            "target_audience": target_audience or "người học chung"
         })
+        return {"course": json.loads(extract_json(res)), "citations": self._get_citations(docs)}
 
-        slides_dir = os.path.join(QUESTIONS_DIR, f"course_{self.course_id}_slides")
-        os.makedirs(slides_dir, exist_ok=True)
-        file_name = f"slide_{sanitize_filename(topic)}.tex"
-        file_path = os.path.join(slides_dir, file_name)
+    # 4.2 Summary
+    def generate_summary_v2(self, summary_type: str = "detailed"):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        docs = retriever.invoke("nội dung trọng tâm")
+        instructions = {
+            "short": "Viết 1 đoạn văn 70 từ.",
+            "detailed": "Phân tích sâu, chia mục rõ ràng.",
+            "key_points": "Chỉ liệt kê các gạch đầu dòng cốt lõi.",
+            "conclusion": "Tập trung vào giá trị cuối cùng."
+        }
+        prompt = ChatPromptTemplate.from_template(SUMMARY_V2_PROMPT)
+        chain = prompt | get_llm(temperature=0.2) | StrOutputParser()
+        res = chain.invoke({
+            "context": format_docs(docs),
+            "type": summary_type
+        })
+        return {"summary": res, "citations": self._get_citations(docs)}
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(latex_code)
+    # 4.3 Flashcards
+    def generate_flashcards_v2(self, count: int):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        docs = retriever.invoke("khái niệm định nghĩa")
+        prompt = ChatPromptTemplate.from_template(FLASHCARDS_V2_PROMPT)
+        chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+        res = chain.invoke({"context": format_docs(docs), "count": count})
+        return {"flashcards": json.loads(extract_json(res)), "citations": self._get_citations(docs)}
 
-        return latex_code, file_name
+    # 4.4 Quiz
+    def generate_quiz_v2(self, topic: str, quantity: int, difficulty: str):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        docs = retriever.invoke(topic)
+        prompt = ChatPromptTemplate.from_template(QUIZ_V2_PROMPT)
+        chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+        res = chain.invoke({
+            "context": format_docs(docs), "topic": topic, 
+            "quantity": quantity, "difficulty": difficulty
+        })
+        return {"questions": json.loads(extract_json(res)), "citations": self._get_citations(docs)}
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SUMMARY — Feature 6.4 [11]
-    # ═══════════════════════════════════════════════════════════════════════════
+    # 4.5 Slides
+    def generate_slides_v2(self, topic: str, num_slides: int):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        docs = retriever.invoke(topic)
+        prompt = ChatPromptTemplate.from_template(SLIDES_V2_PROMPT)
+        chain = prompt | get_llm(temperature=0.1) | StrOutputParser()
+        res = chain.invoke({
+            "context": format_docs(docs), "topic": topic, "num_slides": num_slides
+        })
+        return {"slides": json.loads(extract_json(res)), "citations": self._get_citations(docs)}
+        
+    
 
-    def generate_summary(self) -> str:
-        """Generate summary."""
-        self.rag._require_ready()
-        logger.info(f"[Course {self.course_id}] Đang tạo bản tóm tắt...")
-
-        summary_content = self.rag.summary_chain.invoke({})
-
-        summary_dir = os.path.join(GUIDES_DIR, f"course_{self.course_id}")
-        os.makedirs(summary_dir, exist_ok=True)
-        summary_path = os.path.join(summary_dir, "summary.md")
-
-        with open(summary_path, "w", encoding="utf-8") as f:
-            f.write(summary_content)
-
-        return summary_content
+    
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PODCAST — Feature 6.7 [14]
@@ -360,35 +340,4 @@ class ResourceGenerator:
     # FLASHCARDS — Feature 6.9 [14]
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def generate_flashcards(self) -> list:
-        """Generate spaced repetition flashcards."""
-        self.rag._require_ready()
-        raw = self.rag.flashcard_chain.invoke({})
-        clean = extract_json(raw)
-        parsed = json.loads(clean, strict=False)
-
-        if isinstance(parsed, dict):
-            cards = [parsed]
-        elif isinstance(parsed, list):
-            cards = parsed
-        else:
-            cards = []
-            matches = re.findall(r'\{[^{}]+\}', clean)
-            for m in matches[:25]:
-                try:
-                    cards.append(json.loads(m))
-                except Exception:
-                    pass
-            if not cards:
-                cards = [{
-                    "id": 1, "front": "Không có dữ liệu",
-                    "back": "Không có dữ liệu",
-                    "difficulty": "Easy",
-                    "tags": ["tu khoa"]
-                }]
-
-        cards_path = get_course_path(self.course_id)["flashcards"]
-        with open(cards_path, "w", encoding="utf-8") as f:
-            json.dump(cards, f, indent=2, ensure_ascii=False)
-
-        return cards
+    
