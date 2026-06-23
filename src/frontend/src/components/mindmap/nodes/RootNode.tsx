@@ -41,7 +41,7 @@ function RootNode({ data, selected }: NodeProps<RootNodeData>) {
 
           {citations && citations.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {citations.slice(0, 2).map((citation, idx) => (
+              {citations.slice(0, 2).map((citation: Citation, idx: number) => (
                 <span
                   key={idx}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-white/20 backdrop-blur-sm"
