@@ -4,27 +4,18 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardCheck,
-  Clock,
-  FileText,
-  HelpCircle,
+  Download,
+  FileVideo,
   Layers,
   ListChecks,
-  Map,
+  Play,
   Presentation,
-  Quote,
   Sparkles,
-  StickyNote,
   Target,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { FeatureType } from "@/components/FeatureSelector";
-import type { Citation, GenerateResponse } from "@/lib/api";
-import type {
-  Citation as MindMapCitation,
-  MindMapData,
-  MindMapNode,
-} from "@/lib/mindmap/types";
-import MindMapViewer from "@/components/mindmap/MindMapViewer";
+import { API_BASE_URL, type GenerateResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type PlainObject = Record<string, unknown>;
@@ -32,47 +23,31 @@ type PlainObject = Record<string, unknown>;
 interface ResultRendererProps {
   feature: FeatureType;
   result: GenerateResponse;
-  citations: Citation[];
 }
 
 const featureMeta: Record<
   FeatureType,
   { title: string; icon: ReactNode; tone: string }
 > = {
-  course: {
-    title: "Khóa học",
+  book: {
+    title: "Book",
     icon: <BookOpen className="h-5 w-5" />,
     tone: "bg-blue-50 text-blue-700 ring-blue-200",
   },
-  summary: {
-    title: "Tóm tắt",
-    icon: <FileText className="h-5 w-5" />,
-    tone: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  },
-  flashcards: {
-    title: "Flashcard",
-    icon: <StickyNote className="h-5 w-5" />,
-    tone: "bg-amber-50 text-amber-700 ring-amber-200",
-  },
-  quiz: {
-    title: "Quiz",
-    icon: <HelpCircle className="h-5 w-5" />,
-    tone: "bg-rose-50 text-rose-700 ring-rose-200",
-  },
-  slides: {
+  slide: {
     title: "Slide",
     icon: <Presentation className="h-5 w-5" />,
     tone: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   },
-  mindmap: {
-    title: "Mind Map",
-    icon: <Map className="h-5 w-5" />,
-    tone: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  quiz: {
+    title: "Quiz",
+    icon: <ClipboardCheck className="h-5 w-5" />,
+    tone: "bg-rose-50 text-rose-700 ring-rose-200",
   },
-  custom: {
-    title: "Prompt riêng",
-    icon: <Sparkles className="h-5 w-5" />,
-    tone: "bg-violet-50 text-violet-700 ring-violet-200",
+  vid: {
+    title: "Vid",
+    icon: <FileVideo className="h-5 w-5" />,
+    tone: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   },
 };
 
@@ -82,7 +57,9 @@ function isObject(value: unknown): value is PlainObject {
 
 function asString(value: unknown, fallback = "") {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
   return fallback;
 }
 
@@ -102,21 +79,22 @@ function stripInternalMarkers(value: string, compact = true) {
     return cleaned.replace(/\s+/g, " ").trim();
   }
 
-  return cleaned
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return cleaned.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function markdownLines(content: string) {
   return stripInternalMarkers(content, false).replace(/\r/g, "").split("\n");
 }
 
+function backendUrl(path?: string | null) {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function MarkdownBlock({ content }: { content: string }) {
-  const lines = markdownLines(content);
   const blocks: React.ReactNode[] = [];
   let listItems: string[] = [];
-  let orderedItems: string[] = [];
 
   const flushList = () => {
     if (listItems.length > 0) {
@@ -131,22 +109,9 @@ function MarkdownBlock({ content }: { content: string }) {
       );
       listItems = [];
     }
-
-    if (orderedItems.length > 0) {
-      blocks.push(
-        <ol key={`ol-${blocks.length}`} className="space-y-1 pl-5 text-sm leading-6">
-          {orderedItems.map((item, index) => (
-            <li key={`${item}-${index}`} className="list-decimal">
-              {item}
-            </li>
-          ))}
-        </ol>
-      );
-      orderedItems = [];
-    }
   };
 
-  lines.forEach((rawLine) => {
+  markdownLines(content).forEach((rawLine) => {
     const line = rawLine.trim();
     if (!line) {
       flushList();
@@ -156,33 +121,17 @@ function MarkdownBlock({ content }: { content: string }) {
     const headingMatch = /^(#{1,3})\s+(.+)$/.exec(line);
     if (headingMatch) {
       flushList();
-      const level = headingMatch[1].length;
-      const text = headingMatch[2].replace(/[*_`]/g, "");
       blocks.push(
-        level === 1 ? (
-          <h3 key={`h-${blocks.length}`} className="text-xl font-semibold leading-tight">
-            {text}
-          </h3>
-        ) : (
-          <h4 key={`h-${blocks.length}`} className="text-base font-semibold leading-tight">
-            {text}
-          </h4>
-        )
+        <h4 key={`h-${blocks.length}`} className="text-base font-semibold leading-tight">
+          {headingMatch[2].replace(/[*_`]/g, "")}
+        </h4>
       );
       return;
     }
 
     const bulletMatch = /^[-*]\s+(.+)$/.exec(line);
     if (bulletMatch) {
-      orderedItems = [];
       listItems.push(bulletMatch[1].replace(/[*_`]/g, ""));
-      return;
-    }
-
-    const orderedMatch = /^\d+[.)]\s+(.+)$/.exec(line);
-    if (orderedMatch) {
-      listItems = [];
-      orderedItems.push(orderedMatch[1].replace(/[*_`]/g, ""));
       return;
     }
 
@@ -195,44 +144,12 @@ function MarkdownBlock({ content }: { content: string }) {
   });
 
   flushList();
-
   return <div className="space-y-3">{blocks}</div>;
-}
-
-function CitationList({ citations }: { citations: Citation[] }) {
-  if (citations.length === 0) return null;
-
-  return (
-    <section className="mt-8 rounded-lg border bg-muted/30 p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Quote className="h-4 w-4" />
-        Citations
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {citations.map((citation, index) => (
-          <div
-            key={`${citation.source}-${citation.chunk_id}-${index}`}
-            className="rounded-md border bg-background p-3 text-xs"
-          >
-            <div className="font-semibold">Page {citation.page ?? "?"}</div>
-            <div className="mt-1 truncate text-muted-foreground">
-              {citation.source ?? "unknown"}
-            </div>
-            <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-              chunk {citation.chunk_id ?? "?"}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
 }
 
 function textList(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => stripInternalMarkers(asString(item)))
-      .filter(Boolean);
+    return value.map((item) => stripInternalMarkers(asString(item))).filter(Boolean);
   }
 
   const text = stripInternalMarkers(asString(value), false);
@@ -272,13 +189,14 @@ function LessonList({
   );
 }
 
-function renderCourse(result: GenerateResponse) {
-  const course = isObject(result.course) ? result.course : result;
-  const chapters = asArray(course.chapters ?? course.syllabus);
+function renderBook(result: GenerateResponse) {
+  const book: PlainObject = isObject(result.book) ? result.book : {};
+  const chapters = asArray(book.chapters);
   const lessonCount = chapters.reduce<number>((total, chapter) => {
     const item = isObject(chapter) ? chapter : {};
     return total + asArray(item.lessons).length;
   }, 0);
+  const pdfUrl = backendUrl(result.pdf_url);
 
   return (
     <section className="space-y-6">
@@ -286,29 +204,32 @@ function renderCourse(result: GenerateResponse) {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h3 className="text-2xl font-semibold">
-              {asString(course.title, "Khóa học từ tài liệu")}
+              {asString(book.title, "Book từ tài liệu")}
             </h3>
-            {Boolean(course.description) && (
+            {Boolean(book.description) && (
               <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-                {asString(course.description)}
+                {asString(book.description)}
               </p>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-md bg-muted px-3 py-2">
+          <div className="flex flex-wrap gap-2">
+            <div className="rounded-md bg-muted px-3 py-2 text-center text-xs">
               <div className="font-semibold">{chapters.length}</div>
               <div className="text-muted-foreground">Chương</div>
             </div>
-            <div className="rounded-md bg-muted px-3 py-2">
+            <div className="rounded-md bg-muted px-3 py-2 text-center text-xs">
               <div className="font-semibold">{lessonCount}</div>
               <div className="text-muted-foreground">Bài</div>
             </div>
-            <div className="rounded-md bg-muted px-3 py-2">
-              <div className="font-semibold">
-                {asString(course.estimated_duration, "3-5 giờ")}
-              </div>
-              <div className="text-muted-foreground">Thời lượng</div>
-            </div>
+            {pdfUrl && (
+              <a
+                href={pdfUrl}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Download className="h-4 w-4" />
+                PDF
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -317,6 +238,7 @@ function renderCourse(result: GenerateResponse) {
         {chapters.map((chapter, chapterIndex) => {
           const item = isObject(chapter) ? chapter : {};
           const lessons = asArray(item.lessons);
+
           return (
             <section key={chapterIndex} className="rounded-lg border bg-card">
               <div className="border-b p-4">
@@ -326,7 +248,7 @@ function renderCourse(result: GenerateResponse) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <h4 className="font-semibold leading-snug">
-                      {asString(item.title ?? item.chapter, `Chương ${chapterIndex + 1}`)}
+                      {asString(item.title, `Chương ${chapterIndex + 1}`)}
                     </h4>
                     {Boolean(item.description) && (
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -344,12 +266,6 @@ function renderCourse(result: GenerateResponse) {
                     lessonObj.title ?? lesson,
                     `Bài ${chapterIndex + 1}.${lessonIndex + 1}`
                   );
-                  const objectives = textList(lessonObj.objectives);
-                  const keyPoints = textList(lessonObj.key_points ?? lessonObj.keyPoints);
-                  const assessment = textList(lessonObj.assessment);
-                  const activity = asString(lessonObj.activity);
-                  const duration = asString(lessonObj.duration);
-                  const citation = isObject(lessonObj.citation) ? lessonObj.citation : null;
 
                   return (
                     <details
@@ -360,20 +276,11 @@ function renderCourse(result: GenerateResponse) {
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 hover:bg-muted/40">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold leading-snug">{title}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {duration && (
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="h-3.5 w-3.5" />
-                                {duration}
-                              </span>
-                            )}
-                            {citation && (
-                              <span>
-                                Page {asString(citation.page, "?")} ·{" "}
-                                {asString(citation.source, "source")}
-                              </span>
-                            )}
-                          </div>
+                          {Boolean(lessonObj.duration) && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {asString(lessonObj.duration)}
+                            </div>
+                          )}
                         </div>
                         <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground group-open:hidden">
                           Mở
@@ -387,9 +294,8 @@ function renderCourse(result: GenerateResponse) {
                         <LessonList
                           title="Mục tiêu"
                           icon={<Target className="h-4 w-4" />}
-                          items={objectives}
+                          items={textList(lessonObj.objectives)}
                         />
-
                         <div>
                           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                             <BookOpen className="h-4 w-4" />
@@ -398,46 +304,38 @@ function renderCourse(result: GenerateResponse) {
                           <div className="rounded-lg bg-muted/40 p-4">
                             <MarkdownBlock
                               content={asString(
-                                lessonObj.lecture ?? lessonObj.content,
+                                lessonObj.lecture,
                                 "Chưa có nội dung bài giảng."
                               )}
                             />
                           </div>
                         </div>
-
                         <LessonList
                           title="Ý chính cần nhớ"
                           icon={<ListChecks className="h-4 w-4" />}
-                          items={keyPoints}
+                          items={textList(lessonObj.key_points)}
                         />
-
-                        {activity && (
+                        {Boolean(lessonObj.activity) && (
                           <div>
                             <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                               <Sparkles className="h-4 w-4" />
                               Hoạt động học tập
                             </div>
                             <p className="rounded-lg border bg-background p-3 text-sm leading-6 text-muted-foreground">
-                              {stripInternalMarkers(activity)}
+                              {stripInternalMarkers(asString(lessonObj.activity))}
                             </p>
                           </div>
                         )}
-
                         <LessonList
                           title="Kiểm tra nhanh"
                           icon={<ClipboardCheck className="h-4 w-4" />}
-                          items={assessment}
+                          items={textList(lessonObj.assessment)}
                         />
                       </div>
                     </details>
                   );
                 })}
-                {lessons.length === 0 && (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    Chương này chưa có bài học chi tiết.
-                  </div>
-                )}
-                </div>
+              </div>
             </section>
           );
         })}
@@ -446,71 +344,12 @@ function renderCourse(result: GenerateResponse) {
   );
 }
 
-function renderSummary(result: GenerateResponse) {
-  return (
-    <section className="rounded-lg border bg-card p-5">
-      <MarkdownBlock content={asString(result.summary ?? result.result)} />
-    </section>
-  );
-}
-
-function renderFlashcards(result: GenerateResponse) {
-  const flashcards = asArray(result.flashcards);
-
-  return (
-    <section className="grid gap-3 md:grid-cols-2">
-      {flashcards.map((card, index) => {
-        const item = isObject(card) ? card : {};
-        const citation = isObject(item.citation) ? item.citation : {};
-        return (
-          <div key={index} className="rounded-lg border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Card {index + 1}
-              </span>
-              {Boolean(citation.page) && (
-                <span className="rounded-full bg-muted px-2 py-1 text-xs">
-                  p.{asString(citation.page)}
-                </span>
-              )}
-            </div>
-            <h4 className="font-semibold leading-snug">
-              {asString(item.question, "Câu hỏi")}
-            </h4>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              {stripInternalMarkers(asString(item.answer, "Chưa có đáp án"))}
-            </p>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
 function optionEntries(options: unknown) {
-  if (Array.isArray(options)) {
-    return options.map((option, index) => ({
-      key: String(index),
-      label: String.fromCharCode(65 + index),
-      value: asString(option),
-    }));
-  }
-
-  if (isObject(options)) {
-    return Object.entries(options).map(([key, value]) => ({
-      key,
-      label: key,
-      value: asString(value),
-    }));
-  }
-
-  return [];
-}
-
-function isCorrectOption(optionKey: string, optionLabel: string, correct: unknown) {
-  if (typeof correct === "number") return optionKey === String(correct);
-  const text = asString(correct).trim();
-  return text === optionKey || text.toUpperCase() === optionLabel.toUpperCase();
+  return asArray(options).map((option, index) => ({
+    key: String(index),
+    label: String.fromCharCode(65 + index),
+    value: asString(option),
+  }));
 }
 
 function renderQuiz(result: GenerateResponse) {
@@ -521,6 +360,8 @@ function renderQuiz(result: GenerateResponse) {
       {questions.map((question, index) => {
         const item = isObject(question) ? question : {};
         const options = optionEntries(item.options);
+        const correct = Number(item.correct ?? 0);
+
         return (
           <div key={index} className="rounded-lg border bg-card p-4">
             <div className="mb-3 flex items-start gap-3">
@@ -533,12 +374,8 @@ function renderQuiz(result: GenerateResponse) {
             </div>
 
             <div className="grid gap-2 md:grid-cols-2">
-              {options.map((option) => {
-                const isCorrect = isCorrectOption(
-                  option.key,
-                  option.label,
-                  item.correct ?? item.correct_answer
-                );
+              {options.map((option, optionIndex) => {
+                const isCorrect = optionIndex === correct;
                 return (
                   <div
                     key={option.key}
@@ -569,7 +406,7 @@ function renderQuiz(result: GenerateResponse) {
   );
 }
 
-function renderSlides(result: GenerateResponse) {
+function renderSlide(result: GenerateResponse) {
   const slides = asArray(result.slides);
 
   return (
@@ -578,7 +415,7 @@ function renderSlides(result: GenerateResponse) {
         const item = isObject(slide) ? slide : {};
         return (
           <div key={index} className="rounded-lg border bg-card p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
               <Layers className="h-4 w-4" />
               Slide {index + 1}
             </div>
@@ -598,94 +435,54 @@ function renderSlides(result: GenerateResponse) {
   );
 }
 
-function normalizeMindMapCitation(citation: Citation): MindMapCitation {
-  const page =
-    typeof citation.page === "number"
-      ? citation.page
-      : Number.parseInt(asString(citation.page, "0"), 10) || 0;
-  return {
-    page,
-    source: asString(citation.source, "unknown"),
-    chunk_id: asString(citation.chunk_id, ""),
-  };
-}
+function renderVid(result: GenerateResponse) {
+  const vid: PlainObject = isObject(result.vid) ? result.vid : {};
+  const scenes = asArray(vid.scenes);
+  const videoUrl = backendUrl(asString(vid.url));
 
-function convertMindMapNode(
-  node: unknown,
-  path: string,
-  fallbackCitations: MindMapCitation[]
-): MindMapNode {
-  const item = isObject(node) ? node : {};
-  const label = stripInternalMarkers(
-    asString(item.label ?? item.title, `Ý chính ${path}`)
-  );
-  const nodeCitations = asArray(item.citations)
-    .filter(isObject)
-    .map((citation) => normalizeMindMapCitation(citation as Citation));
-
-  return {
-    id: asString(item.id, `node-${path}`),
-    label,
-    citations: nodeCitations.length > 0 ? nodeCitations : fallbackCitations.slice(0, 1),
-    children: asArray(item.children).map((child, index) =>
-      convertMindMapNode(child, `${path}-${index + 1}`, fallbackCitations)
-    ),
-  };
-}
-
-function adaptMindMap(result: GenerateResponse, citations: Citation[]): MindMapData {
-  const raw = result.mindmap;
-  const fallbackCitations = citations.map(normalizeMindMapCitation);
-
-  if (isObject(raw) && isObject(raw.root)) {
-    const branches = asArray(raw.branches).map((branch, index) =>
-      convertMindMapNode(branch, `branch-${index + 1}`, fallbackCitations)
-    );
-    const root = convertMindMapNode(raw.root, "root", fallbackCitations);
-    root.children = root.children?.length ? root.children : branches;
-    return { root, branches };
-  }
-
-  if (isObject(raw)) {
-    const branches = asArray(raw.branches ?? raw.children).map((branch, index) =>
-      convertMindMapNode(branch, `branch-${index + 1}`, fallbackCitations)
-    );
-    const root: MindMapNode = {
-      id: "root",
-      label: stripInternalMarkers(
-        asString(raw.central_topic ?? raw.title ?? raw.label, "Tài liệu học tập")
-      ),
-      citations: fallbackCitations,
-      children: branches,
-    };
-    return { root, branches };
-  }
-
-  return {
-    root: {
-      id: "root",
-      label: "Tài liệu học tập",
-      citations: fallbackCitations,
-      children: [],
-    },
-    branches: [],
-  };
-}
-
-function renderMindmap(result: GenerateResponse, citations: Citation[]) {
-  const data = adaptMindMap(result, citations);
-  return <MindMapViewer data={data} />;
-}
-
-function renderCustom(result: GenerateResponse) {
   return (
-    <section className="rounded-lg border bg-card p-5">
-      {Boolean(result.prompt_type) && (
-        <div className="mb-4 inline-flex rounded-full bg-muted px-3 py-1 text-xs font-semibold">
-          {asString(result.prompt_type)}
+    <section className="space-y-5">
+      <div className="rounded-lg border bg-card p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-xl font-semibold">{asString(vid.filename, "vid.mp4")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {asString(vid.duration_minutes, "3")} phút · {scenes.length} cảnh
+            </p>
+          </div>
+          {videoUrl && (
+            <a
+              href={videoUrl}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <Play className="h-4 w-4" />
+              Mở video
+            </a>
+          )}
         </div>
-      )}
-      <MarkdownBlock content={asString(result.result ?? result.answer ?? result.summary)} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {scenes.map((scene, index) => {
+          const item = isObject(scene) ? scene : {};
+          return (
+            <div key={index} className="rounded-lg border bg-card p-4">
+              <div className="mb-3 text-xs font-semibold uppercase text-muted-foreground">
+                Cảnh {index + 1}
+              </div>
+              <h4 className="mb-3 text-lg font-semibold">
+                {asString(item.title, `Cảnh ${index + 1}`)}
+              </h4>
+              <MarkdownBlock content={asString(item.visual_text)} />
+              {Boolean(item.voiceover) && (
+                <p className="mt-4 rounded-md bg-muted/50 p-3 text-sm leading-6 text-muted-foreground">
+                  {stripInternalMarkers(asString(item.voiceover))}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -698,29 +495,19 @@ function renderFallback(result: GenerateResponse) {
   );
 }
 
-export default function ResultRenderer({
-  feature,
-  result,
-  citations,
-}: ResultRendererProps) {
+export default function ResultRenderer({ feature, result }: ResultRendererProps) {
   const meta = featureMeta[feature];
 
   const content = (() => {
     switch (feature) {
-      case "course":
-        return renderCourse(result);
-      case "summary":
-        return renderSummary(result);
-      case "flashcards":
-        return renderFlashcards(result);
+      case "book":
+        return renderBook(result);
+      case "slide":
+        return renderSlide(result);
       case "quiz":
         return renderQuiz(result);
-      case "slides":
-        return renderSlides(result);
-      case "mindmap":
-        return renderMindmap(result, citations);
-      case "custom":
-        return renderCustom(result);
+      case "vid":
+        return renderVid(result);
       default:
         return renderFallback(result);
     }
@@ -735,8 +522,6 @@ export default function ResultRenderer({
         </div>
         {content}
       </section>
-
-      <CitationList citations={citations} />
     </div>
   );
 }

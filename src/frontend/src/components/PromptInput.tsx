@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Loader2 } from "lucide-react";
 
 interface PromptInputProps {
   onSubmit: (prompt: string) => void;
@@ -11,10 +11,10 @@ interface PromptInputProps {
 }
 
 const PLACEHOLDER_SUGGESTIONS = [
-  'Ví dụ: "Tóm tắt tài liệu này trong 5 ý chính"',
-  'Ví dụ: "Tạo quiz mức độ khó từ nội dung"',
-  'Ví dụ: "Giải thích tài liệu cho học sinh cấp 3"',
-  'Ví dụ: "Tạo flashcard để ôn tập nhanh"',
+  'Ví dụ: "Tập trung vào phần nhập môn"',
+  'Ví dụ: "Tạo quiz về các khái niệm chính"',
+  'Ví dụ: "Làm slide cho buổi học 45 phút"',
+  'Ví dụ: "Tạo vid ngắn về tổng quan tài liệu"',
 ];
 
 export default function PromptInput({
@@ -25,31 +25,28 @@ export default function PromptInput({
   const [prompt, setPrompt] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
-  // Cycle placeholders on focus
   const handleFocus = () => {
     setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDER_SUGGESTIONS.length);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     onSubmit(prompt.trim());
   };
 
   return (
     <form onSubmit={handleSubmit} className="w-full">
-      <h3 className="text-lg font-semibold mb-3">Nhập yêu cầu (tuỳ chọn)</h3>
+      <h3 className="mb-3 text-lg font-semibold">Tùy chỉnh output</h3>
       <div className="flex gap-3">
         <div className="relative flex-1">
           <textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(event) => setPrompt(event.target.value)}
             onFocus={handleFocus}
             placeholder={PLACEHOLDER_SUGGESTIONS[placeholderIndex]}
             disabled={disabled}
             rows={2}
-            className="flex w-full rounded-lg border border-input bg-background px-4 py-3 text-sm shadow-sm
-              placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2
-              focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+            className="flex w-full resize-none rounded-lg border border-input bg-background px-4 py-3 text-sm shadow-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
         <Button
@@ -66,13 +63,13 @@ export default function PromptInput({
           ) : (
             <>
               <Sparkles className="mr-2 h-4 w-4" />
-              Gửi
+              Tạo
             </>
           )}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground mt-2">
-        Nhập yêu cầu cụ thể hoặc để trống để AI tự động tạo nội dung phù hợp.
+      <p className="mt-2 text-xs text-muted-foreground">
+        Để trống để hệ thống tự chọn trọng tâm phù hợp với tài liệu.
       </p>
     </form>
   );

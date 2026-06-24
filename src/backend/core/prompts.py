@@ -44,7 +44,7 @@ QUY TẮC:
 - Mỗi chương có 2-3 bài học nhỏ.
 - Mỗi bài học PHẢI có nội dung trong trường "lecture", không được chỉ trả về title.
 - Nội dung phải bám sát dữ liệu trong [CONTEXT], không thêm kiến thức ngoài tài liệu.
-- Không đưa citation, page, source hoặc chunk_id vào JSON output.
+- Không đưa page, source hoặc chunk_id vào JSON output.
 - Nội dung logic từ cơ bản đến nâng cao dựa trên tài liệu.
 
 [CONTEXT]:
@@ -59,7 +59,7 @@ QUY TẮC NỘI DUNG (KHÔNG ĐƯỢC VI PHẠM):
 1. ĐÁP ÁN ĐỘC LẬP: Chỉ duy nhất một đáp án đúng. Các phương án nhiễu phải hợp lý nhưng SAI hoàn toàn.
 2. CHI TIẾT: Phần giải thích (explanation) phải nêu rõ tại sao chọn đáp án đó dựa trên tài liệu.
 3. LATEX: Sử dụng dấu $ cho ký hiệu toán học (ví dụ: $x$, $\in$).
-4. Không đưa citation, page, source hoặc chunk_id vào JSON output.
+4. Không đưa page, source hoặc chunk_id vào JSON output.
 
 YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
 [
@@ -83,7 +83,7 @@ QUY TẮC TOÀN VẸN NỘI DUNG:
 1. KHÔNG CẮT XÉN: Phải đi qua đầy đủ các phần của chủ đề được yêu cầu.
 2. MỖI SLIDE MỘT Ý TƯỞNG: Mỗi slide chỉ chứa một khối nội dung hoặc một định nghĩa/ví dụ.
 3. CẤU TRÚC SƯ PHẠM: Giới thiệu -> Nội dung chi tiết -> Ví dụ -> Kết luận.
-4. Không đưa citation, page, source hoặc chunk_id vào JSON output.
+4. Không đưa page, source hoặc chunk_id vào JSON output.
 
 YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
 [
@@ -109,7 +109,7 @@ YÊU CẦU:
 - Tạo {scene_count} cảnh.
 - Mỗi cảnh có tiêu đề ngắn, chữ hiển thị trên slide, và lời voiceover tiếng Việt.
 - Voiceover phải tự nhiên, dễ nghe, phù hợp video học tập.
-- Không đưa citation, page, source hoặc chunk_id vào JSON output.
+- Không đưa page, source hoặc chunk_id vào JSON output.
 
 YÊU CẦU ĐỊNH DẠNG (CHỈ XUẤT RAW JSON ARRAY):
 [

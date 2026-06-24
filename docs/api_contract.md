@@ -1,11 +1,10 @@
-# API Contract (Current Implementation)
+# API Contract
 
-This contract follows the routes currently declared in `src/backend/main.py`.
+Contract này bám theo routes hiện tại trong `src/backend/main.py`. Public generation chỉ có **Book, Slide, Quiz, Vid**.
 
 ## 1. Health & Management
 
 ### `GET /api/health`
-Returns backend health and registered courses.
 
 ```json
 {
@@ -16,26 +15,26 @@ Returns backend health and registered courses.
 ```
 
 ### `GET /api/courses`
-Returns registered course IDs.
+Trả danh sách `course_id` đã đăng ký.
 
 ### `GET /api/courses/all`
-Returns course IDs with available local metadata.
+Trả danh sách course kèm metadata local.
 
 ### `DELETE /api/courses/{course_id}`
-Deletes a course from cache, local generated files and FAISS index.
+Xóa course khỏi cache, generated files và FAISS index.
 
 ## 2. Upload & Status
 
 ### `POST /api/upload`
 
-Input: `multipart/form-data` with one field:
-- `file`: PDF, DOCX or TXT
+Input: `multipart/form-data` với đúng một field:
+- `file`: PDF, DOCX hoặc TXT
 
 Validation:
 - filename required
-- extension must be `.pdf`, `.docx`, `.txt`
-- file must not be empty
-- file size must be <= 50MB
+- extension phải là `.pdf`, `.docx`, `.txt`
+- file không rỗng
+- file size <= 50MB
 
 Response:
 
@@ -44,7 +43,7 @@ Response:
   "course_id": "abc123def456",
   "filename": "document.pdf",
   "status": "processing",
-  "message": "File 'document.pdf' đã được nhận và đang được phân tích. ID khóa học: abc123def456"
+  "message": "File 'document.pdf' đã được nhận và đang được phân tích. ID tài liệu: abc123def456"
 }
 ```
 
@@ -53,50 +52,24 @@ Response:
 ```json
 {
   "course_id": "abc123def456",
-  "status": "ready",
-  "pdf_path": "uploads/..."
+  "status": "ready"
 }
 ```
 
-Possible statuses include `pending`, `ready`, `failed`, `unknown`.
+Possible statuses: `pending`, `ready`, `failed`, `unknown`.
 
-## 3. Chat
+## 3. Generation
 
-### `POST /api/chat`
+Tất cả generation endpoints yêu cầu course ở trạng thái `ready`. Response public không trả `page`, `source`, `chunk_id`.
+
+### `POST /api/generate-book`
 
 Request:
 
 ```json
 {
   "course_id": "abc123def456",
-  "question": "Tóm tắt chương chính của tài liệu"
-}
-```
-
-Response:
-
-```json
-{
-  "answer": "string",
-  "course_id": "abc123def456",
-  "citations": [
-    {"page": 1, "source": "document.pdf", "chunk_id": 0}
-  ]
-}
-```
-
-## 4. Generation - Sync
-
-All sync generation endpoints require an existing ready course and return `citations` when they generate AI content.
-
-### `POST /api/generate-course`
-
-Request:
-
-```json
-{
-  "course_id": "abc123def456",
-  "user_prompt": "Tạo khóa học nhập môn",
+  "user_prompt": "Tập trung vào phần nhập môn",
   "target_audience": "sinh viên"
 }
 ```
@@ -106,38 +79,29 @@ Response:
 ```json
 {
   "course_id": "abc123def456",
-  "course": {},
-  "citations": [
-    {"page": 1, "source": "document.pdf", "chunk_id": 0}
-  ]
+  "book": {
+    "title": "string",
+    "description": "string",
+    "estimated_duration": "3-5 giờ",
+    "chapters": []
+  },
+  "pdf_url": "/api/course/abc123def456/book.pdf"
 }
 ```
 
-### `POST /api/generate-summary`
+### `POST /api/generate-slide`
 
 Request:
 
 ```json
 {
   "course_id": "abc123def456",
-  "type": "detailed"
+  "topic": "Cơ học",
+  "num_slides": 8
 }
 ```
 
-Response fields: `course_id`, `filename`, `summary`, `citations`.
-
-### `POST /api/generate-flashcards`
-
-Request:
-
-```json
-{
-  "course_id": "abc123def456",
-  "count": 20
-}
-```
-
-Response fields: `course_id`, `total`, `flashcards`, `citations`.
+Response fields: `course_id`, `topic`, `total_slides`, `slides`.
 
 ### `POST /api/generate-quiz`
 
@@ -147,99 +111,47 @@ Request:
 {
   "course_id": "abc123def456",
   "topic": "Cơ học",
-  "quantity": 20,
+  "quantity": 10,
   "difficulty": "medium"
 }
 ```
 
-Response fields: `course_id`, `topic`, `difficulty`, `total_questions`, `questions`, `citations`.
+Response fields: `course_id`, `topic`, `difficulty`, `total_questions`, `questions`.
 
-### `POST /api/generate-slides`
-
-Request:
-
-```json
-{
-  "course_id": "abc123def456",
-  "topic": "Cơ học",
-  "num_slides": 10
-}
-```
-
-Response fields: `course_id`, `topic`, `total_slides`, `slides`, `citations`.
-
-### `POST /api/generate-mindmap`
+### `POST /api/generate-vid`
 
 Request:
 
 ```json
 {
   "course_id": "abc123def456",
-  "max_depth": 3
+  "topic": "tổng quan",
+  "duration_minutes": 3
 }
 ```
 
-Response fields: `course_id`, `mindmap`, `citations`.
+Response fields: `course_id`, `vid`. `vid.url` trỏ tới `/api/course/{course_id}/vid/file`.
 
-### `POST /api/custom-prompt`
+## 4. Saved Artifacts
 
-Request:
-
-```json
-{
-  "course_id": "abc123def456",
-  "prompt": "Tóm tắt tài liệu này trong 5 ý chính"
-}
-```
-
-Response fields: `course_id`, `prompt`, `prompt_type`, `result`, `citations`.
-
-### Path-style sync endpoints
-
-These endpoints currently use `course_id` in the path:
-- `POST /api/generate-podcast/{course_id}`
-- `POST /api/generate-study-guide/{course_id}`
-
-## 5. Generation - Async
-
-Async endpoints create a background task and return:
-
-```json
-{
-  "task_id": "task123",
-  "status": "processing"
-}
-```
-
-Current async endpoints:
-- `POST /api/generate-course-async`
-- `POST /api/generate-summary-async`
-- `POST /api/generate-flashcards-async`
-- `POST /api/generate-quiz-async`
-- `POST /api/generate-slides-async`
-- `POST /api/generate-mindmap-async`
-- `POST /api/custom-prompt-async/{course_id}`
-- `POST /api/generate-podcast-async/{course_id}`
-- `POST /api/generate-study-guide-async/{course_id}`
-
-### `GET /api/task/{task_id}`
-
-Returns task status, result when completed, or error when failed.
-
-## 6. Saved Content
-
-Current saved-content endpoints:
-- `GET /api/course/{course_id}/questions`
-- `GET /api/course/{course_id}/syllabus`
-- `GET /api/course/{course_id}/slides`
-- `GET /api/course/{course_id}/audio`
-- `GET /api/course/{course_id}/study-guide`
-- `GET /api/course/{course_id}/summary`
-- `GET /api/course/{course_id}/flashcards`
-- `GET /api/course/{course_id}/mindmap`
+- `GET /api/course/{course_id}/book`
+- `GET /api/course/{course_id}/book.pdf`
+- `GET /api/course/{course_id}/slide`
+- `GET /api/course/{course_id}/quiz`
+- `GET /api/course/{course_id}/vid`
+- `GET /api/course/{course_id}/vid/file`
 - `GET /api/course/{course_id}/files`
 - `GET /api/course/{course_id}/stats`
 
-## 7. Frontend Integration Warning
+## 5. Deprecated Surface
 
-Backend `/api/upload` currently accepts one multipart field named `file`. The current frontend upload helper sends `files`, so the upload integration must be fixed in a separate frontend/backend integration PR.
+Các route output cũ không còn là public API và phải trả 404 nếu gọi:
+- `/api/chat`
+- `/api/custom-prompt`
+- `/api/generate-course`
+- `/api/generate-summary`
+- `/api/generate-flashcards`
+- `/api/generate-mindmap`
+- `/api/generate-podcast/{course_id}`
+- `/api/generate-study-guide/{course_id}`
+- mọi async generation route cũ

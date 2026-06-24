@@ -7,7 +7,6 @@ import FeatureSelector, { type FeatureType } from "@/components/FeatureSelector"
 import PromptInput from "@/components/PromptInput";
 import ResultRenderer from "@/components/ResultRenderer";
 import {
-  type Citation,
   type CourseStatusResponse,
   type GenerateResponse,
   type UploadResponse,
@@ -36,7 +35,6 @@ export default function GeneratePage() {
   const [filename, setFilename] = useState("");
   const [courseStatus, setCourseStatus] = useState<CourseStatus>("idle");
   const [result, setResult] = useState<GenerateResponse | null>(null);
-  const [citations, setCitations] = useState<Citation[]>([]);
 
   const pollCourseStatus = async (id: string) => {
     setIsPolling(true);
@@ -74,7 +72,6 @@ export default function GeneratePage() {
     setCourseId(upload.course_id);
     setFilename(upload.filename);
     setResult(null);
-    setCitations([]);
     void pollCourseStatus(upload.course_id);
   };
 
@@ -96,12 +93,10 @@ export default function GeneratePage() {
 
     setIsProcessing(true);
     setResult(null);
-    setCitations([]);
 
     try {
       const response = await generateContent(selectedFeature, courseId, prompt);
       setResult(response);
-      setCitations(response.citations ?? []);
       toast.success("Đã tạo nội dung.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Có lỗi xảy ra khi tạo nội dung.";
@@ -147,15 +142,15 @@ export default function GeneratePage() {
           <div className="mb-3 rounded-full bg-primary/10 p-2">
             <Sparkles className="h-5 w-5 text-primary" />
           </div>
-          <h3 className="mb-1 text-sm font-semibold">2. Chọn tính năng</h3>
-          <p className="text-xs text-muted-foreground">Course, Summary, Quiz, Slide</p>
+          <h3 className="mb-1 text-sm font-semibold">2. Chọn output</h3>
+          <p className="text-xs text-muted-foreground">Book, Slide, Quiz, Vid</p>
         </div>
         <div className="flex flex-col items-center rounded-lg border bg-card p-4 text-center">
           <div className="mb-3 rounded-full bg-primary/10 p-2">
             <BookOpen className="h-5 w-5 text-primary" />
           </div>
           <h3 className="mb-1 text-sm font-semibold">3. Nhận kết quả</h3>
-          <p className="text-xs text-muted-foreground">Có citation từ tài liệu</p>
+          <p className="text-xs text-muted-foreground">Artifact sẵn sàng để học</p>
         </div>
       </div>
 
@@ -178,9 +173,9 @@ export default function GeneratePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-muted-foreground">
-            <p>Course ID: {courseId}</p>
+            <p>ID tài liệu: {courseId}</p>
             <p>File: {filename}</p>
-            {isPolling && <p>Backend đang phân tích và tạo FAISS index...</p>}
+            {isPolling && <p>Backend đang phân tích tài liệu...</p>}
           </CardContent>
         </Card>
       )}
@@ -201,7 +196,6 @@ export default function GeneratePage() {
         <ResultRenderer
           feature={selectedFeature}
           result={result}
-          citations={citations}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui";
+import Link from "next/link";
 import {
   Card,
   CardDescription,
@@ -16,8 +17,8 @@ export default function Home() {
             AI Course Generator
           </h1>
           <p className="text-base text-muted-foreground">
-            Upload tài liệu và để AI tự động tạo khóa học, bài học, tóm tắt,
-            flashcard, quiz, slide và mind map.
+            Upload tài liệu và tạo đúng 4 output học tập: Book, Slide, Quiz
+            và Vid.
           </p>
         </div>
 
@@ -25,15 +26,18 @@ export default function Home() {
           <CardHeader>
             <CardTitle>Bắt đầu ngay</CardTitle>
             <CardDescription>
-              Bạn chỉ cần upload file và chọn một tính năng bên dưới để bắt đầu
-              tạo nội dung học tập.
+              Bạn chỉ cần upload file, chờ backend xử lý tài liệu và chọn output
+              muốn tạo.
             </CardDescription>
           </CardHeader>
           <CardFooter className="flex flex-wrap gap-3">
-            <Button>Upload tài liệu</Button>
-            <Button variant="outline">Tạo khóa học</Button>
-            <Button variant="secondary">Tóm tắt</Button>
-            <Button variant="ghost">Flashcard</Button>
+            <Link href="/generate">
+              <Button>Upload tài liệu</Button>
+            </Link>
+            <Button variant="outline">Book</Button>
+            <Button variant="secondary">Slide</Button>
+            <Button variant="secondary">Quiz</Button>
+            <Button variant="ghost">Vid</Button>
           </CardFooter>
         </Card>
       </div>

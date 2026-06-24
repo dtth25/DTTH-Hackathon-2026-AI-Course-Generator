@@ -107,6 +107,7 @@ def get_course_path(course_id: str) -> Dict[str, str]:
         "questions": os.path.join(QUESTIONS_DIR, f"course_{course_id}_questions.json"),
         "meta": os.path.join(QUESTIONS_DIR, f"course_{course_id}_meta.json"),
         "book": os.path.join(BOOKS_DIR, f"course_{course_id}_book.json"),
+        "book_pdf": os.path.join(BOOKS_DIR, f"course_{course_id}_book.pdf"),
         "slides": os.path.join(SLIDES_DIR, f"course_{course_id}_slides.json"),
         "videos": os.path.join(VIDEOS_DIR, f"course_{course_id}"),
     }

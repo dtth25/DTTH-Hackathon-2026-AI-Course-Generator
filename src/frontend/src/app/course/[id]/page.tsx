@@ -1,115 +1,120 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, FileText, ChevronLeft } from "lucide-react";
+import { BookOpen, ChevronLeft, Download, FileText } from "lucide-react";
 import {
   Accordion,
+  AccordionContent,
   AccordionItem,
   AccordionTrigger,
-  AccordionContent,
   Button,
 } from "@/components/ui";
-import { getCourse } from "@/lib/api";
+import { API_BASE_URL, getBook } from "@/lib/api";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function CourseDetailPage({ params }: PageProps) {
+function backendUrl(path?: string | null) {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export default async function BookDetailPage({ params }: PageProps) {
   const { id } = await params;
 
   let data;
   try {
-    data = await getCourse(id);
+    data = await getBook(id);
   } catch (err) {
-    if (err instanceof Error && err.message === "NOT_FOUND") {
+    if (err instanceof Error && err.message.includes("404")) {
       notFound();
     }
-    // Lỗi khác (network, server) — throw để error boundary xử lý
     throw err;
   }
 
-  const { course } = data;
-  const totalLessons = course.chapters.reduce(
-    (sum, ch) => sum + ch.lessons.length,
-    0,
+  const { book } = data;
+  const totalLessons = book.chapters.reduce(
+    (sum, chapter) => sum + chapter.lessons.length,
+    0
   );
+  const pdfUrl = backendUrl(data.pdf_url);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="space-y-2">
         <Link
           href="/course"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />
           Quay lại danh sách
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          {course.title}
-        </h1>
-        {course.description && (
-          <p className="text-sm text-muted-foreground">{course.description}</p>
-        )}
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <BookOpen className="h-4 w-4" />
-            {course.chapters.length} chương
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <FileText className="h-4 w-4" />
-            {totalLessons} bài học
-          </span>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {book.title}
+            </h1>
+            {book.description && (
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {book.description}
+              </p>
+            )}
+            <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <BookOpen className="h-4 w-4" />
+                {book.chapters.length} chương
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                {totalLessons} bài học
+              </span>
+            </div>
+          </div>
+          {pdfUrl && (
+            <a href={pdfUrl}>
+              <Button>
+                <Download className="mr-2 h-4 w-4" />
+                Tải PDF
+              </Button>
+            </a>
+          )}
         </div>
       </div>
 
-      {/* Accordion */}
       <Accordion type="single" collapsible className="w-full">
-        {course.chapters.map((chapter, idx) => (
-          <AccordionItem key={idx} value={`chapter-${idx}`}>
+        {book.chapters.map((chapter, chapterIndex) => (
+          <AccordionItem key={chapterIndex} value={`chapter-${chapterIndex}`}>
             <AccordionTrigger className="text-base font-medium">
               <span>{chapter.title}</span>
-              <span className="ml-2 text-xs text-muted-foreground font-normal">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 ({chapter.lessons.length} bài)
               </span>
             </AccordionTrigger>
             <AccordionContent>
-              <ul className="space-y-1">
-                {chapter.lessons.map((lesson, lessonIdx) => (
-                  <li
-                    key={lessonIdx}
-                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <FileText className="h-4 w-4 shrink-0" />
-                    <span>{lesson.title}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-4">
+                {chapter.description && (
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {chapter.description}
+                  </p>
+                )}
+                <div className="space-y-3">
+                  {chapter.lessons.map((lesson, lessonIndex) => (
+                    <div key={lessonIndex} className="rounded-md border p-3">
+                      <div className="font-medium">{lesson.title}</div>
+                      {lesson.lecture && (
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                          {lesson.lecture}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </AccordionContent>
           </AccordionItem>
         ))}
       </Accordion>
-
-      {/* Bottom action */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Link href={`/quiz/${id}`}>
-            <Button variant="default">📋 Làm quiz</Button>
-          </Link>
-          <Link href={`/flashcards/${id}`}>
-            <Button variant="outline">🎴 Flashcards</Button>
-          </Link>
-          <Link href={`/slides/${id}`}>
-            <Button variant="outline">📊 Slides</Button>
-          </Link>
-          <Link href={`/mindmap/${id}`}>
-            <Button variant="outline">🧠 Mind Map</Button>
-          </Link>
-        </div>
-        <Link href="/course">
-          <Button variant="ghost">Quay lại danh sách</Button>
-        </Link>
-      </div>
     </div>
   );
 }

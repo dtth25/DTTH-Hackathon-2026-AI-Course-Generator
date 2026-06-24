@@ -79,7 +79,7 @@ def create_or_load_faiss(
     num_chunks = len(splits)
     logger.info(f"[Course {course_id}] Split into {num_chunks} chunks.")
 
-    # Add metadata for citation tracking
+    # Add internal source metadata for retrieval and debugging.
     for idx, doc in enumerate(splits):
         doc.metadata["chunk_id"] = idx
         doc.metadata["course_id"] = course_id

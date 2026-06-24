@@ -110,7 +110,7 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
         updateFileStatus(item.file.name, { status: "success", progress: 100 });
       });
 
-      toast.success("Tải lên thành công! Khóa học đang được xử lý...");
+      toast.success("Tải lên thành công! Tài liệu đang được xử lý...");
       onUploaded?.(result);
 
       // Optionally clear the list after success

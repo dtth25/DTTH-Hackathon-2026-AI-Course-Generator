@@ -174,6 +174,116 @@ class ResourceGenerator:
             "chapters": chapters,
         }
 
+    def _book_pdf_elements(self, book: dict[str, Any]) -> list[tuple[str, str]]:
+        elements: list[tuple[str, str]] = []
+
+        def add(text: Any, style: str = "body") -> None:
+            clean = str(text or "").strip()
+            if clean:
+                elements.append((clean, style))
+
+        add(book.get("title") or "Sách học tập", "title")
+        add(book.get("description"), "body")
+        add(f"Thời lượng ước tính: {book.get('estimated_duration')}", "small")
+        elements.append(("", "gap"))
+
+        for chapter_index, chapter in enumerate(book.get("chapters") or [], 1):
+            if not isinstance(chapter, dict):
+                continue
+            add(chapter.get("title") or f"Chương {chapter_index}", "chapter")
+            add(chapter.get("description"), "body")
+
+            for lesson_index, lesson in enumerate(chapter.get("lessons") or [], 1):
+                if not isinstance(lesson, dict):
+                    continue
+                add(lesson.get("title") or f"Bài {chapter_index}.{lesson_index}", "lesson")
+                add(f"Thời lượng: {lesson.get('duration')}", "small")
+
+                for label, key in [
+                    ("Mục tiêu", "objectives"),
+                    ("Nội dung bài giảng", "lecture"),
+                    ("Ý chính cần nhớ", "key_points"),
+                    ("Hoạt động học tập", "activity"),
+                    ("Kiểm tra nhanh", "assessment"),
+                ]:
+                    value = lesson.get(key)
+                    if not value:
+                        continue
+                    add(label, "section")
+                    if isinstance(value, list):
+                        for item in value:
+                            add(f"- {item}", "body")
+                    else:
+                        add(value, "body")
+                elements.append(("", "gap"))
+
+        return elements
+
+    def _render_book_pdf(self, book: dict[str, Any], pdf_path: str) -> str:
+        from PIL import Image, ImageDraw
+
+        page_width, page_height = 1240, 1754
+        margin = 86
+        content_width = page_width - margin * 2
+        styles = {
+            "title": {"font": self._font(44, bold=True), "fill": (17, 24, 39), "line_height": 58, "width": 38},
+            "chapter": {"font": self._font(34, bold=True), "fill": (30, 64, 175), "line_height": 46, "width": 48},
+            "lesson": {"font": self._font(29, bold=True), "fill": (15, 23, 42), "line_height": 40, "width": 58},
+            "section": {"font": self._font(25, bold=True), "fill": (51, 65, 85), "line_height": 34, "width": 66},
+            "body": {"font": self._font(24), "fill": (51, 65, 85), "line_height": 34, "width": 78},
+            "small": {"font": self._font(21), "fill": (100, 116, 139), "line_height": 30, "width": 88},
+        }
+
+        pages: list[Image.Image] = []
+        image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        y = margin
+
+        def finish_page() -> None:
+            pages.append(image.copy())
+
+        def reset_page() -> tuple[Image.Image, ImageDraw.ImageDraw, int]:
+            next_image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+            next_draw = ImageDraw.Draw(next_image)
+            return next_image, next_draw, margin
+
+        for text, style_name in self._book_pdf_elements(book):
+            if style_name == "gap":
+                y += 24
+                continue
+
+            style = styles.get(style_name, styles["body"])
+            lines = self._wrap_lines(text, width=style["width"]) or [text]
+            block_height = len(lines) * style["line_height"] + 12
+            if y + block_height > page_height - margin:
+                finish_page()
+                image, draw, y = reset_page()
+
+            if style_name in {"chapter", "lesson"}:
+                draw.rounded_rectangle(
+                    (margin - 18, y - 10, margin + content_width + 18, y + block_height - 8),
+                    radius=10,
+                    fill=(248, 250, 252),
+                )
+
+            for line in lines:
+                draw.text((margin, y), line, font=style["font"], fill=style["fill"])
+                y += style["line_height"]
+            y += 12
+
+        finish_page()
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        pages[0].save(pdf_path, "PDF", resolution=120.0, save_all=True, append_images=pages[1:])
+        return pdf_path
+
+    def export_book_pdf(self) -> str:
+        paths = get_course_path(self.course_id)
+        if not os.path.exists(paths["book"]):
+            raise FileNotFoundError("Book has not been generated yet.")
+        with open(paths["book"], "r", encoding="utf-8") as f:
+            book = json.load(f)
+        return self._render_book_pdf(book, paths["book_pdf"])
+
     def generate_book(self, user_prompt: str = "", target_audience: str = "sinh viên"):
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})
         docs = retriever.invoke(user_prompt or "tổng quan")
@@ -192,8 +302,10 @@ class ResourceGenerator:
             logger.warning("Book generation failed, using fallback: %s", e)
             book = self._build_fallback_book(docs, target_audience)
 
-        self._save_json(get_course_path(self.course_id)["book"], book)
-        return {"book": book}
+        paths = get_course_path(self.course_id)
+        self._save_json(paths["book"], book)
+        self._render_book_pdf(book, paths["book_pdf"])
+        return {"book": book, "pdf_url": f"/api/course/{self.course_id}/book.pdf"}
 
     def _build_fallback_quiz(self, docs, quantity: int, difficulty: str):
         points = self._doc_points(docs, limit=max(1, min(quantity, 10)), max_chars=220)

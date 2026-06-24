@@ -1,24 +1,9 @@
 "use client";
 
 import React from "react";
-import {
-  BookOpen,
-  FileText,
-  StickyNote,
-  HelpCircle,
-  Presentation,
-  Map,
-  Sparkles,
-} from "lucide-react";
+import { BookOpen, HelpCircle, Presentation, Video } from "lucide-react";
 
-export type FeatureType =
-  | "course"
-  | "summary"
-  | "flashcards"
-  | "quiz"
-  | "slides"
-  | "mindmap"
-  | "custom";
+export type FeatureType = "book" | "slide" | "quiz" | "vid";
 
 interface FeatureOption {
   type: FeatureType;
@@ -29,46 +14,28 @@ interface FeatureOption {
 
 const FEATURES: FeatureOption[] = [
   {
-    type: "course",
-    label: "Khóa học",
-    description: "Tạo cấu trúc khóa học với chương và bài học",
+    type: "book",
+    label: "Book",
+    description: "Tạo sách học tập theo chương và bài học",
     icon: <BookOpen className="h-5 w-5" />,
   },
   {
-    type: "summary",
-    label: "Tóm tắt",
-    description: "Tóm tắt nội dung chính từ tài liệu",
-    icon: <FileText className="h-5 w-5" />,
-  },
-  {
-    type: "flashcards",
-    label: "Flashcard",
-    description: "Tạo flashcard để ghi nhớ kiến thức",
-    icon: <StickyNote className="h-5 w-5" />,
+    type: "slide",
+    label: "Slide",
+    description: "Tạo nội dung trình chiếu từ tài liệu",
+    icon: <Presentation className="h-5 w-5" />,
   },
   {
     type: "quiz",
     label: "Quiz",
-    description: "Tạo câu hỏi trắc nghiệm từ nội dung",
+    description: "Tạo bộ câu hỏi trắc nghiệm",
     icon: <HelpCircle className="h-5 w-5" />,
   },
   {
-    type: "slides",
-    label: "Slide",
-    description: "Tạo nội dung slide thuyết trình",
-    icon: <Presentation className="h-5 w-5" />,
-  },
-  {
-    type: "mindmap",
-    label: "Mind Map",
-    description: "Vẽ sơ đồ tư duy hệ thống kiến thức",
-    icon: <Map className="h-5 w-5" />,
-  },
-  {
-    type: "custom",
-    label: "Prompt riêng",
-    description: "Nhập yêu cầu tùy chỉnh cho AI",
-    icon: <Sparkles className="h-5 w-5" />,
+    type: "vid",
+    label: "Vid",
+    description: "Tạo video học tập dạng slide voiceover",
+    icon: <Video className="h-5 w-5" />,
   },
 ];
 
@@ -83,23 +50,23 @@ export default function FeatureSelector({
 }: FeatureSelectorProps) {
   return (
     <div className="w-full">
-      <h3 className="text-lg font-semibold mb-4">Chọn tính năng</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      <h3 className="mb-4 text-lg font-semibold">Chọn output</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {FEATURES.map((feature) => {
           const isSelected = selected === feature.type;
           return (
             <button
               key={feature.type}
               onClick={() => onSelect(feature.type)}
-              className={`flex flex-col items-start text-left p-4 rounded-lg border transition-all cursor-pointer
-                ${
-                  isSelected
-                    ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                    : "border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/50"
-                }`}
+              className={`flex flex-col items-start rounded-lg border p-4 text-left transition-all ${
+                isSelected
+                  ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                  : "border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/50"
+              }`}
+              type="button"
             >
               <div
-                className={`p-2 rounded-full mb-2 ${
+                className={`mb-2 rounded-full p-2 ${
                   isSelected
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground"
@@ -107,8 +74,8 @@ export default function FeatureSelector({
               >
                 {feature.icon}
               </div>
-              <span className="font-medium text-sm">{feature.label}</span>
-              <span className="text-xs text-muted-foreground mt-1 leading-tight">
+              <span className="text-sm font-medium">{feature.label}</span>
+              <span className="mt-1 text-xs leading-tight text-muted-foreground">
                 {feature.description}
               </span>
             </button>

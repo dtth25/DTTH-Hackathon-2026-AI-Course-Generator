@@ -1,0 +1,271 @@
+{
+  "title": "Sách học tập từ tài liệu đã tải lên",
+  "description": "Bản sách MVP dành cho sinh viên, được dựng trực tiếp từ các đoạn nội dung đã index trong tài liệu.",
+  "estimated_duration": "3-5 giờ",
+  "chapters": [
+    {
+      "title": "Chương 1: 52 6 2 1 tổng quan vềgradient descent",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 1.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": ". . . . . . . . . . . . . . . . . 52 6.2.1 Tổng quan vềGradient Descent . . . . . . . . . . . . . . 52 6.2.2 Các biến thểchính . . . . . . . . . . . . . . . . . . . . . 53 6.2.3 Lựa chọn batch size . . . . . . . . . . . . . . . . . . . . 54 5\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            ". . . . . . . . . . . . . . . . . 52 6.2.1 Tổng quan vềGradient Descent . . . . . . . . . . . . . . 52 6.2.2 Các biến thểchính . . . . . . . . . . . . . . . . . . . . . 53 6.2.3 Lự",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 1.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": ". . . . . . . . . . . . . . . . . 52 6.2.1 Tổng quan vềGradient Descent . . . . . . . . . . . . . . 52 6.2.2 Các biến thểchính . . . . . . . . . . . . . . . . . . . . . 53 6.2.3 Lựa chọn batch size . . . . . . . . . . . . . . . . . . . . 54 5\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            ". . . . . . . . . . . . . . . . . 52 6.2.1 Tổng quan vềGradient Descent . . . . . . . . . . . . . . 52 6.2.2 Các biến thểchính . . . . . . . . . . . . . . . . . . . . . 53 6.2.3 Lự",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 2: Contents 1 giới thiệu vềpython cho trí tuệnhân",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 2.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Contents 1 Giới thiệu vềPython cho Trí tuệNhân tạo 1 1.1 Cơ bản vềPython . . . . . . . . . . . . . . . . . . . . . . . . . 1 1.1.1 Vòng lặp và Cấu trúc điều khiển . . . . . . . . . . . . . 1 1.1.2 Hàm trong Python . . . . . . . . . . . . . . . . . . . . . 2 1.2 NumPy và Pandas đểxửlý dữliệu . . . . . . . . . . . . . . . . 2 1.2.1 NumPy . . . . . . . . . . . . . . . . . . . . . . . . . . . 2 1.2.2 Pandas . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 1.3 Matplotlib và Seaborn đểtrực quan hóa dữliệu . . . . . . . . . 4 1.3.1 Matplotlib . . . . . . . . . . . . . . . . . . . . . . . . . . 4 1.3.2 Seaborn . .\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Contents 1 Giới thiệu vềPython cho Trí tuệNhân tạo 1 1.1 Cơ bản vềPython . . . . . . . . . . . . . . . . . . . . . . . . . 1 1.1.1 Vòng lặp và Cấu trúc điều khiển . . . . . . . . .",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 2.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Contents 1 Giới thiệu vềPython cho Trí tuệNhân tạo 1 1.1 Cơ bản vềPython . . . . . . . . . . . . . . . . . . . . . . . . . 1 1.1.1 Vòng lặp và Cấu trúc điều khiển . . . . . . . . . . . . . 1 1.1.2 Hàm trong Python . . . . . . . . . . . . . . . . . . . . . 2 1.2 NumPy và Pandas đểxửlý dữliệu . . . . . . . . . . . . . . . . 2 1.2.1 NumPy . . . . . . . . . . . . . . . . . . . . . . . . . . . 2 1.2.2 Pandas . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 1.3 Matplotlib và Seaborn đểtrực quan hóa dữliệu . . . . . . . . . 4 1.3.1 Matplotlib . . . . . . . . . . . . . . . . . . . . . . . . . . 4 1.3.2 Seaborn . .\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Contents 1 Giới thiệu vềPython cho Trí tuệNhân tạo 1 1.1 Cơ bản vềPython . . . . . . . . . . . . . . . . . . . . . . . . . 1 1.1.1 Vòng lặp và Cấu trúc điều khiển . . . . . . . . .",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 3: 6 1 6 cơ bản vềtái tạo kết",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 3.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "6 1.6 Cơ bản vềtái tạo kết quả. . . . . . . . . . . . . . . . . . . . . 7 1.6.1 Thiết lập seed . . . . . . . . . . . . . . . . . . . . . . . 7 1.7 Huấn luyện mô hình trên CPU và GPU . . . . . . . . . . . . . 7 1.8 Sửdụng Weights and Biases đểtheo dõi thực nghiệm . . . . . . 8 1.9 Kết luận . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8 2 Học có giám sát – Supervised Learning 11 2.1 Giới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 2.2 Linear Regression (Hồi quy tuyến tính) . . . . . . . . . . . . . 11 2.3 Logistic Regression (Hồi quy logistic) . . . . . . . . . . . . . . .\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "6 1.6 Cơ bản vềtái tạo kết quả. . . . . . . . . . . . . . . . . . . . . 7 1.6.1 Thiết lập seed . . . . . . . . . . . . . . . . . . . . . . . 7 1.7 Huấn luyện mô hình trên CPU và GP",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 3.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "6 1.6 Cơ bản vềtái tạo kết quả. . . . . . . . . . . . . . . . . . . . . 7 1.6.1 Thiết lập seed . . . . . . . . . . . . . . . . . . . . . . . 7 1.7 Huấn luyện mô hình trên CPU và GPU . . . . . . . . . . . . . 7 1.8 Sửdụng Weights and Biases đểtheo dõi thực nghiệm . . . . . . 8 1.9 Kết luận . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8 2 Học có giám sát – Supervised Learning 11 2.1 Giới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 2.2 Linear Regression (Hồi quy tuyến tính) . . . . . . . . . . . . . 11 2.3 Logistic Regression (Hồi quy logistic) . . . . . . . . . . . . . . .\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "6 1.6 Cơ bản vềtái tạo kết quả. . . . . . . . . . . . . . . . . . . . . 7 1.6.1 Thiết lập seed . . . . . . . . . . . . . . . . . . . . . . . 7 1.7 Huấn luyện mô hình trên CPU và GP",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 4: Trực quan mỗi token tựhỏi tôi nên chú",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 4.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "• Trực quan: Mỗi token tựhỏi “Tôi nên chú ý bao nhiêu đến token kia?” và gán trọng sốtương ứng, giống như bạn lắng nghe nhiều hơn những từquan trọng trong một câu :contentReference[oaicite:0]index=0. • Tại sao mạnh mẽ? Cơ chếattention cho phép nắm bắt mối quan hệ dài hạn mà không gặp phải hạn chếvềthứtựtính toán tuần tựnhư RNN :contentReference[oaicite:1]index=1. 97\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "• Trực quan: Mỗi token tựhỏi “Tôi nên chú ý bao nhiêu đến token kia?” và gán trọng sốtương ứng, giống như bạn lắng nghe nhiều hơn những từquan trọng trong một câu :contentReference",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 4.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "• Trực quan: Mỗi token tựhỏi “Tôi nên chú ý bao nhiêu đến token kia?” và gán trọng sốtương ứng, giống như bạn lắng nghe nhiều hơn những từquan trọng trong một câu :contentReference[oaicite:0]index=0. • Tại sao mạnh mẽ? Cơ chếattention cho phép nắm bắt mối quan hệ dài hạn mà không gặp phải hạn chếvềthứtựtính toán tuần tựnhư RNN :contentReference[oaicite:1]index=1. 97\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "• Trực quan: Mỗi token tựhỏi “Tôi nên chú ý bao nhiêu đến token kia?” và gán trọng sốtương ứng, giống như bạn lắng nghe nhiều hơn những từquan trọng trong một câu :contentReference",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 5: Contents 4 1 4 f1 score 32 4",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 5.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Contents 4.1.4 F1-Score . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 4.1.5 So Sánh Giữa Các ChỉSố. . . . . . . . . . . . . . . . . 33 4.2 Hiện Tượng Underfitting và Overfitting . . . . . . . . . . . . . 33 4.2.1 Underfitting . . . . . . . . . . . . . . . . . . . . . . . . . 33 4.2.2 Overfitting . . . . . . . . . . . . . . . . . . . . . . . . . 33 4.3 Tinh Chỉnh Siêu Tham Số(Hyperparameter Tuning) . . . . . . 34 4.3.1 Tại Sao Cần Tinh Chỉnh Siêu Tham Số? . . . . . . . . . 34 4.3.2 Tìm Kiếm Lưới (Grid Search) . . . . . . . . . . . . . . . 35 4.3.3 Tìm Kiếm Ngẫu Nhiên (Random Search) . . . . . . . . 35 4\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Contents 4.1.4 F1-Score . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 4.1.5 So Sánh Giữa Các ChỉSố. . . . . . . . . . . . . . . . . 33 4.2 Hiện Tượng Underfitting và Ove",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 5.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Contents 4.1.4 F1-Score . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 4.1.5 So Sánh Giữa Các ChỉSố. . . . . . . . . . . . . . . . . 33 4.2 Hiện Tượng Underfitting và Overfitting . . . . . . . . . . . . . 33 4.2.1 Underfitting . . . . . . . . . . . . . . . . . . . . . . . . . 33 4.2.2 Overfitting . . . . . . . . . . . . . . . . . . . . . . . . . 33 4.3 Tinh Chỉnh Siêu Tham Số(Hyperparameter Tuning) . . . . . . 34 4.3.1 Tại Sao Cần Tinh Chỉnh Siêu Tham Số? . . . . . . . . . 34 4.3.2 Tìm Kiếm Lưới (Grid Search) . . . . . . . . . . . . . . . 35 4.3.3 Tìm Kiếm Ngẫu Nhiên (Random Search) . . . . . . . . 35 4\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Contents 4.1.4 F1-Score . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 4.1.5 So Sánh Giữa Các ChỉSố. . . . . . . . . . . . . . . . . 33 4.2 Hiện Tượng Underfitting và Ove",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 6: Chapter 1 giới thiệu vềpython cho trí tuệ",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 6.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Chapter 1 Giới thiệu vềPython cho Trí tuệ Nhân tạo Chương này giới thiệu các kiến thức lập trình cơ bản cần thiết cho các dựán Trí tuệNhân tạo (AI), sửdụng Python làm ngôn ngữchính. Chúng ta sẽtìm hiểu các khái niệm cơ bản của Python, các thư viện thiết yếu và các bài thực hành giúp bạn phát triển mô hình và dựán AI. Vì bạn đã giỏi C++, chương này tập trung so sánh Python và C++, kèm theo các ví dụbằng mã lệnh Python đểgiúp bạn xây dựng nền tảng vững chắc cho hành trình AI của mình. 1.1 Cơ bản vềPython Python là ngôn ngữlập trình cấp cao, linh hoạt, được sửdụng rộng rãi trong lĩnh vực AI nhờsựđơn giản và hệsinh t\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Chapter 1 Giới thiệu vềPython cho Trí tuệ Nhân tạo Chương này giới thiệu các kiến thức lập trình cơ bản cần thiết cho các dựán Trí tuệNhân tạo (AI), sửdụng Python làm ngôn ngữchính",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 6.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Chapter 1 Giới thiệu vềPython cho Trí tuệ Nhân tạo Chương này giới thiệu các kiến thức lập trình cơ bản cần thiết cho các dựán Trí tuệNhân tạo (AI), sửdụng Python làm ngôn ngữchính. Chúng ta sẽtìm hiểu các khái niệm cơ bản của Python, các thư viện thiết yếu và các bài thực hành giúp bạn phát triển mô hình và dựán AI. Vì bạn đã giỏi C++, chương này tập trung so sánh Python và C++, kèm theo các ví dụbằng mã lệnh Python đểgiúp bạn xây dựng nền tảng vững chắc cho hành trình AI của mình. 1.1 Cơ bản vềPython Python là ngôn ngữlập trình cấp cao, linh hoạt, được sửdụng rộng rãi trong lĩnh vực AI nhờsựđơn giản và hệsinh t\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Chapter 1 Giới thiệu vềPython cho Trí tuệ Nhân tạo Chương này giới thiệu các kiến thức lập trình cơ bản cần thiết cho các dựán Trí tuệNhân tạo (AI), sửdụng Python làm ngôn ngữchính",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    }
+  ]
+}

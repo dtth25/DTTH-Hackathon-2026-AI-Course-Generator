@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Giới thiệu tổng quan về Trí tuệ Nhân tạo và Python",
+    "content": "-   Khám phá vai trò của Python trong phát triển AI.\n-   Nắm vững các kiến thức lập trình cơ bản cần thiết.\n-   Xây dựng nền tảng vững chắc cho hành trình AI của bạn.\n-   Tập trung vào các thư viện thiết yếu và thực hành dự án.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Hình ảnh biểu tượng AI kết hợp với logo Python, thể hiện sự kết nối giữa ngôn ngữ lập trình và trí tuệ nhân tạo."
+  },
+  {
+    "title": "Python - Nền tảng cốt lõi cho Trí tuệ Nhân tạo",
+    "content": "-   **Cơ bản về Python:** Vòng lặp, cấu trúc điều khiển, hàm.\n-   **Xử lý dữ liệu:** Sử dụng NumPy và Pandas hiệu quả.\n-   **Trực quan hóa:** Matplotlib và Seaborn để hiểu dữ liệu.\n-   **Học máy:** Giới thiệu Scikit-learn và PyTorch cơ bản.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Sơ đồ minh họa các thư viện Python chính (NumPy, Pandas, Matplotlib, Scikit-learn, PyTorch) liên kết với nhau, tạo thành hệ sinh thái AI."
+  },
+  {
+    "title": "Học có giám sát (Supervised Learning)",
+    "content": "-   **Khái niệm:** Học mô hình từ dữ liệu đầu vào và đầu ra đã biết.\n-   **Bài toán chính:** Hồi quy (dự đoán giá trị liên tục) và Phân loại (dự đoán nhãn rời rạc).\n-   **Thuật toán:** Linear/Logistic Regression, K-NN, Decision Trees, Random Forests, Gradient Boosting, SVM.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Biểu đồ phân loại dữ liệu với các điểm màu khác nhau và đường phân chia, hoặc biểu đồ hồi quy với các điểm dữ liệu và đường xu hướng."
+  },
+  {
+    "title": "Học không giám sát (Unsupervised Learning)",
+    "content": "-   **Khái niệm:** Khám phá cấu trúc ẩn trong dữ liệu không có nhãn.\n-   **Phân cụm:** K-Means, DBSCAN, Phân cụm phân cấp để nhóm dữ liệu.\n-   **Giảm chiều:** PCA, t-SNE, MAP để đơn giản hóa dữ liệu.\n-   **Ứng dụng:** Nhận diện mẫu, nén dữ liệu, khám phá cấu trúc.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Biểu đồ phân cụm dữ liệu với các nhóm điểm màu khác nhau, hoặc biểu đồ giảm chiều dữ liệu từ không gian 3D xuống 2D."
+  },
+  {
+    "title": "Đánh giá mô hình Trí tuệ Nhân tạo",
+    "content": "-   **Chỉ số:** Accuracy, Precision, Recall, F1-Score, Ma trận nhầm lẫn, Đường cong ROC/AUC.\n-   **Vấn đề:** Hiện tượng Underfitting và Overfitting.\n-   **Tối ưu:** Tinh chỉnh siêu tham số (Grid Search, Random Search).\n-   **Xác thực:** Kỹ thuật Xác thực chéo (Cross-Validation) để đánh giá độ tin cậy.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Biểu đồ đường cong ROC, ma trận nhầm lẫn, hoặc đồ thị minh họa underfitting/overfitting."
+  },
+  {
+    "title": "Mạng Neural Networks cơ bản",
+    "content": "-   **Perceptron:** Đơn vị xử lý cơ bản của mạng neural.\n-   **Gradient Descent:** Thuật toán tối ưu hóa để điều chỉnh trọng số.\n-   **Lan truyền ngược (Backpropagation):** Phương pháp huấn luyện mạng hiệu quả.\n-   **Hàm kích hoạt & Hàm mất mát:** Các thành phần thiết yếu trong cấu trúc mạng.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Sơ đồ minh họa một Perceptron đơn giản hoặc một mạng neural network với các lớp và kết nối."
+  },
+  {
+    "title": "Deep Learning và các kỹ thuật tối ưu",
+    "content": "-   **Perceptron Đa Lớp (MLP):** Nền tảng của Deep Learning.\n-   **Tối ưu hóa:** Stochastic Gradient Descent (SGD) và Mini-Batch Gradient Descent.\n-   **Các biến thể:** Tổng quan về các phương pháp tối ưu Gradient Descent khác.\n-   **Chống Overfitting:** Kỹ thuật Dropout và Gaussian Noise.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Sơ đồ kiến trúc mạng neural sâu (Deep Neural Network) với nhiều lớp ẩn, hoặc biểu đồ minh họa quá trình tối ưu hóa của Gradient Descent."
+  },
+  {
+    "title": "Tổng quan về Computer Vision",
+    "content": "-   **Cơ bản:** Convolutional Layers và Pooling Techniques.\n-   **Bài toán:** Phân loại ảnh, Phát hiện đối tượng (YOLO, SSD), Phân đoạn ảnh (U-Net).\n-   **Kỹ thuật nâng cao:** Transfer Learning, Image Augmentation, GANs.\n-   **Xu hướng mới:** Vision Transformers (ViT), CLIP và học đa phương thức.",
+    "layout_hint": "title-and-content",
+    "image_suggestion": "Hình ảnh minh họa các ứng dụng của Computer Vision như nhận diện vật thể trong ảnh, phân đoạn ảnh hoặc một ví dụ về GANs tạo ảnh."
+  }
+]

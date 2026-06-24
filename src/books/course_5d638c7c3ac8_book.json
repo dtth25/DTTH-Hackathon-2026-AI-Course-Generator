@@ -1,0 +1,271 @@
+{
+  "title": "Sách học tập từ tài liệu đã tải lên",
+  "description": "Bản sách MVP dành cho sinh viên, được dựng trực tiếp từ các đoạn nội dung đã index trong tài liệu.",
+  "estimated_duration": "3-5 giờ",
+  "chapters": [
+    {
+      "title": "Chương 1: Nếu sử dụng hàm scanf printf cũng như",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 1.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Nếu sử dụng hàm scanf, printf (cũng như fscanf, fprintf, v.v.), nên sử dụng định dạng %lld. Sample Input Sample Output 3 1 2 3 2 3 5 23 Ước chung lớn nhất 1s | 128MB https://www.luogu.com.cn/problem/P2568 Cho số nguyên dương 𝑛, tìm số lượng cặp (𝑥, 𝑦) sao cho 1 ≤𝑥, 𝑦≤𝑛 và gcd(𝑥, 𝑦) là số nguyên tố. INPUT Một dòng duy nhất chứa một số nguyên, biểu diễn 𝑛. OUTPUT Một dòng duy nhất biểu diễn câu trả lời là một số nguyên. GIỚI HẠN  Với 100% dữ liệu, đảm bảo 1 ≤𝑛≤10଻. Sample Input Sample Output 4 4 Với ví dụ, các cặp (𝑥, 𝑦) thỏa mãn là (2,2), (2,4), (3,3), (4,2). Cách dùng đúng của Chúa và tập hợp 1s | 128MB https://\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Nếu sử dụng hàm scanf, printf (cũng như fscanf, fprintf, v.v.), nên sử dụng định dạng %lld. Sample Input Sample Output 3 1 2 3 2 3 5 23 Ước chung lớn nhất 1s | 128MB https://www.lu",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 1.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Nếu sử dụng hàm scanf, printf (cũng như fscanf, fprintf, v.v.), nên sử dụng định dạng %lld. Sample Input Sample Output 3 1 2 3 2 3 5 23 Ước chung lớn nhất 1s | 128MB https://www.luogu.com.cn/problem/P2568 Cho số nguyên dương 𝑛, tìm số lượng cặp (𝑥, 𝑦) sao cho 1 ≤𝑥, 𝑦≤𝑛 và gcd(𝑥, 𝑦) là số nguyên tố. INPUT Một dòng duy nhất chứa một số nguyên, biểu diễn 𝑛. OUTPUT Một dòng duy nhất biểu diễn câu trả lời là một số nguyên. GIỚI HẠN  Với 100% dữ liệu, đảm bảo 1 ≤𝑛≤10଻. Sample Input Sample Output 4 4 Với ví dụ, các cặp (𝑥, 𝑦) thỏa mãn là (2,2), (2,4), (3,3), (4,2). Cách dùng đúng của Chúa và tập hợp 1s | 128MB https://\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Nếu sử dụng hàm scanf, printf (cũng như fscanf, fprintf, v.v.), nên sử dụng định dạng %lld. Sample Input Sample Output 3 1 2 3 2 3 5 23 Ước chung lớn nhất 1s | 128MB https://www.lu",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 2: Đối với 100 dữ liệu đảm bảo 1",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 2.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": " Đối với 100% dữ liệu, đảm bảo 1 ≤𝑛, 𝑘≤10ଽ. Sample Input Sample Output 10 5 29 Giải thích ví dụ 1: 𝐺(10,5) = 0 + 1 + 2 + 1 + 0 + 5 + 5 + 5 + 5 + 5 = 29. Xúc xắc 1s | 128MB https://www.luogu.com.cn/problem/P1409 MÔ TẢ 𝑛 người xếp thành một hàng, bạn đứng ở vị trí thứ 𝑚. Mỗi vòng, người đứng đầu hàng sẽ tung một con xúc xắc.  Nếu tung được 1, người đứng đầu hàng sẽ thắng.  Nếu tung được 2,4,6, người đứng đầu hàng sẽ chuyển xuống đứng cuối hàng.  Nếu tung được 3,5, người đứng đầu hàng sẽ rời khỏi hàng. Nếu trong hàng chỉ còn lại một người, người đó sẽ thắng. Tính xác suất bạn thắng. INPUT Một dòng gồm hai số ngu\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            " Đối với 100% dữ liệu, đảm bảo 1 ≤𝑛, 𝑘≤10ଽ. Sample Input Sample Output 10 5 29 Giải thích ví dụ 1: 𝐺(10,5) = 0 + 1 + 2 + 1 + 0 + 5 + 5 + 5 + 5 + 5 = 29. Xúc xắc 1s | 128MB https:/",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 2.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": " Đối với 100% dữ liệu, đảm bảo 1 ≤𝑛, 𝑘≤10ଽ. Sample Input Sample Output 10 5 29 Giải thích ví dụ 1: 𝐺(10,5) = 0 + 1 + 2 + 1 + 0 + 5 + 5 + 5 + 5 + 5 = 29. Xúc xắc 1s | 128MB https://www.luogu.com.cn/problem/P1409 MÔ TẢ 𝑛 người xếp thành một hàng, bạn đứng ở vị trí thứ 𝑚. Mỗi vòng, người đứng đầu hàng sẽ tung một con xúc xắc.  Nếu tung được 1, người đứng đầu hàng sẽ thắng.  Nếu tung được 2,4,6, người đứng đầu hàng sẽ chuyển xuống đứng cuối hàng.  Nếu tung được 3,5, người đứng đầu hàng sẽ rời khỏi hàng. Nếu trong hàng chỉ còn lại một người, người đó sẽ thắng. Tính xác suất bạn thắng. INPUT Một dòng gồm hai số ngu\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            " Đối với 100% dữ liệu, đảm bảo 1 ≤𝑛, 𝑘≤10ଽ. Sample Input Sample Output 10 5 29 Giải thích ví dụ 1: 𝐺(10,5) = 0 + 1 + 2 + 1 + 0 + 5 + 5 + 5 + 5 + 5 = 29. Xúc xắc 1s | 128MB https:/",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 3: Sample input sample output 3 4 5 25",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 3.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Sample Input Sample Output 3 4 5 -25.0 159 473 824 -445561.0 Khi cos⟨𝑎⃗, 𝑏ሬ⃗⟩= 0, cos⟨𝑏ሬ⃗, 𝑐⃗⟩= − ସ ହ, cos⟨𝑐⃗, 𝑎⃗⟩= − ଷ ହ thì đáp án nhỏ nhất. Tích các giai thừa 1s | 128MB https://www.luogu.com.cn/problem/P2388 Tính số lượng số không ở cuối 1! × 2! × 3! × 4! × ⋯× 𝑛!. INPUT Một dòng, một số nguyên 𝑛 (𝑛≤10଼). OUTPUT Xuất ra đáp án, biểu thị số lượng số không. Sample Input Sample Output 10 7 Phép màu 4s | 128MB https://www.luogu.com.cn/problem/P5440 Chúng ta gọi một ngày tháng là một số có tám chữ số, trong đó các chữ số 1 ∼4 tạo thành năm, các chữ số 5 ∼6 tạo thành tháng, và các chữ số 7 ∼8 tạo thành ngày. Nếu khô\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Sample Input Sample Output 3 4 5 -25.0 159 473 824 -445561.0 Khi cos⟨𝑎⃗, 𝑏ሬ⃗⟩= 0, cos⟨𝑏ሬ⃗, 𝑐⃗⟩= − ସ ହ, cos⟨𝑐⃗, 𝑎⃗⟩= − ଷ ହ thì đáp án nhỏ nhất. Tích các giai thừa 1s | 128MB https:/",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 3.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "Sample Input Sample Output 3 4 5 -25.0 159 473 824 -445561.0 Khi cos⟨𝑎⃗, 𝑏ሬ⃗⟩= 0, cos⟨𝑏ሬ⃗, 𝑐⃗⟩= − ସ ହ, cos⟨𝑐⃗, 𝑎⃗⟩= − ଷ ହ thì đáp án nhỏ nhất. Tích các giai thừa 1s | 128MB https://www.luogu.com.cn/problem/P2388 Tính số lượng số không ở cuối 1! × 2! × 3! × 4! × ⋯× 𝑛!. INPUT Một dòng, một số nguyên 𝑛 (𝑛≤10଼). OUTPUT Xuất ra đáp án, biểu thị số lượng số không. Sample Input Sample Output 10 7 Phép màu 4s | 128MB https://www.luogu.com.cn/problem/P5440 Chúng ta gọi một ngày tháng là một số có tám chữ số, trong đó các chữ số 1 ∼4 tạo thành năm, các chữ số 5 ∼6 tạo thành tháng, và các chữ số 7 ∼8 tạo thành ngày. Nếu khô\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "Sample Input Sample Output 3 4 5 -25.0 159 473 824 -445561.0 Khi cos⟨𝑎⃗, 𝑏ሬ⃗⟩= 0, cos⟨𝑏ሬ⃗, 𝑐⃗⟩= − ସ ହ, cos⟨𝑐⃗, 𝑎⃗⟩= − ଷ ହ thì đáp án nhỏ nhất. Tích các giai thừa 1s | 128MB https:/",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 4: Phần 4 phương trình đồng dư 1s 128mb",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 4.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "PHẦN 4 Phương trình đồng dư 1s | 128MB https://www.luogu.com.cn/problem/P1082 Tìm nghiệm nguyên dương nhỏ nhất của 𝑥 cho phương trình đồng dư 𝑎𝑥≡1 (mod 𝑏). INPUT Một dòng, chứa hai số nguyên 𝑎, 𝑏, cách nhau bởi một dấu cách. OUTPUT Một số nguyên 𝑥଴, là nghiệm nguyên dương nhỏ nhất. Dữ liệu đầu vào đảm bảo luôn có nghiệm. GIỚI HẠN  Với 40% dữ liệu, 2 ≤𝑏≤1,000;  Với 60% dữ liệu, 2 ≤𝑏≤50,000,000;  Với 100% dữ liệu, 2 ≤𝑎, 𝑏≤2,000,000,000. Sample Input Sample Output 3 10 7 Ước Chung Lớn Nhất 1s | 128MB https://www.luogu.com.cn/problem/P2398 MÔ TẢ Tính tổng ෍෍𝑔 ௡ ௝ୀଵ ௡ ௜ୀଵ 𝑐𝑑(𝑖, 𝑗) INPUT Dòng đầu tiên là một số nguy\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "PHẦN 4 Phương trình đồng dư 1s | 128MB https://www.luogu.com.cn/problem/P1082 Tìm nghiệm nguyên dương nhỏ nhất của 𝑥 cho phương trình đồng dư 𝑎𝑥≡1 (mod 𝑏). INPUT Một dòng, chứa hai",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 4.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "PHẦN 4 Phương trình đồng dư 1s | 128MB https://www.luogu.com.cn/problem/P1082 Tìm nghiệm nguyên dương nhỏ nhất của 𝑥 cho phương trình đồng dư 𝑎𝑥≡1 (mod 𝑏). INPUT Một dòng, chứa hai số nguyên 𝑎, 𝑏, cách nhau bởi một dấu cách. OUTPUT Một số nguyên 𝑥଴, là nghiệm nguyên dương nhỏ nhất. Dữ liệu đầu vào đảm bảo luôn có nghiệm. GIỚI HẠN  Với 40% dữ liệu, 2 ≤𝑏≤1,000;  Với 60% dữ liệu, 2 ≤𝑏≤50,000,000;  Với 100% dữ liệu, 2 ≤𝑎, 𝑏≤2,000,000,000. Sample Input Sample Output 3 10 7 Ước Chung Lớn Nhất 1s | 128MB https://www.luogu.com.cn/problem/P2398 MÔ TẢ Tính tổng ෍෍𝑔 ௡ ௝ୀଵ ௡ ௜ୀଵ 𝑐𝑑(𝑖, 𝑗) INPUT Dòng đầu tiên là một số nguy\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "PHẦN 4 Phương trình đồng dư 1s | 128MB https://www.luogu.com.cn/problem/P1082 Tìm nghiệm nguyên dương nhỏ nhất của 𝑥 cho phương trình đồng dư 𝑎𝑥≡1 (mod 𝑏). INPUT Một dòng, chứa hai",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 5: Output một dòng một số nguyên biểu thị",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 5.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "OUTPUT Một dòng, một số nguyên, biểu thị đáp án. GIỚI HẠN Bài toán này sử dụng kiểm thử theo gói  Subtask 1 (20%): 𝑛, 𝑘≤10  Subtask 2 (20%): 𝑛, 𝑘≤1000  Subtask 3 (60%): Không có ràng buộc đặc biệt Với 100% dữ liệu : 0 ≤𝑘< 𝑛≤10଺. Giải thích  Không cần thiết phải đọc các tài liệu sau. Tài liệu tham khảo  [1] 中国知网 - 四角链的一些极值问题 - 厦门大学 - 曾艳秋 http://kns.cnki.net/KCMS/detail/detail.aspx?dbcode=CMFD&filename=2007056552.nh  [2] 中国知网 - 关于四角仙人掌图的海明优美性 - 吉林工程技术师范学院教育技术中心;海南大学理 工学院 - 李秀芬;潘伟 http://www.cnki.net.cn/Article/CJFDTotal-CCYD200806009.htm Sample Input Sample Output 10 5 42525 642 357 409821948 666666 233333 79\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "OUTPUT Một dòng, một số nguyên, biểu thị đáp án. GIỚI HẠN Bài toán này sử dụng kiểm thử theo gói  Subtask 1 (20%): 𝑛, 𝑘≤10  Subtask 2 (20%): 𝑛, 𝑘≤1000  Subtask 3 (60%): Không có",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 5.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "OUTPUT Một dòng, một số nguyên, biểu thị đáp án. GIỚI HẠN Bài toán này sử dụng kiểm thử theo gói  Subtask 1 (20%): 𝑛, 𝑘≤10  Subtask 2 (20%): 𝑛, 𝑘≤1000  Subtask 3 (60%): Không có ràng buộc đặc biệt Với 100% dữ liệu : 0 ≤𝑘< 𝑛≤10଺. Giải thích  Không cần thiết phải đọc các tài liệu sau. Tài liệu tham khảo  [1] 中国知网 - 四角链的一些极值问题 - 厦门大学 - 曾艳秋 http://kns.cnki.net/KCMS/detail/detail.aspx?dbcode=CMFD&filename=2007056552.nh  [2] 中国知网 - 关于四角仙人掌图的海明优美性 - 吉林工程技术师范学院教育技术中心;海南大学理 工学院 - 李秀芬;潘伟 http://www.cnki.net.cn/Article/CJFDTotal-CCYD200806009.htm Sample Input Sample Output 10 5 42525 642 357 409821948 666666 233333 79\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "OUTPUT Một dòng, một số nguyên, biểu thị đáp án. GIỚI HẠN Bài toán này sử dụng kiểm thử theo gói  Subtask 1 (20%): 𝑛, 𝑘≤10  Subtask 2 (20%): 𝑛, 𝑘≤1000  Subtask 3 (60%): Không có",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chương 6: Nguyên dương thì in ra số lượng nghiệm",
+      "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
+      "lessons": [
+        {
+          "title": "Bài 6.1: Đọc hiểu nội dung chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "nguyên dương, thì in ra số lượng nghiệm nguyên dương, giá trị nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên dương, giá trị nhỏ nhất của 𝑦 trong tất cả các nghiệm nguyên dương, giá trị lớn nhất của 𝑥 trong tất cả các nghiệm nguyên dương, và giá trị lớn nhất của 𝑦 trong tất cả các nghiệm nguyên dương. Nếu phương trình có nghiệm nguyên, nhưng không có nghiệm nguyên dương, bạn cần in ra giá trị nguyên dương nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên, giá trị nguyên dương nhỏ nhất của 𝑦.\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "nguyên dương, thì in ra số lượng nghiệm nguyên dương, giá trị nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên dương, giá trị nhỏ nhất của 𝑦 trong tất cả các nghiệm nguyên dương, giá ",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        },
+        {
+          "title": "Bài 6.2: Ghi nhớ và vận dụng ý chính",
+          "duration": "20-30 phút",
+          "objectives": [
+            "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
+            "Giải thích lại nội dung bằng ngôn ngữ của người học."
+          ],
+          "lecture": "nguyên dương, thì in ra số lượng nghiệm nguyên dương, giá trị nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên dương, giá trị nhỏ nhất của 𝑦 trong tất cả các nghiệm nguyên dương, giá trị lớn nhất của 𝑥 trong tất cả các nghiệm nguyên dương, và giá trị lớn nhất của 𝑦 trong tất cả các nghiệm nguyên dương. Nếu phương trình có nghiệm nguyên, nhưng không có nghiệm nguyên dương, bạn cần in ra giá trị nguyên dương nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên, giá trị nguyên dương nhỏ nhất của 𝑦.\n\nKhi học phần này, người học nên xác định các khái niệm then chốt, ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu.",
+          "key_points": [
+            "nguyên dương, thì in ra số lượng nghiệm nguyên dương, giá trị nhỏ nhất của 𝑥 trong tất cả các nghiệm nguyên dương, giá trị nhỏ nhất của 𝑦 trong tất cả các nghiệm nguyên dương, giá ",
+            "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+            "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn."
+          ],
+          "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+          "assessment": [
+            "Ý chính của phần này là gì?",
+            "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?"
+          ]
+        }
+      ]
+    }
+  ]
+}

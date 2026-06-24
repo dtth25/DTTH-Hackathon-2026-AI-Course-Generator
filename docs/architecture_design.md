@@ -1,122 +1,85 @@
-# Architecture & Data Flow Design
+# Architecture Design
 
-## 1. System Topology
+## 1. System Overview
 
-```
-Client (Next.js App Router)
-  |
-  | fetch()
-  v
-FastAPI backend
-  |
-  +-- Document processing: PDF/DOCX/TXT -> LangChain Documents
-  +-- Chunking: RecursiveCharacterTextSplitter
-  +-- Embeddings: Gemini `models/embedding-001`
-  +-- Vector store: FAISS local disk index
-  +-- Generation: Gemini `gemini-2.5-flash`
-  +-- Persistence: local JSON/generated files
+```text
+Frontend (Next.js)
+  -> FastAPI Backend
+  -> Document Processor
+  -> FAISS Local Index
+  -> ResourceGenerator
+  -> Local Generated Artifacts
 ```
 
-## 2. Ingestion Pipeline
+Public product surface chỉ có 4 output:
+- Book
+- Slide
+- Quiz
+- Vid
 
-1. `POST /api/upload` nhận một file multipart field `file`.
-2. Backend validate filename, extension, empty content và giới hạn 50MB.
-3. File được lưu vào `uploads/`.
-4. Backend tạo `course_id`, ghi metadata vào `questions/course_{course_id}_meta.json`.
-5. Background thread parse và index tài liệu.
+## 2. Upload & Indexing Flow
 
-### Supported Files
+1. Frontend gửi `POST /api/upload` với multipart field `file`.
+2. Backend validate extension, empty file và size <= 50MB.
+3. Backend lưu file vào `uploads/`, tạo `course_id`, ghi metadata vào `questions/course_{course_id}_meta.json`.
+4. Background thread parse text bằng document processor.
+5. Text được chunk, embed bằng Gemini embeddings và lưu vào FAISS local index.
+6. Khi index sẵn sàng, status chuyển thành `ready`.
 
-| Type | Implementation |
-|------|----------------|
-| PDF | PyMuPDF (`fitz`), OCR fallback bằng pytesseract khi page không có text |
-| DOCX | `python-docx` |
-| TXT | built-in text read với UTF-8 ignore errors |
+## 3. Generation Flow
 
-## 3. RAG Pipeline
-
-```
-raw documents
-  -> text chunks
-  -> metadata `{page, source_file, chunk_id, course_id}`
-  -> Gemini embeddings
-  -> FAISS index at `indices/faiss_{course_id}/`
-  -> retriever top-k docs
-  -> Gemini generation
-  -> response + citations
+```text
+course_id
+  -> load FAISS vectorstore
+  -> retrieve top-k chunks
+  -> prompt Gemini
+  -> normalize/fallback
+  -> save artifact
+  -> return public response
 ```
 
-Current chunking uses `RecursiveCharacterTextSplitter` with:
-- `chunk_size=1200`
-- `chunk_overlap=200`
+Resource generation nằm trong `ResourceGenerator`:
+- `generate_book`
+- `generate_slides_v2`
+- `generate_quiz_v2`
+- `generate_vid`
 
-Citation metadata is attached before indexing:
-- `page`
-- `source_file`
-- `chunk_id`
-- `course_id`
+FAISS metadata vẫn được giữ nội bộ cho retrieval/debug, nhưng public response không trả `page`, `source`, `chunk_id`.
 
-## 4. Course Management
+## 4. Backend Modules
 
-`CourseManager` owns course lifecycle:
-- Scans existing FAISS metadata files at startup.
-- Lazy-loads FAISS indices on demand.
-- Keeps an in-memory LRU cache of loaded courses.
-- Persists course status and generated resources on local filesystem.
+| Module | Responsibility |
+| --- | --- |
+| `backend.main` | FastAPI routes, validation, response shape |
+| `backend.services.course_gen` | Course lifecycle, lazy loading, LRU cache |
+| `backend.services.doc_processor` | PDF/DOCX/TXT extraction |
+| `backend.services.resource_gen` | Book, Slide, Quiz, Vid generation |
+| `backend.vector_db.faiss_manager` | FAISS create/load/list/drop |
+| `backend.core.prompts` | Prompt templates for 4 outputs |
+| `backend.core.config` | Paths, model factories, utility helpers |
 
-Course status values currently include:
-- `pending`
-- `ready`
-- `failed`
-- `unknown`
+## 5. Local Storage
 
-## 5. Generation Features
+| Path | Purpose |
+| --- | --- |
+| `uploads/` | Original uploaded files |
+| `indices/faiss_{course_id}/` | FAISS index |
+| `indices/faiss_{course_id}.json` | FAISS metadata |
+| `questions/course_{course_id}_meta.json` | Course lifecycle metadata |
+| `questions/course_{course_id}_questions.json` | Quiz JSON |
+| `books/course_{course_id}_book.json` | Book JSON |
+| `books/course_{course_id}_book.pdf` | Book PDF |
+| `slides/course_{course_id}_slides.json` | Slide JSON |
+| `videos/course_{course_id}/vid.json` | Vid metadata |
+| `videos/course_{course_id}/vid.mp4` | Vid MP4 |
 
-Generation is handled by `ResourceGenerator`, `MindmapGenerator` and `CustomProcessor`.
+## 6. Architecture Decisions
 
-Supported current outputs:
-- Course structure
-- Summary
-- Flashcards
-- Quiz/questions
-- Slides JSON
-- Mind map JSON
-- Study guide
-- Podcast script/audio
-- Custom prompt output
-
-All AI generation endpoints must return citations when they produce AI content.
-
-## 6. Storage Layout
-
-Runtime folders are local and created by backend config when needed:
-
-| Folder | Purpose |
-|--------|---------|
-| `uploads/` | Uploaded source files |
-| `indices/` | FAISS indices and FAISS metadata |
-| `questions/` | Course metadata, syllabus, questions |
-| `guides/` | Summary and study guide markdown |
-| `flashcards/` | Flashcard JSON |
-| `mindmaps/` | Mind map JSON |
-| `audio/` | Podcast script/audio |
-| `tasks/` | Background task status |
-| `custom_prompts/` | Custom prompt history |
-
-## 7. Key Design Decisions
-
-| Decision | Current Choice | Rationale |
-|----------|----------------|-----------|
-| Vector DB | FAISS local disk | Simple Hackathon setup, no external service required |
-| AI provider | Gemini | Matches current code and env requirements |
-| Memory | Local JSON/files | No auth/session service in v1 |
-| API boundary | Frontend -> FastAPI -> LLM | Prevents client-side LLM key exposure |
-| Citation | FAISS chunk metadata | Keeps AI output traceable to source document chunks |
-
-## 8. Deprecated/Not Current
-
-The current code does **not** use these as active stack:
-- External vector service
-- Zep session memory
-- Claude/GPT-4o as primary model
-- OpenAI embeddings as active embedding implementation
+| Decision | Choice | Reason |
+| --- | --- | --- |
+| Public outputs | Book, Slide, Quiz, Vid | Hackathon scope rõ, ít phân tán |
+| AI boundary | Frontend -> FastAPI -> LLM | Không expose API key ở client |
+| Retrieval | FAISS local | Dễ chạy demo, không cần external vector DB |
+| Book export | JSON + PDF | UI đọc nhanh, PDF dễ chia sẻ |
+| Public metadata | Không trả page/source/chunk | Product mới không hiển thị source metadata |
+| Auth | Không có trong v1 | Tập trung core generation flow |
