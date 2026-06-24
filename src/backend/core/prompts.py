@@ -214,10 +214,14 @@ BẠN LÀ CHUYÊN GIA THIẾT KẾ CHƯƠNG TRÌNH ĐÀO TẠO CẤP CAO.
 NHIỆM VỤ: Phân tích [CONTEXT] và xây dựng một khóa học hoàn chỉnh cho đối tượng "{target_audience}".
 YÊU CẦU BỔ SUNG: {user_prompt}
 
+⚠️ LỌC NỘI DUNG ĐẦU VÀO (BẮT BUỘC):
+- BỎ QUA hoàn toàn các phần: BAN BIÊN TẬP, LỜI NÓI ĐẦU, MỤC LỤC, GIỚI THIỆU SÁCH, PHỤ LỤC, TRANG BẢN QUYỀN, THÔNG TIN XUẤT BẢN, LỜI CẢM ƠN. Chỉ lấy nội dung học thuật chính (các chương bài giảng, lý thuyết, bài tập).
+- KHÔNG tạo khóa học từ mục lục hoặc tiêu đề chương — phải lấy từ nội dung chi tiết bên trong tài liệu.
+
 YÊU CẦU ĐẦU RA (CHỈ XUẤT RAW JSON):
 {{
-  "title": "Tên khóa học (súc tích, hấp dẫn)",
-  "description": "Mô tả tổng quan khóa học (2-3 câu)",
+  "title": "Tên khóa học (súc tích, hấp dẫn, phản ánh đúng nội dung tài liệu)",
+  "description": "Mô tả tổng quan khóa học (2-3 câu, tập trung vào kiến thức người học sẽ đạt được)",
   "estimated_duration": "Ví dụ: 4-6 giờ",
   "chapters": [
     {{
@@ -228,19 +232,22 @@ YÊU CẦU ĐẦU RA (CHỈ XUẤT RAW JSON):
           "title": "Bài Y: [Tên bài học cụ thể]",
           "duration": "20-30 phút",
           "objectives": [
-            "Mục tiêu học tập cụ thể 1",
+            "Mục tiêu học tập cụ thể 1 — khác biệt về chủ đề và cấp độ tư duy so với mục tiêu 2",
             "Mục tiêu học tập cụ thể 2"
           ],
           "lecture": "Nội dung bài giảng 2-4 đoạn, diễn giải rõ ý từ tài liệu gốc. Không chỉ nêu outline.",
           "key_points": [
-            "Ý chính cần ghi nhớ 1",
-            "Ý chính cần ghi nhớ 2",
-            "Ý chính cần ghi nhớ 3"
+            "Ý chính cần ghi nhớ 1 — liên quan trực tiếp đến nội dung bài, không chung chung",
+            "Ý chính cần ghi nhớ 2 — ví dụ hoặc dẫn chứng kèm theo để minh họa",
+            "Ý chính cần ghi nhớ 3 — mối liên hệ giữa ý này với các bài học trước/sau",
+            "Ý chính cần ghi nhớ 4 — ứng dụng thực tế hoặc bài tập vận dụng ngắn",
+            "Ý chính cần ghi nhớ 5 — câu hỏi gợi mở để người học tự suy luận thêm"
           ],
-          "activity": "Hoạt động/thảo luận/bài tập ngắn để người học thực hành",
+          "activity": "Hoạt động/thảo luận/bài tập ngắn để người học thực hành, khác biệt theo nội dung từng bài",
           "assessment": [
-            "Câu hỏi kiểm tra nhanh 1",
-            "Câu hỏi kiểm tra nhanh 2"
+            "Câu hỏi tái hiện kiến thức (nhận biết): thuật ngữ/sự kiện/khái niệm cốt lõi",
+            "Câu hỏi thông hiểu (giải thích): yêu cầu người học diễn giải lại bằng lời của mình",
+            "Câu hỏi vận dụng (áp dụng): tình huống hoặc bài toán yêu cầu dùng kiến thức vừa học"
           ]
         }}
       ]
@@ -248,12 +255,14 @@ YÊU CẦU ĐẦU RA (CHỈ XUẤT RAW JSON):
   ]
 }}
 
-QUY TẮC:
-- Chia từ 3-6 chương.
-- Mỗi chương có 2-3 bài học nhỏ.
+QUY TẮC NGHIÊM NGẶT:
+- Chia từ 3-6 chương, mỗi chương 2-3 bài học.
 - Mỗi bài học PHẢI có nội dung giảng dạy trong trường "lecture", không được chỉ trả về title.
 - "lecture", "key_points", "activity", "assessment" phải bám sát dữ liệu trong [CONTEXT], không thêm kiến thức ngoài tài liệu.
+- "key_points" phải có ĐÚNG 5 ý, mỗi ý thuộc một dạng khác nhau (nhận biết → ví dụ → liên hệ → ứng dụng → gợi mở).
+- "assessment" phải có ĐÚNG 3 câu hỏi thuộc 3 cấp độ khác nhau (nhận biết → thông hiểu → vận dụng).
 - Nội dung logic từ cơ bản đến nâng cao dựa trên tài liệu.
+- TUYỆT ĐỐI KHÔNG đưa ban biên tập, lời nói đầu, mục lục vào nội dung khóa học.
 
 [CONTEXT]:
 {context}
@@ -485,13 +494,13 @@ ASSISTANT: - Ý 1: ...
 
 === USER: So sánh phương pháp thực nghiệm và phương pháp mô hình ===
 ASSISTANT: | Tiêu chí | Thực nghiệm | Mô hình |
-           |----------|-------------|---------|
-           | ...      | ...         | ...     |
-           (TABLE format, 4-6 tiêu chí)
+            |----------|-------------|---------|
+            | ...      | ...         | ...     |
+            (TABLE format, 4-6 tiêu chí)
 
 === USER: Xuất các định luật Newton dưới dạng JSON ===
 ASSISTANT: [{{"law": 1, "name": "Quán tính", "formula": null}}, ...]
-           (JSON format, không giải thích)
+            (JSON format, không giải thích)
 
 === USER: Cho tôi biết về thuyết tương đối ===
 ASSISTANT: (EXPLAIN format)

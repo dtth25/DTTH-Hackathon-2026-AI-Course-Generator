@@ -377,10 +377,10 @@ def run_background_task(task_id: str, course_id: str, task_type: str, **kwargs):
                 kwargs.get("difficulty", "medium")
             ),
             
-            # 4.5 Slides: Trả về JSON list (bỏ latex_code cũ)
-            "slides": lambda: res_gen.generate_slides_v2(
-                kwargs["topic"], 
-                kwargs.get("num_slides", 10)
+            # 4.5 Slides: Trả về HTML presentation (Reveal.js)
+            "slides": lambda: res_gen.generate_slides_html(
+                topic=kwargs["topic"], 
+                num_slides=kwargs.get("num_slides", 10)
             ),
             
             "podcast": handle_podcast,
@@ -672,14 +672,8 @@ async def api_generate_quiz(req: GenerateQuizRequest):
 @app.post("/api/generate-slides")
 async def api_generate_slides(req: GenerateSlidesRequest):
     rag = get_course(req.course_id)
-    result = rag.get_resource_generator().generate_slides_v2(req.topic, req.num_slides)
-    return {
-        "course_id": req.course_id,
-        "topic": req.topic,
-        "total_slides": req.num_slides,
-        "slides": result.get("slides", []),
-        "citations": result.get("citations", []),
-    }
+    html = rag.get_resource_generator().generate_slides_html(topic=req.topic, num_slides=req.num_slides)
+    return HTMLResponse(content=html)
 
 @app.get("/api/course/{course_id}/slides/html")
 async def get_slides_html(course_id: str, topic: str = "", num_slides: Optional[int] = None):

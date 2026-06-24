@@ -166,7 +166,9 @@ Request:
 }
 ```
 
-Response fields: `course_id`, `topic`, `total_slides`, `slides`, `citations`.
+Response: Returns `text/html` — a self-contained Reveal.js HTML presentation with citation footers, hero title slide, two-column content layout with images, and bullet-by-bullet fragment animations.
+
+Async version (`POST /api/generate-slides-async`) stores the same HTML string as task result.
 
 ### `POST /api/generate-mindmap`
 

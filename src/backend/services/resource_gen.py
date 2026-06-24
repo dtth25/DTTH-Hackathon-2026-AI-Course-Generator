@@ -50,8 +50,8 @@ class ResourceGenerator:
         self.course_id = rag_chains.course_id
         self.vectorstore = rag_chains.vectorstore
         
-    def _get_citations(self, docs):
         """Tạo danh sách trích dẫn từ Metadata của tài liệu."""
+    def _get_citations(self, docs):
         return [
             {
                 "page": d.metadata.get("page", 1),
@@ -108,28 +108,38 @@ class ResourceGenerator:
 
     def _build_lesson_from_point(self, point, title: str, index_label: str):
         source_note = f"Trang {point['page']} - {point['source']}"
+        text = point["text"]
+        text_short = text[:180] if len(text) > 180 else text
+
+        # Extract key terms from text for diverse generation (truncated to avoid excessive length)
+        terms = [w.strip() for w in text.split()[:5] if len(w.strip()) > 3][:3]
+        term_str = ", ".join(terms) if terms else "nội dung trọng tâm"
+
         return {
             "title": title,
             "duration": "20-30 phút",
             "objectives": [
-                "Nắm được ý chính và thuật ngữ trọng tâm của phần này.",
-                "Giải thích lại nội dung bằng ngôn ngữ của người học.",
+                f"Nắm được khái niệm cốt lõi về {term_str} từ đoạn trích.",
+                f"Phân tích được mối quan hệ giữa các ý trong phần {index_label}.",
             ],
             "lecture": (
                 f"Phần {index_label} tập trung vào nội dung từ {source_note}.\n\n"
-                f"{point['text']}\n\n"
+                f"{text}\n\n"
                 "Khi học phần này, người học nên đọc kỹ đoạn gốc, xác định các khái niệm then chốt "
                 "và liên hệ chúng với mục tiêu chung của tài liệu."
             ),
             "key_points": [
-                point["text"][:180],
-                f"Nội dung này được trace từ {source_note}.",
-                "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+                f"Ý chính: {text_short}",
+                f"Ví dụ/dẫn chứng từ nguồn: {source_note} cung cấp thông tin về {term_str}.",
+                f"Liên hệ: Nội dung này có thể liên quan đến các khái niệm đã học trước đó về {term_str}.",
+                f"Ứng dụng: Hãy tìm một tình huống thực tế để minh họa cho {term_str}.",
+                f"Gợi mở: Nếu {term_str} thay đổi, hệ quả sẽ như thế nào theo tài liệu?",
             ],
-            "activity": "Yêu cầu người học tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+            "activity": f"Yêu cầu người học tóm tắt phần {index_label} bằng 3 gạch đầu dòng, nêu 1 ví dụ cho {term_str}, và đặt 1 câu hỏi về nội dung chưa rõ.",
             "assessment": [
-                "Ý chính của phần này là gì?",
-                "Chi tiết nào trong tài liệu chứng minh cho ý chính đó?",
+                f"Nhận biết: Thuật ngữ '{term_str}' được định nghĩa như thế nào trong tài liệu?",
+                f"Thông hiểu: Hãy diễn giải lại bằng lời của bạn nội dung chính từ {source_note}.",
+                f"Vận dụng: Áp dụng kiến thức về {term_str} để giải quyết tình huống: [tình huống từ nội dung tài liệu].",
             ],
             "citation": {
                 "page": point["page"],
