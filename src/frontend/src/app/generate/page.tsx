@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import UploadBox from "@/components/UploadBox";
 import FeatureSelector, { type FeatureType } from "@/components/FeatureSelector";
 import PromptInput from "@/components/PromptInput";
@@ -29,6 +30,7 @@ type CourseStatus = CourseStatusResponse["status"] | "idle";
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function GeneratePage() {
+  const router = useRouter();
   const [selectedFeature, setSelectedFeature] = useState<FeatureType | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
@@ -101,7 +103,7 @@ export default function GeneratePage() {
     try {
       const response = await generateContent(selectedFeature, courseId, prompt);
       setResult(response);
-      setCitations(response.citations ?? []);
+      setCitations((response as { citations?: Citation[] }).citations ?? []);
       toast.success("Đã tạo nội dung.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Có lỗi xảy ra khi tạo nội dung.";
@@ -185,6 +187,7 @@ export default function GeneratePage() {
         </Card>
       )}
 
+
       <div className="mb-8 w-full max-w-3xl">
         <FeatureSelector selected={selectedFeature} onSelect={setSelectedFeature} />
       </div>
@@ -198,11 +201,23 @@ export default function GeneratePage() {
       </div>
 
       {result && selectedFeature && (
-        <ResultRenderer
-          feature={selectedFeature}
-          result={result}
-          citations={citations}
-        />
+        <div>
+          <ResultRenderer
+            feature={selectedFeature}
+            result={result}
+            citations={citations}
+          />
+          {selectedFeature === "slides" && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => router.push(`/slides/${courseId}`)}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors"
+              >
+                ▶ Xem trình chiếu
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

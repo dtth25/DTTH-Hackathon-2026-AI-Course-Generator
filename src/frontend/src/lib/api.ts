@@ -83,6 +83,147 @@ export interface GenerateCourseResponse {
   citations: Array<{ page: number; source: string; chunk_id: string }>;
 }
 
+/* ── Slides Types ──────────────────────────────────────── */
+
+/** Một slide trong response */
+export interface SlideItem {
+  title: string;
+  content: string;
+  layout_hint?: string;
+  image_suggestion?: string;
+  citation?: {
+    page: number | string;
+    source: string;
+    chunk_id: string;
+  };
+}
+
+/** Response từ POST /api/generate-slides */
+export interface SlidesResponse {
+  course_id: string;
+  topic: string;
+  total_slides: number;
+  slides: SlideItem[];
+  citations: Array<{ page: number; source: string; chunk_id: string }>;
+}
+
+/**
+ * Generate slides from course.
+ * POST /api/generate-slides
+ */
+export async function generateSlides(
+  courseId: string,
+  topic: string = "tổng quan",
+  numSlides: number = 10
+): Promise<SlidesResponse> {
+  const response = await fetch(ENDPOINTS.generateSlides, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      course_id: courseId,
+      topic,
+      num_slides: numSlides,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.message || `Lỗi tạo slides: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/* ── Flashcards Types ──────────────────────────────────── */
+
+/** Một flashcard */
+export interface FlashcardItem {
+  question: string;
+  answer: string;
+  citation?: {
+    page: number | string;
+    source: string;
+    chunk_id: string;
+  };
+}
+
+/** Response từ POST /api/generate-flashcards */
+export interface FlashcardsResponse {
+  course_id: string;
+  total: number;
+  flashcards: FlashcardItem[];
+  citations: Array<{ page: number | string; source: string; chunk_id: string }>;
+}
+
+/**
+ * Generate flashcards from course.
+ * POST /api/generate-flashcards
+ */
+export async function generateFlashcards(
+  courseId: string,
+  count: number = 12
+): Promise<FlashcardsResponse> {
+  const response = await fetch(ENDPOINTS.generateFlashcards, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      course_id: courseId,
+      count,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.message || `Lỗi tạo flashcards: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/* ── Mindmap Types ─────────────────────────────────────── */
+
+export interface MindmapNode {
+  title: string;
+  children?: (MindmapNode | string)[];
+}
+
+export interface MindmapData {
+  central_topic: string;
+  branches: MindmapNode[];
+}
+
+/** Response từ POST /api/generate-mindmap */
+export interface MindmapResponse {
+  course_id: string;
+  mindmap: MindmapData;
+  citations: Array<{ page: number | string; source: string; chunk_id: string }>;
+}
+
+/**
+ * Generate mindmap from course.
+ * POST /api/generate-mindmap
+ */
+export async function generateMindmap(
+  courseId: string,
+  maxDepth: number = 3
+): Promise<MindmapResponse> {
+  const response = await fetch(ENDPOINTS.generateMindmap, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      course_id: courseId,
+      max_depth: maxDepth,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.message || `Lỗi tạo mindmap: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 /* ── Quiz Types ────────────────────────────────────────── */
 
 /** Một câu hỏi trong quiz */
@@ -101,6 +242,17 @@ export interface QuizResponse {
   questions: QuizQuestion[];
   total_questions: number;
   citations?: Array<{ page: number; source: string; chunk_id: string }>;
+}
+
+/** Generic response parser with error handling */
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(
+      err?.detail || err?.message || `HTTP ${response.status}: ${response.statusText}`
+    );
+  }
+  return response.json();
 }
 
 /* ── Fetch helpers ─────────────────────────────────────── */
@@ -193,11 +345,32 @@ export async function generateQuiz(
  * POST /api/upload
  * Response: { file_id: string, pages: number, status: string }
  */
-export async function uploadFiles(files: File[]): Promise<{
-  file_id: string;
-  pages: number;
+/** Response từ POST /api/upload */
+export interface UploadResponse {
+  course_id: string;
+  filename: string;
   status: string;
-}> {
+  message: string;
+}
+
+/** Response từ GET /api/course/{course_id}/status */
+export interface CourseStatusResponse {
+  course_id: string;
+  status: string;
+  error?: string;
+}
+
+/** Response type cho generate content */
+export type GenerateResponse = Record<string, unknown>;
+
+/** Feature types for generateContent */
+export type GenerateFeature = "course" | "summary" | "flashcards" | "quiz" | "slides" | "mindmap" | "custom";
+
+/**
+ * Upload a single file to backend.
+ * POST /api/upload
+ */
+export async function uploadFile(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -207,6 +380,17 @@ export async function uploadFiles(files: File[]): Promise<{
   });
 
   return parseResponse<UploadResponse>(response);
+}
+
+/**
+ * Upload multiple files (uses first file only, matching backend's single-file API).
+ * POST /api/upload
+ */
+export async function uploadFiles(files: File[]): Promise<UploadResponse> {
+  if (files.length === 0) {
+    throw new Error("Không có file để tải lên.");
+  }
+  return uploadFile(files[0]);
 }
 
 export async function getCourseStatus(
