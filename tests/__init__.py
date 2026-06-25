@@ -1,0 +1,1 @@
+# E2E Integration tests for AI Course Generator

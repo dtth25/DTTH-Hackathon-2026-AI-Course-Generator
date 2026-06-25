@@ -1,0 +1,164 @@
+{
+  "upload": {
+    "success": {
+      "course_id": "test-course-123",
+      "filename": "document.pdf",
+      "status": "processing",
+      "message": "Upload thành công"
+    },
+    "error_invalid_format": {
+      "detail": "Định dạng file không hợp lệ. Hệ thống chỉ hỗ trợ: .pdf, .docx, .txt"
+    },
+    "error_empty": {
+      "detail": "File bạn upload là file rỗng. Vui lòng kiểm tra lại."
+    },
+    "file_exists": {
+      "detail": "File đã tồn tại"
+    }
+  },
+  "course": {
+    "success": {
+      "course_id": "test-course-123",
+      "modules": [
+        {
+          "title": "Module 1: Giới thiệu",
+          "key_points": ["Điểm chính 1", "Điểm chính 2", "Điểm chính 3"],
+          "content": "Nội dung module 1 với citation [1] và [2]",
+          "citations": [
+            {"page": 1, "source": "document.pdf", "chunk_id": "chunk_001"},
+            {"page": 2, "source": "document.pdf", "chunk_id": "chunk_002"}
+          ]
+        },
+        {
+          "title": "Module 2: Nội dung chính",
+          "key_points": ["Điểm A", "Điểm B"],
+          "content": "Nội dung module 2 với citation [3]",
+          "citations": [
+            {"page": 3, "source": "document.pdf", "chunk_id": "chunk_003"}
+          ]
+        }
+      ]
+    },
+    "error": {
+      "detail": "Không thể tạo bài học. Vui lòng thử lại"
+    },
+    "empty_state": {
+      "detail": "Vui lòng upload tài liệu trước"
+    }
+  },
+  "summary": {
+    "short": {
+      "course_id": "test-course-123",
+      "summary": "Đây là bản tóm tắt ngắn khoảng 120 từ. Nội dung chính của tài liệu tập trung vào các khái niệm cơ bản. Citation [Trang 1] và [Trang 2] được sử dụng trong đoạn này.",
+      "filename": "summary.md"
+    },
+    "medium": {
+      "course_id": "test-course-123",
+      "summary": "Đây là bản tóm tắt trung bình khoảng 350 từ. Nội dung chi tiết hơn bao gồm nhiều khía cạnh của tài liệu gốc. Citation [Trang 1], [Trang 2], [Trang 3] được tham khảo từ tài liệu gốc document.pdf. Nội dung được tổng hợp từ nhiều phần khác nhau để đảm bảo tính toàn diện.",
+      "filename": "summary.md"
+    },
+    "detailed": {
+      "course_id": "test-course-123",
+      "summary": "Đây là bản tóm tắt chi tiết khoảng 600 từ. Nội dung bao gồm tất cả các khía cạnh quan trọng của tài liệu gốc. Citation [Trang 1], [Trang 2], [Trang 3], [Trang 4], [Trang 5] được tham khảo xuyên suốt. Phân tích chuyên sâu từng phần của tài liệu gốc, đảm bảo không bỏ sót thông tin quan trọng nào.",
+      "filename": "summary.md"
+    }
+  },
+  "flashcards": {
+    "success": {
+      "course_id": "test-course-123",
+      "flashcards": [
+        {
+          "front": "Câu hỏi 1: Khái niệm cơ bản là gì?",
+          "back": "Đáp án: Khái niệm cơ bản được định nghĩa là...",
+          "citation": "Nguồn: Trang 1 - document.pdf"
+        },
+        {
+          "front": "Câu hỏi 2: Ứng dụng chính là gì?",
+          "back": "Đáp án: Ứng dụng chính bao gồm...",
+          "citation": "Nguồn: Trang 2 - document.pdf"
+        },
+        {
+          "front": "Câu hỏi 3: Ví dụ minh họa?",
+          "back": "Đáp án: Ví dụ minh họa bao gồm các bước...",
+          "citation": "Nguồn: Trang 3 - document.pdf"
+        }
+      ],
+      "total": 3
+    }
+  },
+  "quiz": {
+    "success": {
+      "course_id": "test-course-123",
+      "questions": [
+        {
+          "question": "Câu 1: Khái niệm trung tâm của tài liệu là gì?",
+          "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+          "correct_answer": 0,
+          "explanation": "Giải thích: Đáp án A là đúng vì... (Nguồn: Trang 1)",
+          "citation": "Trang 1"
+        },
+        {
+          "question": "Câu 2: Phương pháp nào được đề cập?",
+          "options": ["Phương pháp 1", "Phương pháp 2", "Phương pháp 3", "Phương pháp 4"],
+          "correct_answer": 2,
+          "explanation": "Giải thích: Phương pháp 3 là đúng vì... (Nguồn: Trang 2)",
+          "citation": "Trang 2"
+        }
+      ],
+      "total_questions": 2
+    }
+  },
+  "slides": {
+    "success": {
+      "course_id": "test-course-123",
+      "slides": [
+        {
+          "title": "Slide 1: Giới thiệu",
+          "bullet_points": ["Điểm 1", "Điểm 2", "Điểm 3"],
+          "citation": "[1] Trang 1 - document.pdf"
+        },
+        {
+          "title": "Slide 2: Nội dung chính",
+          "bullet_points": ["Điểm A", "Điểm B", "Điểm C"],
+          "citation": "[2] Trang 2 - document.pdf"
+        },
+        {
+          "title": "Slide 3: Kết luận",
+          "bullet_points": ["Kết luận 1", "Kết luận 2"],
+          "citation": "[3] Trang 3 - document.pdf"
+        }
+      ],
+      "total_slides": 3
+    }
+  },
+  "mindmap": {
+    "success": {
+      "root": {
+        "label": "Chủ đề chính",
+        "children": [
+          {
+            "label": "Nhánh 1",
+            "children": [
+              {"label": "Node 1.1", "citation": "Trang 1"},
+              {"label": "Node 1.2", "citation": "Trang 2"}
+            ]
+          },
+          {
+            "label": "Nhánh 2",
+            "children": [
+              {"label": "Node 2.1", "citation": "Trang 3"}
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "custom_prompt": {
+    "success": {
+      "course_id": "test-course-123",
+      "prompt": "Phân tích nội dung chính",
+      "result": "Kết quả phân tích: Nội dung chính của tài liệu bao gồm các phần [1] và [2].",
+      "citations": [{"page": 1, "source": "document.pdf"}, {"page": 2, "source": "document.pdf"}]
+    }
+  }
+}
