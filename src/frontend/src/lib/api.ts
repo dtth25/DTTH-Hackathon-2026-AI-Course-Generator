@@ -1,168 +1,209 @@
 /**
- * API configuration and endpoints for backend communication.
+ * API client for the four public outputs: Book, Slide, Quiz, and Vid.
  */
 
-export const API_BASE_URL = "http://localhost:8001";
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export const ENDPOINTS = {
   upload: `${API_BASE_URL}/api/upload`,
+  getCoursesAll: `${API_BASE_URL}/api/courses/all`,
   courseStatus: (courseId: string) =>
     `${API_BASE_URL}/api/course/${courseId}/status`,
-  generateCourse: `${API_BASE_URL}/api/generate-course`,
-  generateSummary: `${API_BASE_URL}/api/generate-summary`,
-  generateFlashcards: `${API_BASE_URL}/api/generate-flashcards`,
+  generateBook: `${API_BASE_URL}/api/generate-book`,
+  generateSlide: `${API_BASE_URL}/api/generate-slide`,
   generateQuiz: `${API_BASE_URL}/api/generate-quiz`,
-  generateSlides: `${API_BASE_URL}/api/generate-slides`,
-  generateMindmap: `${API_BASE_URL}/api/generate-mindmap`,
-  customPrompt: `${API_BASE_URL}/api/custom-prompt`,
-  getCoursesAll: `${API_BASE_URL}/api/courses/all`,
-  getCourse: (id: string) => `${API_BASE_URL}/api/course/${id}/course`,
-  getCourseStatus: (id: string) => `${API_BASE_URL}/api/course/${id}/status`,
+  generateVid: `${API_BASE_URL}/api/generate-vid`,
+  getBook: (courseId: string) => `${API_BASE_URL}/api/course/${courseId}/book`,
+  getBookPdf: (courseId: string) =>
+    `${API_BASE_URL}/api/course/${courseId}/book.pdf`,
+  getSlide: (courseId: string) =>
+    `${API_BASE_URL}/api/course/${courseId}/slide`,
+  getSlidePdf: (courseId: string) =>
+    `${API_BASE_URL}/api/course/${courseId}/slide.pdf`,
+  getQuiz: (courseId: string) => `${API_BASE_URL}/api/course/${courseId}/quiz`,
+  getQuizPdf: (courseId: string) =>
+    `${API_BASE_URL}/api/course/${courseId}/quiz.pdf`,
+  getVidFile: (courseId: string) =>
+    `${API_BASE_URL}/api/course/${courseId}/vid/file`,
 } as const;
 
-export type Citation = {
-  page?: number | string;
-  source?: string;
-  chunk_id?: number | string;
-};
+export type GenerateFeature = "book" | "slide" | "quiz" | "vid";
 
-/* ── Types ─────────────────────────────────────────────── */
-
-/** Một bài học trong chapter */
-export interface Lesson {
-  title: string;
-}
-
-/** Một chapter trong course */
-export interface Chapter {
-  title: string;
-  lessons: Lesson[];
-}
-
-/** Course detail trả về từ GET /api/course/{course_id}/course */
-export interface CourseDetail {
-  title: string;
-  description?: string;
-  chapters: Chapter[];
-}
-
-/** Response từ GET /api/course/{course_id}/course */
-export interface CourseResponse {
+export interface UploadResponse {
   course_id: string;
-  course: CourseDetail;
-  citations?: Array<{ page: number; source: string; chunk_id: string }>;
+  filename: string;
+  filenames?: string[];
+  file_count?: number;
+  status: string;
+  message: string;
 }
 
-/** Một item trong danh sách courses (GET /api/courses/all) */
+export interface CourseStatusResponse {
+  course_id: string;
+  status: "pending" | "processing" | "ready" | "failed" | "unknown";
+  error?: string;
+  filenames?: string[];
+  file_count?: number;
+}
+
 export interface CourseListItem {
   course_id: string;
   status: string;
-  pdf_path?: string;
-  created_at?: string;
+  created_at?: string | number;
+  filenames?: string[];
+  file_count?: number;
+  error?: string;
 }
 
-/** Response từ GET /api/courses/all */
 export interface CourseListResponse {
   courses: CourseListItem[];
   total: number;
 }
 
-/* ── Course Generation Types ───────────────────────────── */
-
-/** Request body cho POST /api/generate-course */
-export interface GenerateCourseRequest {
-  file_id: string;
-  user_prompt?: string;
+export interface BookLesson {
+  title: string;
+  duration?: string;
+  objectives?: string[];
+  lecture?: string;
+  key_points?: string[];
+  activity?: string;
+  assessment?: string[];
 }
 
-/** Response từ POST /api/generate-course */
-export interface GenerateCourseResponse {
-  course_title: string;
-  chapters: Array<{ id: number; title: string; lessons: string[] }>;
-  total_slides: number;
-  citations: Array<{ page: number; source: string; chunk_id: string }>;
+export interface BookChapter {
+  title: string;
+  description?: string;
+  lessons: BookLesson[];
 }
 
-/* ── Quiz Types ────────────────────────────────────────── */
+export interface BookOutput {
+  title: string;
+  description?: string;
+  estimated_duration?: string;
+  chapters: BookChapter[];
+}
 
-/** Một câu hỏi trong quiz */
+export interface SlideItem {
+  title: string;
+  content: string;
+  layout_hint?: string;
+  image_suggestion?: string;
+}
+
 export interface QuizQuestion {
   question: string;
   options: string[];
   correct: number;
   explanation: string;
+  difficulty?: string;
 }
 
-/** Response từ POST /api/generate-quiz */
-export interface QuizResponse {
+export interface VidScene {
+  title: string;
+  visual_text: string;
+  voiceover: string;
+}
+
+export interface VidOutput {
+  filename?: string | null;
+  url?: string | null;
+  status?: "ready" | "failed" | "running" | "pending";
+  error?: string;
+  duration_minutes: number;
+  estimated_duration_seconds?: number;
+  voiceover_status?: string;
+  scenes: VidScene[];
+}
+
+export interface GenerateResponse {
   course_id: string;
+  book?: BookOutput;
+  pdf_url?: string | null;
+  json_url?: string | null;
+  topic?: string;
+  total_slides?: number;
+  slides?: SlideItem[];
+  difficulty?: string;
+  total_questions?: number;
+  questions?: QuizQuestion[];
+  vid?: VidOutput;
+}
+
+export interface QuizResponse extends GenerateResponse {
   topic: string;
   difficulty: string;
   questions: QuizQuestion[];
   total_questions: number;
-  citations?: Array<{ page: number; source: string; chunk_id: string }>;
 }
 
-/* ── Fetch helpers ─────────────────────────────────────── */
+export interface CourseResponse {
+  course_id: string;
+  book: BookOutput;
+  pdf_url?: string | null;
+}
 
-/**
- * Fetch danh sách tất cả courses.
- * GET /api/courses/all
- */
-export async function getCoursesAll(): Promise<CourseListResponse> {
-  const response = await fetch(ENDPOINTS.getCoursesAll);
+async function parseResponse<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => null);
+
   if (!response.ok) {
-    throw new Error(`Không thể lấy danh sách khóa học: ${response.statusText}`);
+    const message =
+      payload?.detail ??
+      payload?.message ??
+      payload?.error ??
+      `Request failed: ${response.statusText}`;
+    throw new Error(message);
   }
-  return response.json();
+
+  return payload as T;
 }
 
-/**
- * Fetch chi tiết một course (chapters + lessons).
- * GET /api/course/{course_id}/course
- */
-export async function getCourse(id: string): Promise<CourseResponse> {
-  const response = await fetch(ENDPOINTS.getCourse(id));
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error("NOT_FOUND");
-    }
-    throw new Error(`Lỗi lấy khóa học: ${response.statusText}`);
+export async function uploadFiles(files: File[]): Promise<UploadResponse> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
   }
-  return response.json();
-}
 
-/**
- * Generate course từ file đã upload.
- * POST /api/generate-course
- */
-export async function generateCourse(
-  fileId: string,
-  userPrompt?: string
-): Promise<GenerateCourseResponse> {
-  const response = await fetch(ENDPOINTS.generateCourse, {
+  const response = await fetch(ENDPOINTS.upload, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      file_id: fileId,
-      user_prompt: userPrompt,
-    }),
+    body: formData,
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => null);
-    throw new Error(
-      err?.message || `Lỗi tạo khóa học: ${response.statusText}`
-    );
-  }
-
-  return response.json();
+  return parseResponse<UploadResponse>(response);
 }
 
-/**
- * Generate quiz từ course.
- * POST /api/generate-quiz
- */
+export async function uploadFile(file: File): Promise<UploadResponse> {
+  return uploadFiles([file]);
+}
+
+export async function getCourseStatus(
+  courseId: string
+): Promise<CourseStatusResponse> {
+  const response = await fetch(ENDPOINTS.courseStatus(courseId), {
+    cache: "no-store",
+  });
+
+  return parseResponse<CourseStatusResponse>(response);
+}
+
+export async function getCoursesAll(): Promise<CourseListResponse> {
+  const response = await fetch(ENDPOINTS.getCoursesAll, {
+    cache: "no-store",
+  });
+
+  return parseResponse<CourseListResponse>(response);
+}
+
+export async function getBook(courseId: string): Promise<CourseResponse> {
+  const response = await fetch(ENDPOINTS.getBook(courseId), {
+    cache: "no-store",
+  });
+
+  return parseResponse<CourseResponse>(response);
+}
+
+export const getCourse = getBook;
+
 export async function generateQuiz(
   courseId: string,
   topic: string = "Kiến thức tổng quát",
@@ -180,43 +221,7 @@ export async function generateQuiz(
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => null);
-    throw new Error(err?.message || `Lỗi tạo quiz: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Upload files to backend.
- * POST /api/upload
- * Response: { file_id: string, pages: number, status: string }
- */
-export async function uploadFiles(files: File[]): Promise<{
-  file_id: string;
-  pages: number;
-  status: string;
-}> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(ENDPOINTS.upload, {
-    method: "POST",
-    body: formData,
-  });
-
-  return parseResponse<UploadResponse>(response);
-}
-
-export async function getCourseStatus(
-  courseId: string
-): Promise<CourseStatusResponse> {
-  const response = await fetch(ENDPOINTS.courseStatus(courseId), {
-    cache: "no-store",
-  });
-
-  return parseResponse<CourseStatusResponse>(response);
+  return parseResponse<QuizResponse>(response);
 }
 
 export async function generateContent(
@@ -230,21 +235,17 @@ export async function generateContent(
     GenerateFeature,
     { endpoint: string; body: Record<string, unknown> }
   > = {
-    course: {
-      endpoint: ENDPOINTS.generateCourse,
+    book: {
+      endpoint: ENDPOINTS.generateBook,
       body: {
         course_id: courseId,
         user_prompt: prompt,
         target_audience: "sinh viên",
       },
     },
-    summary: {
-      endpoint: ENDPOINTS.generateSummary,
-      body: { course_id: courseId, type: "detailed" },
-    },
-    flashcards: {
-      endpoint: ENDPOINTS.generateFlashcards,
-      body: { course_id: courseId, count: 8 },
+    slide: {
+      endpoint: ENDPOINTS.generateSlide,
+      body: { course_id: courseId, topic, num_slides: 8 },
     },
     quiz: {
       endpoint: ENDPOINTS.generateQuiz,
@@ -255,17 +256,9 @@ export async function generateContent(
         difficulty: "medium",
       },
     },
-    slides: {
-      endpoint: ENDPOINTS.generateSlides,
-      body: { course_id: courseId, topic, num_slides: 8 },
-    },
-    mindmap: {
-      endpoint: ENDPOINTS.generateMindmap,
-      body: { course_id: courseId, max_depth: 3 },
-    },
-    custom: {
-      endpoint: ENDPOINTS.customPrompt,
-      body: { course_id: courseId, prompt: topic },
+    vid: {
+      endpoint: ENDPOINTS.generateVid,
+      body: { course_id: courseId, topic, duration_minutes: 3 },
     },
   };
 

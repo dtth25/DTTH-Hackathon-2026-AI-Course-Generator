@@ -82,7 +82,7 @@ export default function QuizPage() {
   }, [courseId]);
 
   /* Derived values */
-  const questions = quiz?.questions ?? [];
+  const questions = useMemo(() => quiz?.questions ?? [], [quiz?.questions]);
   const totalQuestions = questions.length;
   const currentQ = questions[currentQuestion];
 
@@ -189,7 +189,7 @@ export default function QuizPage() {
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
-            Quay lại khóa học
+            Quay lại
           </button>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Kết quả
@@ -215,7 +215,7 @@ export default function QuizPage() {
               <RotateCcw className="h-4 w-4 mr-1" />
               Làm lại
             </Button>
-            <Button onClick={() => router.back()}>Quay lại khóa học</Button>
+            <Button onClick={() => router.back()}>Quay lại</Button>
           </CardFooter>
         </Card>
 
@@ -297,7 +297,7 @@ export default function QuizPage() {
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronLeft className="h-4 w-4" />
-          Quay lại khóa học
+          Quay lại
         </button>
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -305,7 +305,7 @@ export default function QuizPage() {
               {quiz.topic}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Khóa học: {courseId.slice(0, 8)}...
+              Tài liệu: {courseId.slice(0, 8)}...
             </p>
           </div>
           <span

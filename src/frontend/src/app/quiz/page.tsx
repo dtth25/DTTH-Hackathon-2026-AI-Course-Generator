@@ -19,14 +19,14 @@ export default async function QuizLandingPage() {
           Làm Quiz
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Chọn khóa học để bắt đầu làm bài kiểm tra trắc nghiệm.
+          Chọn tài liệu đã xử lý để tạo bài kiểm tra trắc nghiệm.
         </p>
       </div>
 
       {courses.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            Chưa có khóa học nào. Hãy upload tài liệu để tạo khóa học trước!
+            Chưa có tài liệu nào. Hãy upload tài liệu để bắt đầu.
           </p>
           <Link href="/generate">
             <Button className="mt-4">Upload tài liệu</Button>
@@ -41,7 +41,7 @@ export default async function QuizLandingPage() {
             >
               <div className="flex-1 space-y-2">
                 <h3 className="text-sm font-medium text-foreground">
-                  Khóa học {course.course_id.slice(0, 8)}...
+                  Tài liệu {course.course_id.slice(0, 8)}...
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   Trạng thái:{" "}

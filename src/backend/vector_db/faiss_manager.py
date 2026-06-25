@@ -5,13 +5,11 @@ Local, disk-based, no Docker required.
 import os
 import json
 import time
-import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_community.docstore.in_memory import InMemoryDocstore
 
 from backend.core.config import (
     get_embeddings,
@@ -39,16 +37,25 @@ def _drop_index(course_id: str):
         logger.info(f"[FAISS] Dropped index '{path}'")
 
 
+def _coerce_source_paths(source_paths: str | Sequence[str]) -> list[str]:
+    """Normalize one or many upload paths into a non-empty list."""
+    if isinstance(source_paths, str):
+        paths = [source_paths]
+    else:
+        paths = [str(path) for path in source_paths]
+    return [path for path in paths if path]
+
+
 def create_or_load_faiss(
     course_id: str,
-    pdf_path: str,
+    source_paths: str | Sequence[str],
 ) -> FAISS:
     """
     Create a new FAISS vector store from a document, or load an existing one.
 
     Args:
         course_id: Unique course identifier.
-        pdf_path: Path to the PDF/DOCX/TXT file.
+        source_paths: Path or paths to PDF/DOCX/TXT files.
 
     Returns:
         FAISS vector store instance.
@@ -64,11 +71,24 @@ def create_or_load_faiss(
             allow_dangerous_deserialization=True,
         )
 
-    logger.info(f"[Course {course_id}] Building new FAISS index from file...")
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"File not found: {pdf_path}")
+    paths = _coerce_source_paths(source_paths)
+    if not paths:
+        raise ValueError("No upload files were provided.")
 
-    valid_docs = get_text_from_any_file(pdf_path)
+    logger.info("[Course %s] Building new FAISS index from %s file(s)...", course_id, len(paths))
+
+    valid_docs: list[Document] = []
+    for doc_index, path in enumerate(paths):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        file_docs = get_text_from_any_file(path)
+        filename = os.path.basename(path)
+        for doc in file_docs:
+            doc.metadata["doc_id"] = doc_index
+            doc.metadata["source_file"] = filename
+            doc.metadata["course_id"] = course_id
+        valid_docs.extend(file_docs)
+
     if not valid_docs:
         raise ValueError("File contains no valid text content.")
 
@@ -79,11 +99,11 @@ def create_or_load_faiss(
     num_chunks = len(splits)
     logger.info(f"[Course {course_id}] Split into {num_chunks} chunks.")
 
-    # Add metadata for citation tracking
+    # Add internal source metadata for retrieval and debugging.
     for idx, doc in enumerate(splits):
         doc.metadata["chunk_id"] = idx
         doc.metadata["course_id"] = course_id
-        doc.metadata["source_file"] = os.path.basename(pdf_path)
+        doc.metadata.setdefault("source_file", os.path.basename(paths[0]))
         if "page" not in doc.metadata:
             doc.metadata["page"] = idx // 5 + 1  # Approximate page mapping
 
@@ -134,6 +154,8 @@ def create_or_load_faiss(
             "course_id": course_id,
             "index_path": index_path,
             "num_chunks": num_chunks,
+            "num_documents": len(paths),
+            "source_files": [os.path.basename(path) for path in paths],
             "created_at": time.time(),
         }, f, indent=2)
 

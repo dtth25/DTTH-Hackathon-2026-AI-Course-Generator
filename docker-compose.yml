@@ -14,9 +14,6 @@ services:
       - ./runtime/uploads:/app/uploads
       - ./runtime/indices:/app/indices
       - ./runtime/questions:/app/questions
-      - ./runtime/guides:/app/guides
-      - ./runtime/flashcards:/app/flashcards
-      - ./runtime/mindmaps:/app/mindmaps
-      - ./runtime/audio:/app/audio
-      - ./runtime/tasks:/app/tasks
-      - ./runtime/custom_prompts:/app/custom_prompts
+      - ./runtime/books:/app/books
+      - ./runtime/slides:/app/slides
+      - ./runtime/videos:/app/videos

@@ -3,7 +3,6 @@ Document processing service: Extract text from PDF/DOCX/TXT files.
 Based on core_v2.py PDF extraction logic.
 """
 import io
-import os
 import logging
 from typing import List
 

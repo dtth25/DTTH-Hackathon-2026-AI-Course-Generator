@@ -23,17 +23,17 @@ export default async function CourseListPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Khóa học của tôi
+          Tài liệu của tôi
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Danh sách các khóa học đã được tạo từ tài liệu của bạn.
+          Danh sách tài liệu đã upload để tạo Book, Slide, Quiz và Vid.
         </p>
       </div>
 
       {courses.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            Chưa có khóa học nào. Hãy upload tài liệu để bắt đầu!
+            Chưa có tài liệu nào. Hãy upload tài liệu để bắt đầu.
           </p>
           <Link href="/generate">
             <Button className="mt-4">Upload tài liệu</Button>
@@ -44,8 +44,8 @@ export default async function CourseListPage() {
           {courses.map((course) => {
             const courseLabel =
               course.status === "ready"
-                ? `Khóa học ${course.course_id.slice(0, 8)}...`
-                : `Khóa học ${course.course_id.slice(0, 8)}... (${
+                ? `Tài liệu ${course.course_id.slice(0, 8)}...`
+                : `Tài liệu ${course.course_id.slice(0, 8)}... (${
                     course.status === "processing" ? "đang xử lý" : course.status
                   })`;
 
@@ -76,7 +76,7 @@ export default async function CourseListPage() {
                     href={`/course/${course.course_id}`}
                     className="w-full"
                   >
-                    <Button className="w-full">Xem khóa học</Button>
+                    <Button className="w-full">Mở Book</Button>
                   </Link>
                 </CardFooter>
               </Card>

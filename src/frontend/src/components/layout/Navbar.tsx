@@ -1,20 +1,18 @@
 import Link from "next/link";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export function Navbar() {
   return (
-    <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-sm border-b h-16 flex items-center px-4">
-      <div className="container flex items-center justify-between">
+    <nav className="fixed top-0 z-50 flex h-16 w-full items-center border-b bg-background/85 px-4 backdrop-blur-sm">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
         <Link href="/generate" className="text-lg font-bold">
           AI Course Generator
         </Link>
-        <div className="flex items-center space-x-4">
-          {/* Mock User Avatar */}
-          <Avatar>
-            <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-            <AvatarFallback>CN</AvatarFallback>
-          </Avatar>
-        </div>
+        <Link
+          href="/generate"
+          className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+        >
+          Tạo học liệu
+        </Link>
       </div>
     </nav>
   );

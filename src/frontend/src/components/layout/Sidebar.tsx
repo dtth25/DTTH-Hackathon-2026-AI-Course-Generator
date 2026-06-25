@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const NAV_ITEMS = [{ href: "/generate", label: "Generate Course" }];
+const NAV_ITEMS = [{ href: "/generate", label: "Generate" }];
 
 export function Sidebar() {
   return (

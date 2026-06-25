@@ -1,42 +1,58 @@
 "use client";
 
 import { useState } from "react";
+import {
+  BookOpen,
+  CheckCircle2,
+  CircleAlert,
+  FileText,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
-import UploadBox from "@/components/UploadBox";
 import FeatureSelector, { type FeatureType } from "@/components/FeatureSelector";
 import PromptInput from "@/components/PromptInput";
 import ResultRenderer from "@/components/ResultRenderer";
+import UploadBox from "@/components/UploadBox";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  type Citation,
   type CourseStatusResponse,
   type GenerateResponse,
   type UploadResponse,
   generateContent,
   getCourseStatus,
 } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  FileText,
-  BookOpen,
-  Sparkles,
-  CheckCircle2,
-  CircleAlert,
-  Loader2,
-} from "lucide-react";
 
 type CourseStatus = CourseStatusResponse["status"] | "idle";
+type OutputMap = Partial<Record<FeatureType, GenerateResponse>>;
 
+const OUTPUT_ORDER: FeatureType[] = ["book", "slide", "quiz", "vid"];
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function statusCopy(status: CourseStatus) {
+  switch (status) {
+    case "ready":
+      return "Tài liệu đã sẵn sàng";
+    case "failed":
+      return "Phân tích tài liệu thất bại";
+    case "processing":
+    case "pending":
+      return "Đang phân tích tài liệu";
+    case "unknown":
+      return "Chưa tìm thấy tài liệu";
+    default:
+      return "Chưa có tài liệu";
+  }
+}
+
 export default function GeneratePage() {
-  const [selectedFeature, setSelectedFeature] = useState<FeatureType | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<FeatureType>("book");
+  const [generatingFeature, setGeneratingFeature] = useState<FeatureType | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [courseId, setCourseId] = useState("");
-  const [filename, setFilename] = useState("");
+  const [filenames, setFilenames] = useState<string[]>([]);
   const [courseStatus, setCourseStatus] = useState<CourseStatus>("idle");
-  const [result, setResult] = useState<GenerateResponse | null>(null);
-  const [citations, setCitations] = useState<Citation[]>([]);
+  const [outputs, setOutputs] = useState<OutputMap>({});
 
   const pollCourseStatus = async (id: string) => {
     setIsPolling(true);
@@ -46,14 +62,15 @@ export default function GeneratePage() {
       for (let attempt = 0; attempt < 90; attempt += 1) {
         const status = await getCourseStatus(id);
         setCourseStatus(status.status);
+        if (status.filenames?.length) setFilenames(status.filenames);
 
         if (status.status === "ready") {
-          toast.success("Tài liệu đã sẵn sàng.");
+          toast.success("Tài liệu đã sẵn sàng để tạo nội dung.");
           return;
         }
 
         if (status.status === "failed") {
-          throw new Error(status.error || "Xử lý tài liệu thất bại.");
+          throw new Error(status.error || "Không phân tích được tài liệu.");
         }
 
         await wait(2000);
@@ -72,138 +89,129 @@ export default function GeneratePage() {
 
   const handleUploaded = (upload: UploadResponse) => {
     setCourseId(upload.course_id);
-    setFilename(upload.filename);
-    setResult(null);
-    setCitations([]);
+    setFilenames(upload.filenames?.length ? upload.filenames : [upload.filename]);
+    setOutputs({});
     void pollCourseStatus(upload.course_id);
   };
 
   const handlePromptSubmit = async (prompt: string) => {
     if (!courseId) {
-      toast.error("Vui lòng upload tài liệu trước.");
+      toast.error("Vui lòng tải tài liệu lên trước.");
       return;
     }
 
     if (courseStatus !== "ready") {
-      toast.error("Tài liệu chưa xử lý xong.");
+      toast.error("Tài liệu chưa sẵn sàng để tạo nội dung.");
       return;
     }
 
-    if (!selectedFeature) {
-      toast.error("Vui lòng chọn một tính năng trước khi gửi yêu cầu.");
-      return;
-    }
-
-    setIsProcessing(true);
-    setResult(null);
-    setCitations([]);
+    setGeneratingFeature(selectedFeature);
 
     try {
       const response = await generateContent(selectedFeature, courseId, prompt);
-      setResult(response);
-      setCitations(response.citations ?? []);
-      toast.success("Đã tạo nội dung.");
+      setOutputs((prev) => ({ ...prev, [selectedFeature]: response }));
+      toast.success(`Đã tạo ${selectedFeature.toUpperCase()}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Có lỗi xảy ra khi tạo nội dung.";
       toast.error(message);
     } finally {
-      setIsProcessing(false);
+      setGeneratingFeature(null);
     }
   };
 
-  const statusLabel =
-    courseStatus === "ready"
-      ? "Ready"
-      : courseStatus === "failed"
-        ? "Failed"
-        : courseStatus === "idle"
-          ? "No file"
-          : "Processing";
+  const status = statusCopy(courseStatus);
+  const hasOutputs = OUTPUT_ORDER.some((feature) => outputs[feature]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center px-4 py-8">
-      <div className="mb-8 max-w-2xl text-center">
-        <div className="mb-4 inline-flex items-center justify-center rounded-full bg-primary/10 p-2">
-          <Sparkles className="h-6 w-6 text-primary" />
-        </div>
-        <h1 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-          Tạo Nội Dung Từ Tài Liệu Của Bạn
-        </h1>
-        <p className="text-lg text-muted-foreground">
-          Tải lên PDF, DOCX hoặc TXT, chọn tính năng và để AI tự động tạo nội dung
-          học tập cho bạn.
-        </p>
-      </div>
-
-      <div className="mb-8 grid w-full max-w-2xl grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="flex flex-col items-center rounded-lg border bg-card p-4 text-center">
-          <div className="mb-3 rounded-full bg-primary/10 p-2">
-            <FileText className="h-5 w-5 text-primary" />
+    <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-8">
+      <section className="mb-8 grid gap-6 lg:grid-cols-[1fr_360px] lg:items-end">
+        <div className="space-y-4">
+          <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground">
+            <Sparkles className="h-4 w-4 text-amber-600" />
+            Book, Slide, Quiz và Vid từ tài liệu của bạn
           </div>
-          <h3 className="mb-1 text-sm font-semibold">1. Tải lên tài liệu</h3>
-          <p className="text-xs text-muted-foreground">PDF, DOCX hoặc TXT</p>
-        </div>
-        <div className="flex flex-col items-center rounded-lg border bg-card p-4 text-center">
-          <div className="mb-3 rounded-full bg-primary/10 p-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+          <div className="space-y-3">
+            <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
+              Tạo bộ học liệu từ một hoặc nhiều tài liệu
+            </h1>
+            <p className="max-w-2xl text-base leading-7 text-muted-foreground">
+              Tải lên PDF, DOCX hoặc TXT, chọn output cần tạo và giữ tất cả kết quả
+              trong cùng một workspace.
+            </p>
           </div>
-          <h3 className="mb-1 text-sm font-semibold">2. Chọn tính năng</h3>
-          <p className="text-xs text-muted-foreground">Course, Summary, Quiz, Slide</p>
         </div>
-        <div className="flex flex-col items-center rounded-lg border bg-card p-4 text-center">
-          <div className="mb-3 rounded-full bg-primary/10 p-2">
-            <BookOpen className="h-5 w-5 text-primary" />
-          </div>
-          <h3 className="mb-1 text-sm font-semibold">3. Nhận kết quả</h3>
-          <p className="text-xs text-muted-foreground">Có citation từ tài liệu</p>
-        </div>
-      </div>
 
-      <div className="mb-8 w-full max-w-2xl">
-        <UploadBox onUploaded={handleUploaded} />
-      </div>
-
-      {courseId && (
-        <Card className="mb-8 w-full max-w-3xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
               {courseStatus === "ready" ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               ) : courseStatus === "failed" ? (
                 <CircleAlert className="h-4 w-4 text-destructive" />
+              ) : courseStatus === "idle" ? (
+                <FileText className="h-4 w-4 text-muted-foreground" />
               ) : (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               )}
-              {statusLabel}
+              {status}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1 text-sm text-muted-foreground">
-            <p>Course ID: {courseId}</p>
-            <p>File: {filename}</p>
-            {isPolling && <p>Backend đang phân tích và tạo FAISS index...</p>}
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            {courseId ? (
+              <>
+                <p>Mã tài liệu: {courseId}</p>
+                <p>{filenames.length} file trong bộ tài liệu</p>
+                {filenames.length > 0 && (
+                  <div className="max-h-24 space-y-1 overflow-auto rounded-md bg-muted/50 p-2">
+                    {filenames.map((name) => (
+                      <div key={name} className="truncate">
+                        {name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isPolling && <p>Vui lòng chờ trong khi hệ thống đọc tài liệu.</p>}
+              </>
+            ) : (
+              <p>Tải tài liệu lên để bắt đầu tạo học liệu.</p>
+            )}
           </CardContent>
         </Card>
-      )}
+      </section>
 
-      <div className="mb-8 w-full max-w-3xl">
-        <FeatureSelector selected={selectedFeature} onSelect={setSelectedFeature} />
+      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+        <aside className="space-y-6">
+          <UploadBox onUploaded={handleUploaded} />
+          <Card>
+            <CardContent className="space-y-6 p-5">
+              <FeatureSelector selected={selectedFeature} onSelect={setSelectedFeature} />
+              <PromptInput
+                onSubmit={handlePromptSubmit}
+                isLoading={generatingFeature === selectedFeature}
+                disabled={!courseId || courseStatus !== "ready" || Boolean(generatingFeature)}
+              />
+            </CardContent>
+          </Card>
+        </aside>
+
+        <section className="min-w-0 space-y-6">
+          {!hasOutputs && (
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border bg-card p-8 text-center">
+              <BookOpen className="mb-4 h-10 w-10 text-muted-foreground" />
+              <h2 className="text-xl font-semibold">Chưa có output nào</h2>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                Sau khi tài liệu sẵn sàng, chọn Book, Slide, Quiz hoặc Vid rồi nhấn Tạo.
+              </p>
+            </div>
+          )}
+
+          {OUTPUT_ORDER.map((feature) => {
+            const result = outputs[feature];
+            if (!result) return null;
+            return <ResultRenderer key={feature} feature={feature} result={result} />;
+          })}
+        </section>
       </div>
-
-      <div className="mb-8 w-full max-w-3xl">
-        <PromptInput
-          onSubmit={handlePromptSubmit}
-          isLoading={isProcessing}
-          disabled={!selectedFeature || !courseId || courseStatus !== "ready"}
-        />
-      </div>
-
-      {result && selectedFeature && (
-        <ResultRenderer
-          feature={selectedFeature}
-          result={result}
-          citations={citations}
-        />
-      )}
     </div>
   );
 }

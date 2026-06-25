@@ -1,67 +1,41 @@
-"""
-Resource generation service: Quiz, Flashcard, Slide, Summary, Podcast, Study Guide.
-Mapping: Features 6.4-6.9 [11, 13, 14]
-"""
-import os
+"""Generation service for the four public outputs: Book, Quiz, Vid, and Slide."""
+
+import asyncio
 import json
-import time
+import os
 import re
 import shutil
-import logging
-from typing import List, Optional, Tuple, Dict, Any
+import subprocess
+import textwrap
+import threading
+from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
-from backend.core.config import (
-    get_llm,
-    format_docs,
-    extract_json,
-    sanitize_filename,
-    get_course_path,
-    QUESTIONS_DIR,
-    AUDIO_DIR,
-    GUIDES_DIR,
-    FLASHCARDS_DIR,
-    logger,
-)
+from backend.core.config import extract_json, get_course_path, get_llm, logger
 from backend.core.prompts import (
-    COURSE_GENERATION_PROMPT,
+    BOOK_GENERATION_PROMPT,
     QUIZ_V2_PROMPT,
-    SLIDES_V2_PROMPT,
-    SUMMARY_V2_PROMPT, 
-    FLASHCARDS_V2_PROMPT, 
-    PODCAST_SCRIPT_PROMPT,
-    STUDY_GUIDE_PROMPT,
-    CONTINUE_GUIDE_PROMPT,
+    SLIDE_GENERATION_PROMPT,
+    VID_SCENES_PROMPT,
 )
+
+
 class ResourceGenerator:
-    """
-    Generates learning resources (Quiz, Flashcard, Slide, Summary, Podcast, Study Guide)
-    from an initialized RAGChains instance.
-    """
+    """Generate Book, Quiz, Vid, and Slide outputs from an initialized RAG course."""
 
     def __init__(self, rag_chains):
-        """
-        Args:
-            rag_chains: An initialized RAGChains instance with vectorstore.
-        """
         self.rag = rag_chains
         self.course_id = rag_chains.course_id
         self.vectorstore = rag_chains.vectorstore
-        
-    def _get_citations(self, docs):
-        """Tạo danh sách trích dẫn từ Metadata của tài liệu."""
-        return [
-            {
-                "page": d.metadata.get("page", 1),
-                "source": os.path.basename(d.metadata.get("source_file", d.metadata.get("source", "unknown"))),
-                "chunk_id": d.metadata.get("chunk_id", f"chunk_{hash(d.page_content) % 1000}")
-            } for d in docs[:3]
-        ]
+
+    def _save_json(self, path: str, payload: Any) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def _clean_doc_text(self, doc, max_chars: int = 320) -> str:
-        """Return compact text from a retrieved chunk for deterministic fallbacks."""
         text = doc.page_content
         text = re.sub(r"===\s*BẮT ĐẦU.*?===", " ", text, flags=re.IGNORECASE | re.DOTALL)
         text = re.sub(r"===\s*KẾT THÚC.*?===", " ", text, flags=re.IGNORECASE | re.DOTALL)
@@ -71,30 +45,55 @@ class ResourceGenerator:
         text = re.sub(r"\s+", " ", text).strip()
         return text[:max_chars].strip()
 
-    def _doc_points(self, docs, limit: int = 8, max_chars: int = 220):
+    def _clean_generated_text(self, text: Any, compact: bool = True) -> str:
+        """Remove internal extraction markers from generated/public text."""
+        value = str(text or "")
+        value = re.sub(r"===\s*BẮT ĐẦU.*?===", " ", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"===\s*KẾT THÚC.*?===", " ", value, flags=re.IGNORECASE | re.DOTALL)
+        value = re.sub(r"\[MÃ ĐỊNH DANH TRANG:\s*\d+\]", " ", value, flags=re.IGNORECASE)
+        value = re.sub(r"\bNỘI DUNG:\s*", " ", value, flags=re.IGNORECASE)
+        value = re.sub(r"\b(page|source|chunk_id)\s*:\s*[^,\n]+", " ", value, flags=re.IGNORECASE)
+        if compact:
+            return re.sub(r"\s+", " ", value).strip()
+        return re.sub(r"[ \t]+", " ", value).replace("\n\n\n", "\n\n").strip()
+
+    def _sanitize_payload(self, value: Any) -> Any:
+        """Recursively sanitize public payload strings."""
+        if isinstance(value, dict):
+            return {key: self._sanitize_payload(item) for key, item in value.items() if key not in {"page", "source", "chunk_id"}}
+        if isinstance(value, list):
+            return [self._sanitize_payload(item) for item in value]
+        if isinstance(value, str):
+            return self._clean_generated_text(value, compact=False)
+        return value
+
+    def _clean_docs_context(self, docs, max_docs: int = 24, max_chars: int = 900) -> str:
+        """Build clean prompt context without internal page/chunk markers."""
+        snippets: list[str] = []
+        for doc in docs[:max_docs]:
+            text = self._clean_doc_text(doc, max_chars=max_chars)
+            if len(text) < 30:
+                continue
+            snippets.append(f"- {text}")
+        if not snippets:
+            return "Tài liệu đã được xử lý nhưng chưa trích xuất được đoạn nội dung đủ rõ."
+        return "\n".join(snippets)
+
+    def _doc_points(self, docs, limit: int = 8, max_chars: int = 220) -> list[dict[str, str]]:
         points = []
         for doc in docs:
             text = self._clean_doc_text(doc, max_chars)
             if len(text) < 30:
                 continue
-            points.append(
-                {
-                    "text": text,
-                    "page": doc.metadata.get("page", "?"),
-                    "source": os.path.basename(
-                        doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
-                    ),
-                    "chunk_id": doc.metadata.get("chunk_id", ""),
-                }
-            )
+            points.append({"text": text})
             if len(points) >= limit:
                 break
         return points or [
             {
-                "text": "Tài liệu đã được xử lý thành công, nhưng hệ thống chưa trích xuất được đoạn nội dung đủ dài cho bản nháp.",
-                "page": "?",
-                "source": "unknown",
-                "chunk_id": "",
+                "text": (
+                    "Tài liệu đã được xử lý thành công, nhưng hệ thống chưa trích xuất được đoạn nội dung "
+                    "đủ dài cho bản nháp."
+                )
             }
         ]
 
@@ -103,8 +102,7 @@ class ResourceGenerator:
         title = " ".join(words[:8]).strip()
         return title.capitalize() if title else fallback
 
-    def _build_lesson_from_point(self, point, title: str, index_label: str):
-        source_note = f"Trang {point['page']} - {point['source']}"
+    def _build_lesson_from_point(self, point: dict[str, str], title: str):
         return {
             "title": title,
             "duration": "20-30 phút",
@@ -113,44 +111,38 @@ class ResourceGenerator:
                 "Giải thích lại nội dung bằng ngôn ngữ của người học.",
             ],
             "lecture": (
-                f"Phần {index_label} tập trung vào nội dung từ {source_note}.\n\n"
                 f"{point['text']}\n\n"
-                "Khi học phần này, người học nên đọc kỹ đoạn gốc, xác định các khái niệm then chốt "
-                "và liên hệ chúng với mục tiêu chung của tài liệu."
+                "Khi học phần này, người học nên xác định các khái niệm then chốt, "
+                "ghi chú ví dụ quan trọng và liên hệ chúng với mục tiêu chung của tài liệu."
             ),
             "key_points": [
                 point["text"][:180],
-                f"Nội dung này được trace từ {source_note}.",
                 "Cần ghi nhớ mối liên hệ giữa ý chính, ví dụ và mục tiêu bài học.",
+                "Người học nên tự diễn giải lại nội dung bằng một ví dụ ngắn.",
             ],
-            "activity": "Yêu cầu người học tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
+            "activity": "Tóm tắt phần này bằng 3 gạch đầu dòng và nêu 1 ví dụ minh họa.",
             "assessment": [
                 "Ý chính của phần này là gì?",
-                "Chi tiết nào trong tài liệu chứng minh cho ý chính đó?",
+                "Chi tiết nào trong tài liệu giúp củng cố ý chính đó?",
             ],
-            "citation": {
-                "page": point["page"],
-                "source": point["source"],
-                "chunk_id": point["chunk_id"],
-            },
         }
 
-    def _normalize_course(self, course, docs, target_audience: str):
+    def _normalize_book(self, book, docs, target_audience: str):
         points = self._doc_points(docs, limit=18, max_chars=620)
-        if not isinstance(course, dict):
-            return self._build_fallback_course(docs, target_audience)
+        if not isinstance(book, dict):
+            return self._build_fallback_book(docs, target_audience)
 
         normalized = {
-            "title": course.get("title") or "Khóa học từ tài liệu đã tải lên",
-            "description": course.get("description")
-            or f"Lộ trình học dành cho {target_audience or 'người học'}, bám sát nội dung tài liệu gốc.",
-            "estimated_duration": course.get("estimated_duration") or "3-5 giờ",
+            "title": book.get("title") or "Sách học tập từ tài liệu đã tải lên",
+            "description": book.get("description")
+            or f"Sách học tập dành cho {target_audience or 'người học'}, bám sát nội dung tài liệu gốc.",
+            "estimated_duration": book.get("estimated_duration") or "3-5 giờ",
             "chapters": [],
         }
 
-        raw_chapters = course.get("chapters") or course.get("syllabus") or []
+        raw_chapters = book.get("chapters") or []
         if not isinstance(raw_chapters, list) or not raw_chapters:
-            return self._build_fallback_course(docs, target_audience)
+            return self._build_fallback_book(docs, target_audience)
 
         point_cursor = 0
         for chapter_index, raw_chapter in enumerate(raw_chapters[:6], 1):
@@ -165,11 +157,7 @@ class ResourceGenerator:
                 point = points[point_cursor % len(points)]
                 point_cursor += 1
                 title = lesson.get("title") or f"Bài {chapter_index}.{lesson_index}: Nội dung trọng tâm"
-                enriched = self._build_lesson_from_point(
-                    point,
-                    title,
-                    f"{chapter_index}.{lesson_index}",
-                )
+                enriched = self._build_lesson_from_point(point, title)
 
                 for field in ["duration", "activity"]:
                     if lesson.get(field):
@@ -186,7 +174,7 @@ class ResourceGenerator:
 
             normalized["chapters"].append(
                 {
-                    "title": chapter.get("title") or chapter.get("chapter") or f"Chương {chapter_index}",
+                    "title": chapter.get("title") or f"Chương {chapter_index}",
                     "description": chapter.get("description")
                     or f"Chương này hệ thống hóa {len(lessons)} bài học chính từ tài liệu.",
                     "lessons": lessons,
@@ -195,7 +183,7 @@ class ResourceGenerator:
 
         return normalized
 
-    def _build_fallback_course(self, docs, target_audience: str):
+    def _build_fallback_book(self, docs, target_audience: str):
         points = self._doc_points(docs, limit=6, max_chars=620)
         chapters = []
         for index, point in enumerate(points, 1):
@@ -203,40 +191,262 @@ class ResourceGenerator:
             chapters.append(
                 {
                     "title": f"Chương {index}: {title}",
-                    "description": f"Hệ thống hóa nội dung trọng tâm từ trang {point['page']} của tài liệu.",
+                    "description": "Hệ thống hóa một nhóm nội dung trọng tâm trong tài liệu.",
                     "lessons": [
-                        self._build_lesson_from_point(
-                            point,
-                            f"Bài {index}.1: Đọc hiểu nội dung trang {point['page']}",
-                            f"{index}.1",
-                        ),
-                        self._build_lesson_from_point(
-                            point,
-                            f"Bài {index}.2: Ghi nhớ và vận dụng ý chính",
-                            f"{index}.2",
-                        ),
+                        self._build_lesson_from_point(point, f"Bài {index}.1: Đọc hiểu nội dung chính"),
+                        self._build_lesson_from_point(point, f"Bài {index}.2: Ghi nhớ và vận dụng ý chính"),
                     ],
                 }
             )
         return {
-            "title": "Khóa học từ tài liệu đã tải lên",
-            "description": f"Lộ trình học MVP dành cho {target_audience or 'người học'}, được dựng trực tiếp từ các đoạn nội dung đã index trong tài liệu.",
+            "title": "Sách học tập từ tài liệu đã tải lên",
+            "description": (
+                f"Bản sách MVP dành cho {target_audience or 'người học'}, được dựng trực tiếp từ các đoạn "
+                "nội dung đã index trong tài liệu."
+            ),
             "estimated_duration": "3-5 giờ",
             "chapters": chapters,
         }
 
-    def _build_fallback_summary(self, docs, summary_type: str):
-        points = self._doc_points(docs, limit=8, max_chars=260)
-        bullets = "\n".join(
-            f"- Trang {point['page']}: {point['text']}" for point in points
-        )
-        return (
-            "# BẢN TÓM TẮT TÀI LIỆU\n\n"
-            f"Loại tóm tắt: `{summary_type}`.\n\n"
-            "Các ý chính được trích trực tiếp từ tài liệu:\n\n"
-            f"{bullets}\n\n"
-            "Bản này được tạo ở chế độ dự phòng để bảo đảm demo vẫn có nội dung khi LLM hoặc parser gặp lỗi."
-        )
+    def _book_pdf_elements(self, book: dict[str, Any]) -> list[tuple[str, str]]:
+        elements: list[tuple[str, str]] = []
+
+        def add(text: Any, style: str = "body") -> None:
+            clean = str(text or "").strip()
+            if clean:
+                elements.append((clean, style))
+
+        add(book.get("title") or "Sách học tập", "title")
+        add(book.get("description"), "body")
+        add(f"Thời lượng ước tính: {book.get('estimated_duration')}", "small")
+        elements.append(("", "gap"))
+
+        for chapter_index, chapter in enumerate(book.get("chapters") or [], 1):
+            if not isinstance(chapter, dict):
+                continue
+            add(chapter.get("title") or f"Chương {chapter_index}", "chapter")
+            add(chapter.get("description"), "body")
+
+            for lesson_index, lesson in enumerate(chapter.get("lessons") or [], 1):
+                if not isinstance(lesson, dict):
+                    continue
+                add(lesson.get("title") or f"Bài {chapter_index}.{lesson_index}", "lesson")
+                add(f"Thời lượng: {lesson.get('duration')}", "small")
+
+                for label, key in [
+                    ("Mục tiêu", "objectives"),
+                    ("Nội dung bài giảng", "lecture"),
+                    ("Ý chính cần nhớ", "key_points"),
+                    ("Hoạt động học tập", "activity"),
+                    ("Kiểm tra nhanh", "assessment"),
+                ]:
+                    value = lesson.get(key)
+                    if not value:
+                        continue
+                    add(label, "section")
+                    if isinstance(value, list):
+                        for item in value:
+                            add(f"- {item}", "body")
+                    else:
+                        add(value, "body")
+                elements.append(("", "gap"))
+
+        return elements
+
+    def _render_book_pdf(self, book: dict[str, Any], pdf_path: str) -> str:
+        from PIL import Image, ImageDraw
+
+        page_width, page_height = 1240, 1754
+        margin = 86
+        content_width = page_width - margin * 2
+        styles = {
+            "title": {"font": self._font(44, bold=True), "fill": (17, 24, 39), "line_height": 58, "width": 38},
+            "chapter": {"font": self._font(34, bold=True), "fill": (30, 64, 175), "line_height": 46, "width": 48},
+            "lesson": {"font": self._font(29, bold=True), "fill": (15, 23, 42), "line_height": 40, "width": 58},
+            "section": {"font": self._font(25, bold=True), "fill": (51, 65, 85), "line_height": 34, "width": 66},
+            "body": {"font": self._font(24), "fill": (51, 65, 85), "line_height": 34, "width": 78},
+            "small": {"font": self._font(21), "fill": (100, 116, 139), "line_height": 30, "width": 88},
+        }
+
+        pages: list[Image.Image] = []
+        image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        y = margin
+
+        def finish_page() -> None:
+            pages.append(image.copy())
+
+        def reset_page() -> tuple[Image.Image, ImageDraw.ImageDraw, int]:
+            next_image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+            next_draw = ImageDraw.Draw(next_image)
+            return next_image, next_draw, margin
+
+        for text, style_name in self._book_pdf_elements(book):
+            if style_name == "gap":
+                y += 24
+                continue
+
+            style = styles.get(style_name, styles["body"])
+            lines = self._wrap_lines(text, width=style["width"]) or [text]
+            block_height = len(lines) * style["line_height"] + 12
+            if y + block_height > page_height - margin:
+                finish_page()
+                image, draw, y = reset_page()
+
+            if style_name in {"chapter", "lesson"}:
+                draw.rounded_rectangle(
+                    (margin - 18, y - 10, margin + content_width + 18, y + block_height - 8),
+                    radius=10,
+                    fill=(248, 250, 252),
+                )
+
+            for line in lines:
+                draw.text((margin, y), line, font=style["font"], fill=style["fill"])
+                y += style["line_height"]
+            y += 12
+
+        finish_page()
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        pages[0].save(pdf_path, "PDF", resolution=120.0, save_all=True, append_images=pages[1:])
+        return pdf_path
+
+    def export_book_pdf(self) -> str:
+        paths = get_course_path(self.course_id)
+        if not os.path.exists(paths["book"]):
+            raise FileNotFoundError("Book has not been generated yet.")
+        with open(paths["book"], "r", encoding="utf-8") as f:
+            book = json.load(f)
+        return self._render_book_pdf(book, paths["book_pdf"])
+
+    def _render_artifact_pdf(self, title: str, elements: list[tuple[str, str]], pdf_path: str) -> str:
+        from PIL import Image, ImageDraw
+
+        page_width, page_height = 1240, 1754
+        margin = 86
+        content_width = page_width - margin * 2
+        styles = {
+            "title": {"font": self._font(44, bold=True), "fill": (17, 24, 39), "line_height": 58, "width": 38},
+            "heading": {"font": self._font(32, bold=True), "fill": (15, 23, 42), "line_height": 44, "width": 52},
+            "section": {"font": self._font(24, bold=True), "fill": (51, 65, 85), "line_height": 34, "width": 72},
+            "body": {"font": self._font(23), "fill": (51, 65, 85), "line_height": 33, "width": 82},
+            "small": {"font": self._font(20), "fill": (100, 116, 139), "line_height": 29, "width": 92},
+        }
+
+        pages: list[Image.Image] = []
+        image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        y = margin
+
+        def finish_page() -> None:
+            pages.append(image.copy())
+
+        def reset_page() -> tuple[Image.Image, ImageDraw.ImageDraw, int]:
+            next_image = Image.new("RGB", (page_width, page_height), (255, 255, 255))
+            next_draw = ImageDraw.Draw(next_image)
+            return next_image, next_draw, margin
+
+        full_elements = [(title, "title"), ("", "gap"), *elements]
+        for text, style_name in full_elements:
+            if style_name == "gap":
+                y += 24
+                continue
+
+            style = styles.get(style_name, styles["body"])
+            lines = self._wrap_lines(self._clean_generated_text(text, compact=False), width=style["width"]) or [text]
+            block_height = len(lines) * style["line_height"] + 16
+            if y + block_height > page_height - margin:
+                finish_page()
+                image, draw, y = reset_page()
+
+            if style_name == "heading":
+                draw.rounded_rectangle(
+                    (margin - 18, y - 10, margin + content_width + 18, y + block_height - 8),
+                    radius=10,
+                    fill=(248, 250, 252),
+                )
+
+            for line in lines:
+                draw.text((margin, y), line, font=style["font"], fill=style["fill"])
+                y += style["line_height"]
+            y += 12
+
+        finish_page()
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        pages[0].save(pdf_path, "PDF", resolution=120.0, save_all=True, append_images=pages[1:])
+        return pdf_path
+
+    def export_slides_pdf(self) -> str:
+        paths = get_course_path(self.course_id)
+        if not os.path.exists(paths["slides"]):
+            raise FileNotFoundError("Slide has not been generated yet.")
+        with open(paths["slides"], "r", encoding="utf-8") as f:
+            slides = json.load(f)
+
+        elements: list[tuple[str, str]] = []
+        for index, slide in enumerate(slides if isinstance(slides, list) else [], 1):
+            item = slide if isinstance(slide, dict) else {"content": str(slide)}
+            elements.append((f"Slide {index}: {item.get('title') or 'Nội dung'}", "heading"))
+            if item.get("content"):
+                elements.append((item["content"], "body"))
+            if item.get("image_suggestion"):
+                elements.append((f"Gợi ý hình ảnh: {item['image_suggestion']}", "small"))
+            elements.append(("", "gap"))
+
+        return self._render_artifact_pdf("Slide học tập", elements, paths["slides_pdf"])
+
+    def export_quiz_pdf(self) -> str:
+        paths = get_course_path(self.course_id)
+        if not os.path.exists(paths["questions"]):
+            raise FileNotFoundError("Quiz has not been generated yet.")
+        with open(paths["questions"], "r", encoding="utf-8") as f:
+            questions = json.load(f)
+
+        elements: list[tuple[str, str]] = []
+        labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for index, question in enumerate(questions if isinstance(questions, list) else [], 1):
+            item = question if isinstance(question, dict) else {"question": str(question)}
+            elements.append((f"Câu {index}: {item.get('question') or 'Câu hỏi'}", "heading"))
+            options = item.get("options") if isinstance(item.get("options"), list) else []
+            for option_index, option in enumerate(options):
+                elements.append((f"{labels[option_index]}. {option}", "body"))
+            try:
+                correct = int(item.get("correct", 0))
+            except (TypeError, ValueError):
+                correct = 0
+            if 0 <= correct < len(options):
+                elements.append((f"Đáp án: {labels[correct]}", "section"))
+            if item.get("explanation"):
+                elements.append((f"Giải thích: {item['explanation']}", "small"))
+            elements.append(("", "gap"))
+
+        return self._render_artifact_pdf("Quiz học tập", elements, paths["questions_pdf"])
+
+    def generate_book(self, user_prompt: str = "", target_audience: str = "sinh viên"):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 24})
+        query = user_prompt or "nội dung chính mục tiêu khái niệm ví dụ kết luận"
+        docs = retriever.invoke(query)
+        context = self._clean_docs_context(docs, max_docs=24, max_chars=1000)
+        try:
+            prompt = ChatPromptTemplate.from_template(BOOK_GENERATION_PROMPT)
+            chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+            res = chain.invoke(
+                {
+                    "context": context,
+                    "user_prompt": user_prompt or "Không có",
+                    "target_audience": target_audience or "người học chung",
+                }
+            )
+            book = self._normalize_book(json.loads(extract_json(res)), docs, target_audience)
+        except Exception as e:
+            logger.warning("Book generation failed, using fallback: %s", e)
+            book = self._build_fallback_book(docs, target_audience)
+
+        book = self._sanitize_payload(book)
+
+        paths = get_course_path(self.course_id)
+        self._save_json(paths["book"], book)
+        self._render_book_pdf(book, paths["book_pdf"])
+        return {"book": book, "pdf_url": f"/api/course/{self.course_id}/book.pdf"}
 
     def _build_fallback_quiz(self, docs, quantity: int, difficulty: str):
         points = self._doc_points(docs, limit=max(1, min(quantity, 10)), max_chars=220)
@@ -245,7 +455,7 @@ class ResourceGenerator:
             point = points[index % len(points)]
             questions.append(
                 {
-                    "question": f"Ý nào sau đây phản ánh đúng nội dung ở trang {point['page']}?",
+                    "question": "Ý nào sau đây phản ánh đúng nội dung trong tài liệu?",
                     "options": [
                         point["text"][:140],
                         "Một nhận định không được tài liệu cung cấp rõ ràng.",
@@ -253,11 +463,88 @@ class ResourceGenerator:
                         "Một phương án dùng để gây nhiễu trong câu hỏi.",
                     ],
                     "correct": 0,
-                    "explanation": f"Đáp án đúng lấy trực tiếp từ chunk metadata page={point['page']}, source={point['source']}.",
+                    "explanation": "Đáp án đúng bám sát đoạn nội dung được hệ thống truy xuất từ tài liệu.",
                     "difficulty": difficulty,
                 }
             )
         return questions
+
+    def _normalize_quiz(self, raw_questions, quantity: int, docs, difficulty: str):
+        if not isinstance(raw_questions, list) or not raw_questions:
+            return self._build_fallback_quiz(docs, quantity, difficulty)
+
+        normalized = []
+        for item in raw_questions:
+            if not isinstance(item, dict):
+                continue
+            options = item.get("options")
+            correct = item.get("correct", item.get("correct_answer"))
+
+            if isinstance(options, dict):
+                entries = list(options.items())
+                labels = [key for key, _ in entries]
+                options = [str(value) for _, value in entries]
+                if isinstance(correct, str) and correct in labels:
+                    correct = labels.index(correct)
+
+            if not isinstance(options, list):
+                continue
+            options = [str(option) for option in options[:4]]
+            if len(options) < 2:
+                continue
+
+            try:
+                correct_index = int(correct)
+            except (TypeError, ValueError):
+                correct_index = 0
+            if correct_index < 0 or correct_index >= len(options):
+                correct_index = 0
+
+            normalized.append(
+                {
+                    "question": str(item.get("question") or "Câu hỏi"),
+                    "options": options,
+                    "correct": correct_index,
+                    "explanation": str(item.get("explanation") or "Đáp án đúng dựa trên nội dung tài liệu."),
+                    "difficulty": item.get("difficulty") or difficulty,
+                }
+            )
+            if len(normalized) >= quantity:
+                break
+
+        return normalized or self._build_fallback_quiz(docs, quantity, difficulty)
+
+    def generate_quiz_v2(self, topic: str, quantity: int, difficulty: str):
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        docs = retriever.invoke(topic)
+        context = self._clean_docs_context(docs, max_docs=15, max_chars=800)
+        try:
+            prompt = ChatPromptTemplate.from_template(QUIZ_V2_PROMPT)
+            chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+            res = chain.invoke(
+                {
+                    "context": context,
+                    "topic": topic,
+                    "quantity": quantity,
+                    "difficulty": difficulty,
+                }
+            )
+            questions = self._normalize_quiz(json.loads(extract_json(res)), quantity, docs, difficulty)
+        except Exception as e:
+            logger.warning("Quiz generation failed, using fallback: %s", e)
+            questions = self._build_fallback_quiz(docs, quantity, difficulty)
+
+        questions = self._sanitize_payload(questions)
+        self._save_json(get_course_path(self.course_id)["questions"], questions)
+        try:
+            self.export_quiz_pdf()
+        except Exception as exc:
+            logger.warning("Quiz PDF export failed: %s", exc)
+        return {
+            "questions": questions,
+            "json_url": f"/api/course/{self.course_id}/quiz.json",
+            "pdf_url": f"/api/course/{self.course_id}/quiz.pdf",
+        }
 
     def _build_fallback_slides(self, docs, num_slides: int):
         points = self._doc_points(docs, limit=max(1, min(num_slides, 10)), max_chars=220)
@@ -266,383 +553,333 @@ class ResourceGenerator:
             point = points[index % len(points)]
             slides.append(
                 {
-                    "title": f"Slide {index + 1}: Trang {point['page']}",
-                    "content": f"- {point['text']}\n- Nguồn: {point['source']}",
+                    "title": f"Slide {index + 1}: Ý chính",
+                    "content": f"- {point['text']}\n- Ghi nhớ ý chính và liên hệ với nội dung trước đó.",
                     "layout_hint": "title-and-content",
                     "image_suggestion": "Sơ đồ hoặc minh họa đơn giản cho ý chính của slide.",
                 }
             )
         return slides
-        
-    def generate_course_structure(self, user_prompt: str, target_audience: str):
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})
-        docs = retriever.invoke(user_prompt or "tổng quan")
-        citations = self._get_citations(docs)
-        try:
-            prompt = ChatPromptTemplate.from_template(COURSE_GENERATION_PROMPT)
-            chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
-            res = chain.invoke({
-                "context": format_docs(docs),
-                "user_prompt": user_prompt or "Không có",
-                "target_audience": target_audience or "người học chung"
-            })
-            course = json.loads(extract_json(res))
-            return {
-                "course": self._normalize_course(course, docs, target_audience),
-                "citations": citations,
-            }
-        except Exception as e:
-            logger.warning("Course generation failed, using fallback: %s", e)
-            return {
-                "course": self._build_fallback_course(docs, target_audience),
-                "citations": citations,
-            }
 
-    # 4.2 Summary
-    def generate_summary_v2(self, summary_type: str = "detailed"):
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
-        docs = retriever.invoke("nội dung trọng tâm")
-        citations = self._get_citations(docs)
-        try:
-            prompt = ChatPromptTemplate.from_template(SUMMARY_V2_PROMPT)
-            chain = prompt | get_llm(temperature=0.2) | StrOutputParser()
-            res = chain.invoke({
-                "context": format_docs(docs),
-                "type": summary_type
-            })
-            if not res or not res.strip():
-                raise ValueError("LLM returned an empty summary.")
-            return {"summary": res, "citations": citations}
-        except Exception as e:
-            logger.warning("Summary generation failed, using fallback: %s", e)
-            return {
-                "summary": self._build_fallback_summary(docs, summary_type),
-                "citations": citations,
-            }
+    def _normalize_slides(self, raw_slides, num_slides: int, docs):
+        if not isinstance(raw_slides, list) or not raw_slides:
+            return self._build_fallback_slides(docs, num_slides)
 
-    # 4.3 Flashcards
-    def generate_flashcards_v2(self, count: int):
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
-        docs = retriever.invoke("khái niệm định nghĩa")
-        citations = self._get_citations(docs)
-
-        try:
-            prompt = ChatPromptTemplate.from_template(FLASHCARDS_V2_PROMPT)
-            chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
-            res = chain.invoke({"context": format_docs(docs), "count": count})
-            flashcards = json.loads(extract_json(res))
-            if not isinstance(flashcards, list) or not flashcards:
-                raise ValueError("LLM did not return a non-empty flashcard array.")
-            return {"flashcards": flashcards[:count], "citations": citations}
-        except Exception as e:
-            logger.warning("Flashcard LLM generation failed, using fallback: %s", e)
-            return {
-                "flashcards": self._build_fallback_flashcards(docs, count),
-                "citations": citations,
-            }
-
-    def _build_fallback_flashcards(self, docs, count: int):
-        """Build simple citation-backed flashcards when LLM output is unavailable."""
-        cards = []
-        for doc in docs:
-            text = self._clean_doc_text(doc, 280)
-            if not text:
-                continue
-            answer = text
-            if len(answer) < 40:
-                continue
-            page = doc.metadata.get("page", "?")
-            source = os.path.basename(
-                doc.metadata.get("source_file", doc.metadata.get("source", "unknown"))
-            )
-            cards.append(
+        slides = []
+        for index, item in enumerate(raw_slides[:num_slides], 1):
+            slide = item if isinstance(item, dict) else {"content": str(item)}
+            slides.append(
                 {
-                    "question": f"Ý chính cần ghi nhớ ở trang {page} là gì?",
-                    "answer": answer,
-                    "citation": {
-                        "page": page,
-                        "source": source,
-                        "chunk_id": doc.metadata.get("chunk_id", ""),
-                    },
+                    "title": str(slide.get("title") or f"Slide {index}"),
+                    "content": str(slide.get("content") or ""),
+                    "layout_hint": str(slide.get("layout_hint") or "title-and-content"),
+                    "image_suggestion": str(slide.get("image_suggestion") or ""),
                 }
             )
-            if len(cards) >= count:
-                break
+        return slides or self._build_fallback_slides(docs, num_slides)
 
-        if cards:
-            return cards
-        return [
-            {
-                "question": "Tài liệu này cần được ôn tập như thế nào?",
-                "answer": "Hãy xem lại các phần chính trong tài liệu và tạo câu hỏi theo từng khái niệm quan trọng.",
-                "citation": {"page": "?", "source": "unknown", "chunk_id": ""},
-            }
-        ]
-
-    # 4.4 Quiz
-    def generate_quiz_v2(self, topic: str, quantity: int, difficulty: str):
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
-        docs = retriever.invoke(topic)
-        citations = self._get_citations(docs)
-        try:
-            prompt = ChatPromptTemplate.from_template(QUIZ_V2_PROMPT)
-            chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
-            res = chain.invoke({
-                "context": format_docs(docs), "topic": topic,
-                "quantity": quantity, "difficulty": difficulty
-            })
-            questions = json.loads(extract_json(res))
-            if not isinstance(questions, list) or not questions:
-                raise ValueError("LLM did not return a non-empty quiz array.")
-            return {"questions": questions[:quantity], "citations": citations}
-        except Exception as e:
-            logger.warning("Quiz generation failed, using fallback: %s", e)
-            return {
-                "questions": self._build_fallback_quiz(docs, quantity, difficulty),
-                "citations": citations,
-            }
-
-    # 4.5 Slides
     def generate_slides_v2(self, topic: str, num_slides: int):
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
         docs = retriever.invoke(topic)
-        citations = self._get_citations(docs)
+        context = self._clean_docs_context(docs, max_docs=15, max_chars=800)
         try:
-            prompt = ChatPromptTemplate.from_template(SLIDES_V2_PROMPT)
+            prompt = ChatPromptTemplate.from_template(SLIDE_GENERATION_PROMPT)
             chain = prompt | get_llm(temperature=0.1) | StrOutputParser()
-            res = chain.invoke({
-                "context": format_docs(docs), "topic": topic, "num_slides": num_slides
-            })
-            slides = json.loads(extract_json(res))
-            if not isinstance(slides, list) or not slides:
-                raise ValueError("LLM did not return a non-empty slide array.")
-            return {"slides": slides[:num_slides], "citations": citations}
+            res = chain.invoke({"context": context, "topic": topic, "num_slides": num_slides})
+            slides = self._normalize_slides(json.loads(extract_json(res)), num_slides, docs)
         except Exception as e:
-            logger.warning("Slides generation failed, using fallback: %s", e)
-            return {
-                "slides": self._build_fallback_slides(docs, num_slides),
-                "citations": citations,
-            }
-        
-    
+            logger.warning("Slide generation failed, using fallback: %s", e)
+            slides = self._build_fallback_slides(docs, num_slides)
 
-    
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # PODCAST — Feature 6.7 [14]
-    # ═══════════════════════════════════════════════════════════════════════════
-    
-    
-
-    def generate_podcast_script(self) -> dict:
-        """Generate podcast dialogue script with citations."""
-        self.rag._require_ready()
+        slides = self._sanitize_payload(slides)
+        self._save_json(get_course_path(self.course_id)["slides"], slides)
         try:
-            logger.info(" -> Đang tạo kịch bản podcast (LLM)...")
-            raw = self.rag.audio_chain.invoke({})
-            clean = extract_json(raw)
-            data = json.loads(clean, strict=False)
+            self.export_slides_pdf()
+        except Exception as exc:
+            logger.warning("Slide PDF export failed: %s", exc)
+        return {
+            "slides": slides,
+            "json_url": f"/api/course/{self.course_id}/slide.json",
+            "pdf_url": f"/api/course/{self.course_id}/slide.pdf",
+        }
 
-            script = []
-            if isinstance(data, list):
-                script = data
-            elif isinstance(data, dict):
-                for key in ["podcast", "script", "segments", "dialogue"]:
-                    if key in data and isinstance(data[key], list):
-                        script = data[key]
-                        break
-                if not script:
-                    for val in data.values():
-                        if isinstance(val, list):
-                            script = val
-                            break
+    def _build_fallback_scenes(self, docs, scene_count: int):
+        points = self._doc_points(docs, limit=scene_count, max_chars=260)
+        scenes = []
+        for index in range(scene_count):
+            point = points[index % len(points)]
+            scenes.append(
+                {
+                    "title": f"Cảnh {index + 1}: Ý chính",
+                    "visual_text": f"- {point['text']}\n- Ghi nhớ ý chính\n- Liên hệ với nội dung tài liệu",
+                    "voiceover": (
+                        f"Ở phần này, chúng ta tập trung vào ý chính sau: {point['text']} "
+                        "Hãy ghi nhớ nội dung cốt lõi và liên hệ nó với các phần trước của tài liệu."
+                    ),
+                }
+            )
+        return scenes
 
-            if not script:
-                raise ValueError("Không tìm thấy mảng hội thoại trong JSON trả về.")
+    def _normalize_scenes(self, raw_scenes, scene_count: int, docs):
+        if not isinstance(raw_scenes, list) or not raw_scenes:
+            return self._build_fallback_scenes(docs, scene_count)
 
-            audio_dir = get_course_path(self.course_id)["audio"]
-            os.makedirs(audio_dir, exist_ok=True)
-            script_path = os.path.join(audio_dir, "podcast_script.json")
+        scenes = []
+        for index, item in enumerate(raw_scenes[:scene_count], 1):
+            scene = item if isinstance(item, dict) else {"voiceover": str(item)}
+            title = str(scene.get("title") or f"Cảnh {index}")
+            visual_text = str(scene.get("visual_text") or scene.get("content") or title)
+            voiceover = str(scene.get("voiceover") or visual_text.replace("-", ""))
+            scenes.append({"title": title, "visual_text": visual_text, "voiceover": voiceover})
+        return scenes or self._build_fallback_scenes(docs, scene_count)
 
-            with open(script_path, "w", encoding="utf-8") as f:
-                json.dump(script, f, indent=2, ensure_ascii=False)
+    def _font(self, size: int, bold: bool = False):
+        from PIL import ImageFont
 
-            # Retrieve relevant docs for citations
-            retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
-            docs = retriever.invoke("nội dung podcast tổng quan")
-            citations = self._get_citations(docs)
+        candidates = [
+            "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+            if bold
+            else "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return ImageFont.truetype(candidate, size)
+        return ImageFont.load_default()
 
-            return {"script": script, "citations": citations}
-        except Exception as e:
-            logger.error(f"[PodcastScript] LỖI: {e}")
-            raise
+    def _wrap_lines(self, text: str, width: int) -> list[str]:
+        lines: list[str] = []
+        for raw_line in text.replace("\r", "").split("\n"):
+            line = raw_line.strip().lstrip("-*• ").strip()
+            if not line:
+                continue
+            lines.extend(textwrap.wrap(line, width=width) or [line])
+        return lines
 
-    def generate_podcast_audio(self) -> str:
-        """Chuyển kịch bản thành MP3 - Bản sửa lỗi lọc ký tự đặc biệt và xử lý file rỗng."""
+    def _draw_text_block(self, draw, position: tuple[int, int], lines: list[str], font, fill, line_height: int):
+        x, y = position
+        for line in lines:
+            draw.text((x, y), line, font=font, fill=fill)
+            y += line_height
+        return y
+
+    def _render_scene_image(self, scene: dict[str, str], index: int, path: str) -> None:
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (1280, 720), (247, 249, 252))
+        draw = ImageDraw.Draw(image)
+        title_font = self._font(48, bold=True)
+        body_font = self._font(32)
+        small_font = self._font(22)
+
+        draw.rectangle((0, 0, 1280, 92), fill=(24, 39, 75))
+        draw.text((56, 26), f"Vid học tập · Cảnh {index}", font=small_font, fill=(225, 232, 245))
+        draw.rounded_rectangle((56, 128, 1224, 628), radius=28, fill=(255, 255, 255), outline=(224, 229, 238), width=2)
+
+        title_lines = self._wrap_lines(scene["title"], width=38)[:2]
+        y = self._draw_text_block(draw, (96, 168), title_lines, title_font, (16, 24, 39), 58)
+
+        visual_lines = self._wrap_lines(scene["visual_text"], width=58)[:10]
+        y += 24
+        for line in visual_lines:
+            draw.ellipse((102, y + 11, 114, y + 23), fill=(34, 116, 165))
+            draw.text((132, y), line, font=body_font, fill=(45, 55, 72))
+            y += 44
+
+        image.save(path, quality=95)
+
+    def _clean_tts_text(self, text: str) -> str:
+        text = re.sub(r"\$.*?\$", "", text)
+        text = text.replace("\\", " ")
+        text = re.sub(
+            r"[^\w\s,.\?!\-áàảãạâấầẩẫậăắằẳẵặéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợ"
+            r"úùủũụưứừửữựýỳỷỹỵĐđ]",
+            " ",
+            text,
+        )
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _run_async_in_thread(self, coro):
+        result: dict[str, Any] = {}
+
+        def runner():
+            try:
+                result["value"] = asyncio.run(coro)
+            except Exception as exc:  # pragma: no cover - threaded propagation
+                result["error"] = exc
+
+        thread = threading.Thread(target=runner)
+        thread.start()
+        thread.join()
+        if "error" in result:
+            raise result["error"]
+        return result.get("value")
+
+    def _synthesize_voiceover(self, text: str, path: str) -> None:
         import edge_tts
-        import asyncio
-        import shutil
-        import threading
-        import re
-        from pydub import AudioSegment
 
-        # Ép đường dẫn FFmpeg cho Mac
-        possible_ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "ffmpeg"]
-        for path in possible_ffmpeg:
-            if shutil.which(path):
-                AudioSegment.converter = path
-                break
+        cleaned = self._clean_tts_text(text)
+        if not cleaned:
+            raise ValueError("Voiceover text is empty after cleaning.")
+        communicate = edge_tts.Communicate(cleaned, "vi-VN-HoaiMyNeural")
+        self._run_async_in_thread(communicate.save(path))
 
-        def clean_text_for_tts(text: str) -> str:
-            """Loại bỏ các ký tự LaTeX và ký tự đặc biệt gây lỗi TTS."""
-            # Xóa các ký hiệu toán học $...$
-            text = re.sub(r'\$.*?\$', '', text)
-            # Xóa các ký tự backslash và lệnh LaTeX
-            text = text.replace('\\', ' ')
-            # Chỉ giữ lại chữ cái, số, dấu câu tiếng Việt cơ bản
-            text = re.sub(r'[^\w\s,.\?!\-áàảãạâấầẩẫậăắằẳẵặéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵĐđ]', ' ', text)
-            # Xóa khoảng trắng thừa
-            return re.sub(r'\s+', ' ', text).strip()
+    def _run_ffmpeg(self, command: list[str]) -> None:
+        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if completed.returncode != 0:
+            raise RuntimeError(completed.stderr[-1200:])
 
-        self.rag._require_ready()
+    def _estimate_scene_seconds(self, voiceover: str) -> int:
+        word_count = max(12, len(voiceover.split()))
+        return max(8, min(45, round(word_count / 2.2)))
+
+    def _render_scene_clip(self, ffmpeg: str, image_path: str, audio_path: str | None, clip_path: str, seconds: int) -> None:
+        if audio_path and os.path.exists(audio_path) and os.path.getsize(audio_path) > 100:
+            command = [
+                ffmpeg,
+                "-y",
+                "-loop",
+                "1",
+                "-i",
+                image_path,
+                "-i",
+                audio_path,
+                "-c:v",
+                "libx264",
+                "-tune",
+                "stillimage",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-pix_fmt",
+                "yuv420p",
+                "-shortest",
+                clip_path,
+            ]
+        else:
+            command = [
+                ffmpeg,
+                "-y",
+                "-loop",
+                "1",
+                "-i",
+                image_path,
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=stereo:sample_rate=44100",
+                "-t",
+                str(seconds),
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-pix_fmt",
+                "yuv420p",
+                "-shortest",
+                clip_path,
+            ]
+        self._run_ffmpeg(command)
+
+    def _render_vid(self, scenes: list[dict[str, str]], duration_minutes: int):
+        import imageio_ffmpeg
+
+        video_dir = get_course_path(self.course_id)["videos"]
+        assets_dir = os.path.join(video_dir, "assets")
+        if os.path.exists(assets_dir):
+            shutil.rmtree(assets_dir)
+        os.makedirs(assets_dir, exist_ok=True)
+        os.makedirs(video_dir, exist_ok=True)
+
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        scene_clips: list[str] = []
+        total_seconds = 0
+        voiceover_count = 0
+
+        for index, scene in enumerate(scenes, 1):
+            image_path = os.path.join(assets_dir, f"scene_{index:02d}.png")
+            audio_path = os.path.join(assets_dir, f"scene_{index:02d}.mp3")
+            clip_path = os.path.join(assets_dir, f"scene_{index:02d}.mp4")
+            seconds = self._estimate_scene_seconds(scene["voiceover"])
+            total_seconds += seconds
+
+            self._render_scene_image(scene, index, image_path)
+            try:
+                self._synthesize_voiceover(scene["voiceover"], audio_path)
+                voiceover_count += 1
+            except Exception as exc:
+                logger.warning("Voiceover generation failed for scene %s: %s", index, exc)
+                audio_path = None
+
+            self._render_scene_clip(ffmpeg, image_path, audio_path, clip_path, seconds)
+            scene_clips.append(clip_path)
+
+        concat_path = os.path.join(assets_dir, "concat.txt")
+        if not scene_clips:
+            raise RuntimeError("No video scenes were rendered.")
+
+        with open(concat_path, "w", encoding="utf-8") as f:
+            for clip in scene_clips:
+                escaped = clip.replace("\\", "/").replace("'", "'\\''")
+                f.write(f"file '{escaped}'\n")
+
+        final_path = os.path.join(video_dir, "vid.mp4")
+        self._run_ffmpeg([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_path, "-c", "copy", final_path])
+
+        metadata = {
+            "filename": "vid.mp4",
+            "url": f"/api/course/{self.course_id}/vid/file",
+            "status": "ready",
+            "duration_minutes": duration_minutes,
+            "estimated_duration_seconds": total_seconds,
+            "voiceover_status": "ready" if voiceover_count == len(scenes) else "partial_or_silent",
+            "scenes": scenes,
+        }
+        self._save_json(os.path.join(video_dir, "vid.json"), metadata)
+        shutil.rmtree(assets_dir, ignore_errors=True)
+        return metadata
+
+    def generate_vid(self, topic: str = "tổng quan", duration_minutes: int = 3):
+        duration_minutes = max(1, min(int(duration_minutes or 3), 5))
+        scene_count = max(4, min(duration_minutes * 2, 10))
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 12})
+        docs = retriever.invoke(topic or "tổng quan")
+        context = self._clean_docs_context(docs, max_docs=12, max_chars=760)
+
         try:
-            audio_dir = get_course_path(self.course_id)["audio"]
-            script_path = os.path.join(audio_dir, "podcast_script.json")
-            final_audio_path = os.path.join(audio_dir, "podcast_full.mp3")
-
-            with open(script_path, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-
-            # --- 1. CHUẨN HÓA & LÀM SẠCH VĂN BẢN ---
-            script = []
-            items = raw_data if isinstance(raw_data, list) else []
-            if isinstance(raw_data, dict):
-                for val in raw_data.values():
-                    if isinstance(val, list): items = val; break
-            
-            for item in items:
-                if isinstance(item, dict):
-                    raw_text = str(item.get("text", ""))
-                    cleaned_text = clean_text_for_tts(raw_text)
-                    if len(cleaned_text) > 1:
-                        script.append({
-                            "speaker": str(item.get("speaker", "Alice")),
-                            "text": cleaned_text
-                        })
-
-            temp_dir = os.path.join(audio_dir, "temp_chunks")
-            if os.path.exists(temp_dir): shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir, exist_ok=True)
-
-            # --- 2. HÀM CHẠY TTS (Có bắt lỗi từng dòng) ---
-            async def tts_worker():
-                voices = {"Alice": "vi-VN-HoaiMyNeural", "Bob": "vi-VN-NamMinhNeural"}
-                for i, line in enumerate(script):
-                    voice = voices.get(line["speaker"], voices["Alice"])
-                    chunk_path = os.path.join(temp_dir, f"line_{i:03d}.mp3")
-                    try:
-                        comm = edge_tts.Communicate(line["text"], voice)
-                        await comm.save(chunk_path)
-                    except Exception as e:
-                        logger.error(f" -> Bỏ qua dòng {i+1} do lỗi TTS: {e}")
-                        # Không tạo file rỗng, để tí nữa logic merge sẽ tự bỏ qua
-
-            def start_loop():
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                new_loop.run_until_complete(tts_worker())
-                new_loop.close()
-
-            logger.info(" -> Đang chuyển văn bản thành giọng nói...")
-            thread = threading.Thread(target=start_loop)
-            thread.start()
-            thread.join()
-
-            # --- 3. GỘP FILE (Thông minh: Bỏ qua file lỗi/rỗng) ---
-            logger.info(" -> Đang ráp nối các đoạn âm thanh hợp lệ...")
-            combined = AudioSegment.empty()
-            chunks = sorted([f for f in os.listdir(temp_dir) if f.endswith(".mp3")])
-            
-            valid_count = 0
-            for chunk_file in chunks:
-                path = os.path.join(temp_dir, chunk_file)
-                # Kiểm tra file có nội dung (không phải 0 byte)
-                if os.path.getsize(path) > 100: 
-                    try:
-                        segment = AudioSegment.from_mp3(path)
-                        combined += segment
-                        combined += AudioSegment.silent(duration=600)
-                        valid_count += 1
-                    except Exception:
-                        logger.warning(f" -> File {chunk_file} bị lỗi decode, bỏ qua.")
-
-            if valid_count == 0:
-                raise RuntimeError("Không có đoạn âm thanh nào hợp lệ để tạo Podcast.")
-
-            combined.export(final_audio_path, format="mp3")
-            shutil.rmtree(temp_dir)
-            logger.info(f"✅ Podcast thành công với {valid_count} đoạn hội thoại!")
-            return final_audio_path
-
+            prompt = ChatPromptTemplate.from_template(VID_SCENES_PROMPT)
+            chain = prompt | get_llm(temperature=0.25) | StrOutputParser()
+            res = chain.invoke(
+                {
+                    "context": context,
+                    "topic": topic or "tổng quan",
+                    "duration_minutes": duration_minutes,
+                    "scene_count": scene_count,
+                }
+            )
+            scenes = self._normalize_scenes(json.loads(extract_json(res)), scene_count, docs)
         except Exception as e:
-            logger.error(f"[PodcastAudio] LỖI: {str(e)}")
-            raise RuntimeError(f"Lỗi hệ thống âm thanh: {e}")
+            logger.warning("Vid script generation failed, using fallback: %s", e)
+            scenes = self._build_fallback_scenes(docs, scene_count)
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # STUDY GUIDE — Feature 6.8 [14]
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    def generate_study_guide(self) -> dict:
-        """Generate structured study guide with auto-continue logic and citations."""
-        self.rag._require_ready()
-
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
-        docs = retriever.invoke("nội dung chi tiết hệ thống hóa kiến thức")
-        full_context = "\n\n".join([doc.page_content for doc in docs])
-
-        logger.info(" -> Đang tạo phần 1 của Study Guide...")
-        guide_content = self.rag.guide_chain.invoke({"topic": "nội dung chi tiết"}).strip()
-
-        max_parts = 2
-        for i in range(max_parts):
-            if any(marker in guide_content for marker in ["V. CÂU HỎI", "📌 V.", "TÓM TẮT BÀI HỌC"]):
-                break
-
-            logger.info(f" -> Phát hiện nội dung bị cắt cụt, đang viết tiếp phần {i+2}...")
-
-            continue_llm = get_llm(temperature=0.2)
-            continue_prompt = ChatPromptTemplate.from_messages([
-                ("system", CONTINUE_GUIDE_PROMPT),
-                ("human", "Hãy viết tiếp bản thảo."),
-            ])
-            continue_chain = continue_prompt | continue_llm | StrOutputParser()
-
-            last_context = guide_content[-1000:]
-            additional_content = continue_chain.invoke({
-                "context": full_context,
-                "existing_content": last_context
-            }).strip()
-
-            if guide_content[-1] in [".", "!", "?", "}", "]", "\n"]:
-                guide_content += "\n\n" + additional_content
-            else:
-                guide_content += " " + additional_content
-
-            time.sleep(2)
-
-        guide_content = guide_content.replace("---", "").replace("---", "")
-
-        guides_dir = get_course_path(self.course_id)["guides"]
-        os.makedirs(guides_dir, exist_ok=True)
-        guide_path = os.path.join(guides_dir, "study_guide.md")
-
-        with open(guide_path, "w", encoding="utf-8") as f:
-            f.write(guide_content)
-
-        citations = self._get_citations(docs)
-        return {"guide": guide_content, "citations": citations}
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # FLASHCARDS — Feature 6.9 [14]
-    # ═══════════════════════════════════════════════════════════════════════════
-
+        scenes = self._sanitize_payload(scenes)
+        try:
+            vid = self._render_vid(scenes, duration_minutes)
+        except Exception as exc:
+            logger.error("Vid rendering failed for course '%s': %s", self.course_id, exc)
+            video_dir = get_course_path(self.course_id)["videos"]
+            os.makedirs(video_dir, exist_ok=True)
+            vid = {
+                "filename": None,
+                "url": None,
+                "status": "failed",
+                "error": str(exc),
+                "duration_minutes": duration_minutes,
+                "scenes": scenes,
+            }
+            self._save_json(os.path.join(video_dir, "vid.json"), vid)
+        return {"vid": vid}

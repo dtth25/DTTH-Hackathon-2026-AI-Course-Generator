@@ -1,83 +1,60 @@
-"""
-FastAPI server for RAG Learning Assistant - Restructured (v3.0)
-Uses modular structure: core/, services/, vector_db/, memory/
-"""
-import os
-import shutil
+"""FastAPI server for the AI Course Generator four-output API."""
+
 import json
+import os
+import re
+import threading
 import time
 import uuid
-import re
-from typing import Optional, Any, Dict
 from collections import OrderedDict
-from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field, field_validator
 
-from backend.core.config import (
-    UPLOAD_DIR,
-    INDEX_DIR,
-    QUESTIONS_DIR,
-    get_course_path,
-    sanitize_input,
-    _timestamp,
-    logger,
-)
+from backend.core.config import INDEX_DIR, UPLOAD_DIR, _timestamp, get_course_path, sanitize_input
 from backend.services.course_gen import CourseManager
 
-# ─── CORS Configuration ────────────────────────────────────────────────────────
 
-# MVP runs without auth/cookies, so credentials are disabled and local dev can
-# use any browser origin without failing JSON preflight requests.
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000",
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
     ).split(",")
     if origin.strip()
 ]
-ALLOW_ALL_ORIGINS = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() in {
-    "1",
-    "true",
-    "yes",
-}
+ALLOW_ALL_ORIGINS = os.getenv("ALLOW_ALL_ORIGINS", "true").lower() in {"1", "true", "yes"}
 
-# ─── Configuration ─────────────────────────────────────────────────────────────
-
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "300"))
 
-# ─── Global instances ──────────────────────────────────────────────────────────
-
 course_manager: Optional[CourseManager] = None
-rate_limit_store: OrderedDict[str, list] = OrderedDict()
+rate_limit_store: OrderedDict[str, list[float]] = OrderedDict()
 
-
-# ─── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown lifecycle."""
+    """Create the course manager on startup."""
     global course_manager
     print(f"[{_timestamp()}] Khởi tạo CourseManager (scan FAISS indices)...")
     course_manager = CourseManager()
     courses = course_manager.list_courses()
-    print(f"[{_timestamp()}] Đã phục hồi {len(courses)} khóa học: {courses}")
+    print(f"[{_timestamp()}] Đã phục hồi {len(courses)} tài liệu: {courses}")
     print(f"[{_timestamp()}] Sẵn sàng!")
     yield
     print(f"[{_timestamp()}] Dọn dẹp tài nguyên...")
 
 
 app = FastAPI(
-    title="RAG Learning Assistant API v3.0",
-    version="3.0.0",
-    description="Modular RAG Learning Assistant with NotebookLM-style features",
+    title="AI Course Generator API",
+    version="4.0.0",
+    description="Generate exactly four grounded learning outputs: Book, Slide, Quiz, and Vid.",
     lifespan=lifespan,
 )
 
@@ -90,29 +67,22 @@ app.add_middleware(
 )
 
 
-# ─── Middleware: Rate Limiting ─────────────────────────────────────────────────
-
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Simple in-memory rate limiter."""
+    """Apply a simple in-memory rate limit."""
     if request.method == "OPTIONS" or request.url.path.endswith("/status"):
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "unknown"
     now = time.time()
 
-    if client_ip not in rate_limit_store:
-        rate_limit_store[client_ip] = []
-
-    rate_limit_store[client_ip] = [
-        t for t in rate_limit_store[client_ip]
-        if now - t < RATE_LIMIT_WINDOW
-    ]
+    rate_limit_store.setdefault(client_ip, [])
+    rate_limit_store[client_ip] = [t for t in rate_limit_store[client_ip] if now - t < RATE_LIMIT_WINDOW]
 
     if len(rate_limit_store[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
         response = JSONResponse(
             status_code=429,
-            content={"detail": "Rate limit exceeded. Vui lòng thử lại sau."}
+            content={"detail": "Rate limit exceeded. Vui lòng thử lại sau."},
         )
         origin = request.headers.get("origin")
         if ALLOW_ALL_ORIGINS:
@@ -127,108 +97,19 @@ async def rate_limit_middleware(request: Request, call_next):
 
     if len(rate_limit_store) > 1000:
         old_clients = [
-            ip for ip, times in rate_limit_store.items()
-            if now - max(times) > RATE_LIMIT_WINDOW * 2
+            ip for ip, times in rate_limit_store.items() if times and now - max(times) > RATE_LIMIT_WINDOW * 2
         ]
         for ip in old_clients:
             del rate_limit_store[ip]
 
-    response = await call_next(request)
-    return response
-
-
-# ─── Pydantic Models ───────────────────────────────────────────────────────────
-
-class ChatRequest(BaseModel):
-    course_id: str
-    question: str
-
-    @field_validator("question")
-    @classmethod
-    def validate_question(cls, v):
-        if not v or not v.strip():
-            raise ValueError("Câu hỏi không được để trống.")
-        if len(v) > 2000:
-            raise ValueError("Câu hỏi quá dài (tối đa 2000 ký tự).")
-        return sanitize_input(v)
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    course_id: str
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
-
-class GenerateCourseRequest(BaseModel):
-    course_id: str
-    user_prompt: Optional[str] = ""
-    target_audience: Optional[str] = "sinh viên"
-
-class GenerateSummaryRequest(BaseModel):
-    course_id: str
-    type: str = "detailed"
-
-class GenerateFlashcardsRequest(BaseModel):
-    course_id: str
-    count: int = 20
-
-class GenerateQuizRequest(BaseModel):
-    course_id: str
-    topic: str
-    quantity: int = 20
-    difficulty: str = "medium"
-
-class GenerateSlidesRequest(BaseModel):
-    course_id: str
-    topic: str
-    num_slides: int = 10
-
-
-class GenerateQuestionsRequest(BaseModel):
-    course_id: str
-    topic: str
-    quantity: int = Field(default=20, ge=1, le=30)
-
-    @field_validator("topic")
-    @classmethod
-    def validate_topic(cls, v):
-        if not v or not v.strip():
-            raise ValueError("Chủ đề không được để trống.")
-        if len(v) > 200:
-            raise ValueError("Chủ đề quá dài (tối đa 200 ký tự).")
-        return sanitize_input(v)
-
-
-class GenerateQuestionsResponse(BaseModel):
-    course_id: str
-    topic: str
-    questions: list
-    total_questions: int
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
-
-
-    
-class GenerateMindmapRequest(BaseModel):
-    course_id: str
-    max_depth: int = Field(default=3, ge=2, le=5)
-
-
-class GenerateSlidesResponse(BaseModel):
-    course_id: str
-    topic: str
-    latex_code: str
-    filename: str
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
-
-
-class GenerateSyllabusResponse(BaseModel):
-    course_id: str
-    syllabus: list
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
+    return await call_next(request)
 
 
 class UploadResponse(BaseModel):
     course_id: str
     filename: str
+    filenames: list[str] = Field(default_factory=list)
+    file_count: int = 1
     status: str
     message: str
 
@@ -236,885 +117,513 @@ class UploadResponse(BaseModel):
 class StatusResponse(BaseModel):
     status: str
     course_id: Optional[str] = None
-    courses: Optional[list] = None
+    courses: Optional[list[str]] = None
 
 
-class PodcastScriptResponse(BaseModel):
+class GenerateBookRequest(BaseModel):
     course_id: str
-    script: list
-    estimated_duration: str
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn")
+    user_prompt: str = ""
+    target_audience: str = "sinh viên"
 
-
-class StudyGuideResponse(BaseModel):
-    course_id: str
-    guide: str
-    filename: str
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn")
-
-
-class SummaryResponse(BaseModel):
-    course_id: str
-    summary: str
-    filename: str
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
-
-
-class FlashcardsResponse(BaseModel):
-    course_id: str
-    flashcards: list
-    total: int
-    citations: list = Field(default_factory=list, description="Danh sách trích dẫn từ tài liệu gốc")
-
-
-class TaskResponse(BaseModel):
-    task_id: str
-    status: str
-    
-class CustomPromptRequest(BaseModel):
-    course_id: str
-    prompt: str
-
-    @field_validator("prompt")
+    @field_validator("user_prompt")
     @classmethod
-    def validate_prompt(cls, v):
-        if not v or not v.strip():
-            raise ValueError("Yêu cầu không được để trống.")
-        if len(v) > 2000:
+    def validate_user_prompt(cls, value: str) -> str:
+        value = sanitize_input(value or "")
+        if len(value) > 2000:
             raise ValueError("Yêu cầu quá dài (tối đa 2000 ký tự).")
-        return sanitize_input(v)
+        return value
+
+    @field_validator("target_audience")
+    @classmethod
+    def validate_target_audience(cls, value: str) -> str:
+        value = sanitize_input(value or "sinh viên")
+        if len(value) > 120:
+            raise ValueError("Đối tượng học quá dài (tối đa 120 ký tự).")
+        return value or "sinh viên"
 
 
-# ─── Helpers ───────────────────────────────────────────────────────────────────
+class GenerateQuizRequest(BaseModel):
+    course_id: str
+    topic: str = "tổng quan"
+    quantity: int = Field(default=10, ge=1, le=30)
+    difficulty: str = "medium"
 
-def get_course(course_id: str):
-    """Get a course or raise appropriate HTTP error."""
-    if not course_manager:
-        raise HTTPException(500, f"[{_timestamp()}] Hệ thống chưa sẵn sàng.")
-    rag = course_manager.get_course(course_id)
-    if not rag:
-        raise HTTPException(404, f"[{_timestamp()}] Không tìm thấy khóa học '{course_id}'.")
-    return rag
+    @field_validator("topic")
+    @classmethod
+    def validate_topic(cls, value: str) -> str:
+        value = sanitize_input(value or "tổng quan")
+        if len(value) > 200:
+            raise ValueError("Chủ đề quá dài (tối đa 200 ký tự).")
+        return value or "tổng quan"
+
+    @field_validator("difficulty")
+    @classmethod
+    def validate_difficulty(cls, value: str) -> str:
+        value = sanitize_input(value or "medium").lower()
+        return value if value in {"easy", "medium", "hard"} else "medium"
 
 
-def _get_course_mgr() -> CourseManager:
-    """Get or raise 503 if manager not initialized."""
+class GenerateSlideRequest(BaseModel):
+    course_id: str
+    topic: str = "tổng quan"
+    num_slides: int = Field(default=8, ge=1, le=30)
+
+    @field_validator("topic")
+    @classmethod
+    def validate_topic(cls, value: str) -> str:
+        value = sanitize_input(value or "tổng quan")
+        if len(value) > 200:
+            raise ValueError("Chủ đề quá dài (tối đa 200 ký tự).")
+        return value or "tổng quan"
+
+
+class GenerateVidRequest(BaseModel):
+    course_id: str
+    topic: str = "tổng quan"
+    duration_minutes: int = Field(default=3, ge=1, le=5)
+
+    @field_validator("topic")
+    @classmethod
+    def validate_topic(cls, value: str) -> str:
+        value = sanitize_input(value or "tổng quan")
+        if len(value) > 200:
+            raise ValueError("Chủ đề quá dài (tối đa 200 ký tự).")
+        return value or "tổng quan"
+
+
+def _get_course_manager() -> CourseManager:
+    """Return the course manager or fail if startup has not completed."""
     if not course_manager:
         raise HTTPException(503, "Hệ thống chưa khởi tạo.")
     return course_manager
 
 
-def _validate_course_ready(mgr: CourseManager, course_id: str):
-    """Validate course status before starting task."""
+def _get_ready_course(course_id: str):
+    """Return a ready course or raise a public API error."""
+    mgr = _get_course_manager()
     status = mgr.get_course_status(course_id)
-    if status not in ("ready", "pending"):
-        raise HTTPException(
-            400,
-            f"Khóa học '{course_id}' chưa sẵn sàng (trạng thái: {status})."
-        )
+    if status != "ready":
+        raise HTTPException(400, f"Tài liệu '{course_id}' chưa sẵn sàng (trạng thái: {status}).")
+
+    rag = mgr.get_course(course_id)
+    if not rag:
+        raise HTTPException(404, f"Không tìm thấy tài liệu '{course_id}'.")
+    return rag
 
 
-def run_background_task(task_id: str, course_id: str, task_type: str, **kwargs):
-    """
-    Generic background task runner.
-    All async generation endpoints route here.
-    Sử dụng ResourceGenerator cho các chức năng tạo resource.
-    """
-    task_dir = os.path.join("tasks", task_id)
-    os.makedirs(task_dir, exist_ok=True)
-    status_file = os.path.join(task_dir, "status.json")
-
-    def write_status(status: str, result: Any = None, error: str = None):
-        payload = {
-            "status": status,
-            "task_type": task_type,
-            "course_id": course_id,
-            "created_at": _timestamp(),
-            "updated_at": _timestamp(),
-        }
-        if result is not None:
-            payload["result"] = result
-        if error:
-            payload["error"] = str(error)
-        with open(status_file, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    write_status("processing")
-
-    try:
-        if course_manager and course_manager.get_course_status(course_id) != "ready":
-            raise ValueError(
-                f"Khóa học '{course_id}' chưa sẵn sàng "
-                f"(trạng thái: {course_manager.get_course_status(course_id)})."
-            )
-
-        rag = get_course(course_id)
-        res_gen = rag.get_resource_generator()
-        result = None
-
-        def handle_podcast():
-            script = res_gen.generate_podcast_script()
-            print(f"[{_timestamp()}] Khởi động TTS cho podcast...")
-            try:
-                res_gen.generate_podcast_audio()
-            except Exception as audio_error:
-                logger.warning("Podcast audio skipped: %s", audio_error)
-            return script
-
-        task_handlers = {
-            "syllabus": lambda: rag.get_resource_generator().generate_course_structure(
-                kwargs.get("user_prompt", ""), 
-                kwargs.get("target_audience", "sinh viên")
-            ),
-            
-            # 4.4 Questions/Quiz: Dùng bản v2 và truyền thêm difficulty
-            "questions": lambda: res_gen.generate_quiz_v2(
-                kwargs["topic"], 
-                kwargs["quantity"],
-                kwargs.get("difficulty", "medium")
-            ),
-            
-            # 4.5 Slides: Trả về JSON list (bỏ latex_code cũ)
-            "slides": lambda: res_gen.generate_slides_v2(
-                kwargs["topic"], 
-                kwargs.get("num_slides", 10)
-            ),
-            
-            "podcast": handle_podcast,
-            
-            # 4.8 Study Guide
-            "study_guide": lambda: res_gen.generate_study_guide(),
-            
-            # 4.2 Summary: Truyền thêm type (short/detailed...)
-            "summary": lambda: res_gen.generate_summary_v2(
-                summary_type=kwargs.get("type", "detailed")
-            ),
-            
-            # 4.3 Flashcards: Truyền thêm count
-            "flashcards": lambda: res_gen.generate_flashcards_v2(
-                count=kwargs.get("count", 20)
-            ),
-            
-            # 4.6 Mindmap: CẦN SỬA ĐỂ NHẬN MAX_DEPTH
-            "mindmap": lambda: rag.get_mindmap_generator().generate_mindmap(
-                max_depth=kwargs.get("max_depth", 3)
-            ),
-            "custom_prompt": lambda: rag.get_custom_processor().process(kwargs.get("prompt", "")),
-        }
-
-        if task_type not in task_handlers:
-            raise ValueError(f"Unknown task type: {task_type}")
-
-        result = task_handlers[task_type]()
-        write_status("completed", result=result)
-        print(f"[{_timestamp()}] Task {task_id} ({task_type}) completed successfully.")
-
-    except Exception as e:
-        error_msg = f"{type(e).__name__}: {str(e)}"
-        write_status("failed", error=error_msg)
-        print(f"[{_timestamp()}] Task {task_id} ({task_type}) failed: {error_msg}")
+def _read_json(path: str, missing_message: str):
+    """Read a JSON artifact from disk."""
+    if not os.path.exists(path):
+        raise HTTPException(404, missing_message)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _build_course_info(course_id: str) -> dict:
-    """Helper to build course info dict."""
-    info = {"course_id": course_id}
+    """Build course metadata for list endpoints."""
+    info = {"course_id": course_id, "status": "unknown"}
     if course_manager:
         info["status"] = course_manager.get_course_status(course_id)
-    else:
-        info["status"] = "unknown"
 
     meta_path = get_course_path(course_id)["meta"]
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-                info["pdf_path"] = meta.get("pdf_path", "")
-                info["created_at"] = meta.get("created_at")
-                if "error" in meta:
-                    info["error"] = meta["error"]
+            info["created_at"] = meta.get("created_at")
+            info["filenames"] = meta.get("filenames") or []
+            info["file_count"] = meta.get("file_count") or len(info["filenames"])
+            if "error" in meta:
+                info["error"] = meta["error"]
         except Exception:
             pass
     return info
 
 
-# ─── Health & Management ───────────────────────────────────────────────────────
-
 @app.get("/api/health", response_model=StatusResponse)
 async def health():
-    """System health check."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-    return StatusResponse(
-        status="ok",
-        course_id=None,
-        courses=sorted(course_manager.list_courses()),
-    )
+    """Return backend health and registered course IDs."""
+    mgr = _get_course_manager()
+    return StatusResponse(status="ok", course_id=None, courses=sorted(mgr.list_courses()))
 
 
 @app.get("/api/courses", response_model=StatusResponse)
 async def list_courses():
-    """List all registered courses."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-    return StatusResponse(
-        status="ok",
-        courses=sorted(course_manager.list_courses()),
-    )
+    """Return registered course IDs."""
+    mgr = _get_course_manager()
+    return StatusResponse(status="ok", courses=sorted(mgr.list_courses()))
 
 
 @app.get("/api/courses/all")
 async def list_all_courses_with_meta():
-    """List all courses with detailed metadata."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-
+    """Return all known courses with local metadata."""
+    mgr = _get_course_manager()
     courses = []
     seen_ids = set()
 
     if os.path.exists(INDEX_DIR):
         import glob
+
         for faiss_meta in glob.glob(os.path.join(INDEX_DIR, "faiss_*.json")):
             try:
                 with open(faiss_meta, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    cid = data.get("course_id", "")
-                    if cid and cid not in seen_ids:
-                        seen_ids.add(cid)
-                        info = _build_course_info(cid)
-                        courses.append(info)
+                    course_id = json.load(f).get("course_id", "")
+                if course_id and course_id not in seen_ids:
+                    seen_ids.add(course_id)
+                    courses.append(_build_course_info(course_id))
             except Exception:
                 pass
 
-    for cid in course_manager.list_courses():
-        if cid not in seen_ids:
-            info = _build_course_info(cid)
-            courses.append(info)
+    for course_id in mgr.list_courses():
+        if course_id not in seen_ids:
+            courses.append(_build_course_info(course_id))
 
     return {"courses": courses, "total": len(courses)}
 
 
 @app.delete("/api/courses/{course_id}", response_model=StatusResponse)
 async def delete_course(course_id: str):
-    """Delete a course and all its data."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-    if not course_manager.contains(course_id):
-        raise HTTPException(404, f"Không tìm thấy khóa học '{course_id}'.")
-    course_manager.remove_course(course_id)
+    """Delete a course and generated public artifacts."""
+    mgr = _get_course_manager()
+    if not mgr.contains(course_id):
+        raise HTTPException(404, f"Không tìm thấy tài liệu '{course_id}'.")
+    mgr.remove_course(course_id)
     return StatusResponse(status="deleted", course_id=course_id)
 
 
-# ─── Upload ────────────────────────────────────────────────────────────────────
-
-@app.post("/api/upload", response_model=UploadResponse)
-async def upload(file: UploadFile = File(...)):
-    """
-    Yêu cầu 6.1: Upload tài liệu (PDF, DOCX, TXT) và xử lý background.
-    """
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-
-    if not file.filename:
+def _validate_upload_metadata(upload_file: UploadFile) -> None:
+    """Validate upload metadata before reading file bytes."""
+    if not upload_file.filename:
         raise HTTPException(400, "Tên file không được để trống.")
 
-    ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
-    file_ext = os.path.splitext(file.filename.lower())[1]
-
+    file_ext = os.path.splitext(upload_file.filename.lower())[1]
     if file_ext not in ALLOWED_EXTENSIONS:
+        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
         raise HTTPException(
             400,
-            f"Định dạng file '{file_ext}' không hợp lệ. Hệ thống chỉ hỗ trợ: {', '.join(ALLOWED_EXTENSIONS)}"
+            f"Định dạng file '{file_ext}' không hợp lệ. Hệ thống chỉ hỗ trợ: {allowed}",
         )
 
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(400, "File bạn upload là file rỗng. Vui lòng kiểm tra lại.")
 
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            400,
-            f"File quá lớn. Tối đa {MAX_UPLOAD_SIZE // (1024*1024)}MB."
-        )
-
+async def _save_upload_files(course_id: str, upload_files: list[UploadFile]) -> tuple[list[str], list[str]]:
+    """Save one or many upload files under the same course workspace."""
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    safe_name = re.sub(r"[^\w\-_\.]", "_", file.filename)
-    file_path = os.path.join(UPLOAD_DIR, f"{int(time.time())}_{safe_name}")
+    course_upload_dir = os.path.join(UPLOAD_DIR, course_id)
+    os.makedirs(course_upload_dir, exist_ok=True)
 
-    try:
-        with open(file_path, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise HTTPException(500, f"Lỗi trong quá trình lưu file: {str(e)}")
+    saved_paths: list[str] = []
+    filenames: list[str] = []
+
+    for index, upload_file in enumerate(upload_files, 1):
+        _validate_upload_metadata(upload_file)
+        content = await upload_file.read()
+        if len(content) == 0:
+            raise HTTPException(400, f"File '{upload_file.filename}' là file rỗng. Vui lòng kiểm tra lại.")
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                400,
+                f"File '{upload_file.filename}' quá lớn. Tối đa {MAX_UPLOAD_SIZE // (1024 * 1024)}MB.",
+            )
+
+        safe_name = re.sub(r"[^\w\-_\.]", "_", upload_file.filename)
+        file_path = os.path.join(course_upload_dir, f"{index:02d}_{int(time.time())}_{safe_name}")
+        try:
+            with open(file_path, "wb") as f:
+                f.write(content)
+        except Exception as exc:
+            raise HTTPException(500, f"Lỗi trong quá trình lưu file: {exc}") from exc
+
+        saved_paths.append(file_path)
+        filenames.append(upload_file.filename)
+
+    return saved_paths, filenames
+
+
+@app.post("/api/upload", response_model=UploadResponse)
+async def upload(
+    file: UploadFile | None = File(None),
+    files: list[UploadFile] | None = File(None),
+):
+    """Upload one or many PDF, DOCX, or TXT documents as one course corpus."""
+    mgr = _get_course_manager()
+
+    upload_files = list(files or [])
+    if file is not None:
+        upload_files.insert(0, file)
+    upload_files = [item for item in upload_files if item and item.filename]
+    if not upload_files:
+        raise HTTPException(400, "Vui lòng chọn ít nhất một file PDF, DOCX hoặc TXT.")
 
     course_id = uuid.uuid4().hex[:12]
-    course_manager.register_course_id(course_id, file_path)
+    saved_paths, filenames = await _save_upload_files(course_id, upload_files)
+    mgr.register_course_id(course_id, saved_paths)
 
-    import threading
-    t = threading.Thread(
-        target=course_manager.process_new_course,
-        args=(course_id, file_path),
-        daemon=True
-    )
-    t.start()
+    thread = threading.Thread(target=mgr.process_new_course, args=(course_id, saved_paths), daemon=True)
+    thread.start()
 
+    file_label = filenames[0] if len(filenames) == 1 else f"{len(filenames)} files"
     return UploadResponse(
         course_id=course_id,
-        filename=file.filename,
+        filename=file_label,
+        filenames=filenames,
+        file_count=len(filenames),
         status="processing",
-        message=(
-            f"File '{file.filename}' đã được nhận và đang được phân tích. "
-            f"ID khóa học: {course_id}"
-        ),
+        message=f"Đã nhận {len(filenames)} file và đang phân tích tài liệu. ID tài liệu: {course_id}",
     )
 
 
 @app.get("/api/course/{course_id}/status")
 async def get_course_status(course_id: str):
-    """Check processing status."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
-
-    status = course_manager.get_course_status(course_id)
-    meta_path = get_course_path(course_id)["meta"]
-
+    """Return document processing status."""
+    mgr = _get_course_manager()
+    status = mgr.get_course_status(course_id)
     info = {"course_id": course_id, "status": status}
 
+    meta_path = get_course_path(course_id)["meta"]
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-                info["pdf_path"] = meta.get("pdf_path", "")
-                if meta.get("error"):
-                    info["error"] = meta["error"]
+            if meta.get("error"):
+                info["error"] = meta["error"]
+            info["filenames"] = meta.get("filenames") or []
+            info["file_count"] = meta.get("file_count") or len(info["filenames"])
         except Exception:
             pass
 
     return info
 
 
-# ─── Chat ──────────────────────────────────────────────────────────────────────
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    """Chat with course content."""
-    rag = get_course(req.course_id)
-    try:
-        answer = rag.ask(req.question)
-        # Retrieve relevant docs for citations
-        retriever = rag.vectorstore.as_retriever(search_kwargs={"k": 3})
-        docs = retriever.invoke(req.question)
-        citations = []
-        for d in docs[:3]:
-            citations.append({
-                "page": d.metadata.get("page", 1),
-                "source": os.path.basename(d.metadata.get("source_file", d.metadata.get("source", "unknown"))),
-                "chunk_id": d.metadata.get("chunk_id", f"chunk_{hash(d.page_content) % 1000}")
-            })
-        return ChatResponse(answer=answer, course_id=req.course_id, citations=citations)
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi chat: {str(e)}")
-
-
-# ─── Generation Endpoints (Sync) ───────────────────────────────────────────────
-@app.post("/api/generate-course")
-async def api_generate_course(req: GenerateCourseRequest):
-    rag = get_course(req.course_id)
-    result = rag.get_resource_generator().generate_course_structure(req.user_prompt, req.target_audience)
+@app.post("/api/generate-book")
+async def generate_book(req: GenerateBookRequest):
+    """Generate the Book output and its downloadable PDF."""
+    rag = _get_ready_course(req.course_id)
+    result = rag.get_resource_generator().generate_book(req.user_prompt, req.target_audience)
     return {
         "course_id": req.course_id,
-        "course": result.get("course", {}),
-        "citations": result.get("citations", []),
+        "book": result.get("book", {}),
+        "pdf_url": result.get("pdf_url", f"/api/course/{req.course_id}/book.pdf"),
     }
 
-@app.post("/api/generate-summary")
-async def api_generate_summary(req: GenerateSummaryRequest):
-    rag = get_course(req.course_id)
-    result = rag.get_resource_generator().generate_summary_v2(req.type)
+
+@app.post("/api/generate-slide")
+async def generate_slide(req: GenerateSlideRequest):
+    """Generate the Slide output."""
+    rag = _get_ready_course(req.course_id)
+    result = rag.get_resource_generator().generate_slides_v2(req.topic, req.num_slides)
+    slides = result.get("slides", [])
     return {
         "course_id": req.course_id,
-        "filename": "summary.md",
-        "summary": result.get("summary", ""),
-        "citations": result.get("citations", []),
+        "topic": req.topic,
+        "total_slides": len(slides),
+        "slides": slides,
+        "json_url": f"/api/course/{req.course_id}/slide.json",
+        "pdf_url": f"/api/course/{req.course_id}/slide.pdf",
     }
 
-@app.post("/api/generate-flashcards")
-async def api_generate_flashcards(req: GenerateFlashcardsRequest):
-    rag = get_course(req.course_id)
-    try:
-        result = rag.get_resource_generator().generate_flashcards_v2(req.count)
-        flashcards = result.get("flashcards", [])
-        return {
-            "course_id": req.course_id,
-            "total": len(flashcards),
-            "flashcards": flashcards,
-            "citations": result.get("citations", []),
-        }
-    except Exception as e:
-        logger.exception("Lỗi tạo flashcards")
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo flashcards: {str(e)}")
 
 @app.post("/api/generate-quiz")
-async def api_generate_quiz(req: GenerateQuizRequest):
-    rag = get_course(req.course_id)
+async def generate_quiz(req: GenerateQuizRequest):
+    """Generate the Quiz output."""
+    rag = _get_ready_course(req.course_id)
     result = rag.get_resource_generator().generate_quiz_v2(req.topic, req.quantity, req.difficulty)
+    questions = result.get("questions", [])
     return {
         "course_id": req.course_id,
         "topic": req.topic,
         "difficulty": req.difficulty,
-        "total_questions": req.quantity,
-        "questions": result.get("questions", []),
-        "citations": result.get("citations", []),
+        "total_questions": len(questions),
+        "questions": questions,
+        "json_url": f"/api/course/{req.course_id}/quiz.json",
+        "pdf_url": f"/api/course/{req.course_id}/quiz.pdf",
     }
 
-@app.post("/api/generate-slides")
-async def api_generate_slides(req: GenerateSlidesRequest):
-    rag = get_course(req.course_id)
-    result = rag.get_resource_generator().generate_slides_v2(req.topic, req.num_slides)
-    return {
-        "course_id": req.course_id,
-        "topic": req.topic,
-        "total_slides": req.num_slides,
-        "slides": result.get("slides", []),
-        "citations": result.get("citations", []),
-    }
 
-@app.post("/api/generate-podcast/{course_id}", response_model=PodcastScriptResponse)
-async def generate_podcast_endpoint(course_id: str):
-    """Generate podcast script."""
-    rag = get_course(course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        result = res_gen.generate_podcast_script()
-        script = result["script"]
-        citations = result.get("citations", [])
-        try:
-            res_gen.generate_podcast_audio()
-        except Exception as audio_error:
-            logger.warning("Podcast audio skipped: %s", audio_error)
-        total_words = sum(len(entry.get("text", "").split()) for entry in script)
-        duration = max(3, total_words // 150)
-        return PodcastScriptResponse(
-            course_id=course_id,
-            script=script,
-            estimated_duration=f"{duration} phút",
-            citations=citations,
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo podcast: {str(e)}")
+@app.post("/api/generate-vid")
+async def generate_vid(req: GenerateVidRequest):
+    """Generate the Vid output."""
+    rag = _get_ready_course(req.course_id)
+    result = rag.get_resource_generator().generate_vid(req.topic, req.duration_minutes)
+    return {"course_id": req.course_id, "vid": result.get("vid", {})}
 
 
-@app.post("/api/generate-study-guide/{course_id}", response_model=StudyGuideResponse)
-async def generate_study_guide_endpoint(course_id: str):
-    """Generate comprehensive study guide."""
-    rag = get_course(course_id)
-    res_gen = rag.get_resource_generator()
-    try:
-        result = res_gen.generate_study_guide()
-        filename = f"study_guide_{course_id}.md"
-        return StudyGuideResponse(
-            course_id=course_id,
-            guide=result["guide"],
-            filename=filename,
-            citations=result.get("citations", []),
-        )
-    except Exception as e:
-        raise HTTPException(500, f"[{_timestamp()}] Lỗi tạo study guide: {str(e)}")
-
-
-
-@app.post("/api/generate-mindmap")
-async def generate_mindmap_api(req: GenerateMindmapRequest):
-    """
-    Tạo bản đồ tư duy và trả về kết quả ngay lập tức (Sync).
-    Sử dụng cho tài liệu ngắn hoặc khi muốn lấy data nhanh.
-    """
-    rag = get_course(req.course_id)
-    try:
-        # Gọi trực tiếp hàm tạo từ MindmapGenerator
-        result = rag.get_mindmap_generator().generate_mindmap(max_depth=req.max_depth)
-        return result
-    except Exception as e:
-        raise HTTPException(500, f"Lỗi tạo bản đồ tư duy: {str(e)}")
-    
-@app.post("/api/custom-prompt")
-async def custom_prompt_sync(req: CustomPromptRequest):
-    """
-    Xử lý prompt tùy chỉnh (Sync).
-    Phân loại prompt → retrieve context → inject format instruction → gọi LLM → trả kết quả + citations.
-    
-    Hỗ trợ 5 loại prompt: TABLE, LIST, EXPLAIN (default), JSON, CODE.
-    """
-    rag = get_course(req.course_id)
-    processor = rag.get_custom_processor()
-    
-    try:
-        result = processor.process(req.prompt)
-        return {
-            "course_id": req.course_id,
-            "prompt": req.prompt,
-            "prompt_type": result["prompt_type"],
-            "result": result["result"],
-            "citations": result["citations"],
-        }
-    except Exception as e:
-        raise HTTPException(500, f"Lỗi xử lý prompt tùy chỉnh: {str(e)}")
-
-
-# ─── Generation Endpoints (Async) ─────────────────────────────────────────────
-
-@app.post("/api/custom-prompt-async/{course_id}", response_model=TaskResponse)
-async def custom_prompt_async(
-    course_id: str,
-    prompt: str = "Phân tích nội dung tài liệu",
-    background_tasks: BackgroundTasks = None,
-):
-    """Xử lý prompt tùy chỉnh trong background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-
-    prompt = sanitize_input(prompt)
-    if not prompt:
-        prompt = "Phân tích nội dung tài liệu"
-    if len(prompt) > 2000:
-        raise HTTPException(400, "Yêu cầu quá dài (tối đa 2000 ký tự).")
-
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task,
-        task_id, course_id, "custom_prompt",
-        prompt=prompt,
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-@app.post("/api/generate-podcast-async/{course_id}", response_model=TaskResponse)
-async def generate_podcast_async(course_id: str, background_tasks: BackgroundTasks):
-    """Generate podcast in background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "podcast")
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/api/generate-study-guide-async/{course_id}", response_model=TaskResponse)
-async def generate_study_guide_async(course_id: str, background_tasks: BackgroundTasks):
-    """Generate study guide in background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(run_background_task, task_id, course_id, "study_guide")
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/api/generate-course-async", response_model=TaskResponse)
-async def generate_course_async(
-    req: GenerateCourseRequest, # Dùng Model để nhận body
-    background_tasks: BackgroundTasks
-):
-    """Tạo cấu trúc khóa học (Syllabus) trong background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "syllabus", 
-        user_prompt=req.user_prompt, 
-        target_audience=req.target_audience
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-@app.post("/api/generate-summary-async", response_model=TaskResponse)
-async def generate_summary_async(
-    req: GenerateSummaryRequest, 
-    background_tasks: BackgroundTasks
-):
-    """Tạo bản tóm tắt trong background (Hỗ trợ type: short/detailed/...)."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "summary", 
-        type=req.type
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-@app.post("/api/generate-flashcards-async", response_model=TaskResponse)
-async def generate_flashcards_async(
-    req: GenerateFlashcardsRequest, 
-    background_tasks: BackgroundTasks
-):
-    """Tạo flashcards trong background (Hỗ trợ số lượng count)."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "flashcards", 
-        count=req.count
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-@app.post("/api/generate-quiz-async", response_model=TaskResponse)
-async def generate_quiz_async(
-    req: GenerateQuizRequest, 
-    background_tasks: BackgroundTasks
-):
-    """Tạo Quiz MCQ trong background (Hỗ trợ độ khó và số lượng)."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "questions", 
-        topic=req.topic, 
-        quantity=req.quantity,
-        difficulty=req.difficulty
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-@app.post("/api/generate-slides-async", response_model=TaskResponse)
-async def generate_slides_async(
-    req: GenerateSlidesRequest, 
-    background_tasks: BackgroundTasks
-):
-    """Tạo nội dung Slide JSON trong background."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "slides", 
-        topic=req.topic, 
-        num_slides=req.num_slides
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-
-@app.post("/api/generate-mindmap-async", response_model=TaskResponse)
-async def generate_mindmap_async(
-    req: GenerateMindmapRequest, 
-    background_tasks: BackgroundTasks
-):
-    """Tạo bản đồ tư duy trong background (Hỗ trợ max_depth)."""
-    course_mgr = _get_course_mgr()
-    _validate_course_ready(course_mgr, req.course_id)
-    task_id = uuid.uuid4().hex[:12]
-    background_tasks.add_task(
-        run_background_task, 
-        task_id, req.course_id, "mindmap", 
-        max_depth=req.max_depth
-    )
-    return TaskResponse(task_id=task_id, status="processing")
-
-# ─── Task Polling ──────────────────────────────────────────────────────────────
-
-@app.get("/api/task/{task_id}")
-async def get_task_status(task_id: str):
-    """Poll background task status."""
-    task_dir = os.path.join("tasks", task_id)
-    status_file = os.path.join(task_dir, "status.json")
-    if not os.path.exists(status_file):
-        raise HTTPException(404, f"Không tìm thấy task '{task_id}'.")
-    with open(status_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if data.get("status") == "processing" and data.get("created_at"):
-        try:
-            created = datetime.strptime(data["created_at"], "%Y-%m-%d %H:%M:%S")
-            elapsed = (datetime.now() - created).total_seconds()
-            data["elapsed_seconds"] = int(elapsed)
-        except Exception:
-            pass
-    return data
-
-
-# ─── Get Saved Content ─────────────────────────────────────────────────────────
-
-@app.get("/api/course/{course_id}/questions")
-async def get_saved_questions(course_id: str):
-    """Get all saved questions."""
-    q_path = get_course_path(course_id)["questions"]
-    if not os.path.exists(q_path):
-        return {"course_id": course_id, "questions": [], "total": 0}
-    with open(q_path, "r", encoding="utf-8") as f:
-        questions = json.load(f)
-    return {"course_id": course_id, "questions": questions, "total": len(questions)}
-
-
-@app.get("/api/course/{course_id}/syllabus")
-async def get_saved_syllabus(course_id: str):
-    """Get saved syllabus."""
-    s_path = get_course_path(course_id)["syllabus"]
-    if not os.path.exists(s_path):
-        return {"course_id": course_id, "syllabus": None}
-    with open(s_path, "r", encoding="utf-8") as f:
-        syllabus = json.load(f)
-    return {"course_id": course_id, "syllabus": syllabus}
-
-
-@app.get("/api/course/{course_id}/slides")
-async def get_saved_slides(course_id: str):
-    """List all saved slides."""
-    slides_dir = os.path.join(QUESTIONS_DIR, f"course_{course_id}_slides")
-    if not os.path.exists(slides_dir):
-        return {"course_id": course_id, "slides": [], "total": 0}
-
-    slides = []
-    for fname in sorted(os.listdir(slides_dir)):
-        if fname.endswith(".tex"):
-            fpath = os.path.join(slides_dir, fname)
-            with open(fpath, "r", encoding="utf-8") as f:
-                content = f.read()
-            slides.append({
-                "filename": fname,
-                "preview": content[:500] if len(content) > 500 else content,
-                "size": len(content),
-            })
-
-    return {"course_id": course_id, "slides": slides, "total": len(slides)}
-
-
-@app.get("/api/course/{course_id}/audio")
-async def get_saved_audio_script(course_id: str):
-    """Get saved podcast script."""
-    audio_dir = get_course_path(course_id)["audio"]
-    script_path = os.path.join(audio_dir, "podcast_script.json")
-    if not os.path.exists(script_path):
-        raise HTTPException(404, "Chưa có podcast script.")
-    with open(script_path, "r", encoding="utf-8") as f:
-        script = json.load(f)
-    return {"course_id": course_id, "script": script}
-
-
-@app.get("/api/course/{course_id}/study-guide")
-async def get_saved_study_guide(course_id: str):
-    """Get saved study guide."""
-    guide_path = os.path.join(get_course_path(course_id)["guides"], "study_guide.md")
-    if not os.path.exists(guide_path):
-        raise HTTPException(404, "Chưa có study guide.")
-    with open(guide_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    return {"course_id": course_id, "guide": content, "filename": "study_guide.md"}
-
-
-@app.get("/api/course/{course_id}/summary")
-async def get_saved_summary(course_id: str):
-    """Lấy bản tóm tắt đã lưu."""
-    summary_path = os.path.join(get_course_path(course_id)["guides"], "summary.md")
-    if not os.path.exists(summary_path):
-        raise HTTPException(
-            404,
-            "Chưa có bản tóm tắt cho khóa học này. Hãy gọi POST /generate-summary trước."
-        )
-    with open(summary_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    return {"course_id": course_id, "summary": content}
-
-
-@app.get("/api/course/{course_id}/flashcards")
-async def get_saved_flashcards(course_id: str):
-    """Get saved flashcards."""
-    cards_path = get_course_path(course_id)["flashcards"]
-    if not os.path.exists(cards_path):
-        return {"course_id": course_id, "flashcards": [], "total": 0}
-    with open(cards_path, "r", encoding="utf-8") as f:
-        cards = json.load(f)
-    return {"course_id": course_id, "flashcards": cards, "total": len(cards)}
-
-@app.get("/api/course/{course_id}/mindmap")
-async def get_saved_mindmap(course_id: str):
-    """Lấy dữ liệu bản đồ tư duy từ folder mindmaps."""
-    # Lấy đường dẫn chuẩn từ config
+@app.get("/api/course/{course_id}/book")
+async def get_saved_book(course_id: str):
+    """Return the generated Book JSON."""
     paths = get_course_path(course_id)
-    path = os.path.join(paths["mindmaps"], "mindmap.json")
-    
+    book = _read_json(paths["book"], "Chưa có Book cho tài liệu này.")
+    return {
+        "course_id": course_id,
+        "book": book,
+        "pdf_url": f"/api/course/{course_id}/book.pdf" if os.path.exists(paths["book_pdf"]) else None,
+    }
+
+
+@app.get("/api/course/{course_id}/book.pdf")
+async def get_saved_book_pdf(course_id: str):
+    """Return the generated Book PDF."""
+    paths = get_course_path(course_id)
+    if not os.path.exists(paths["book_pdf"]):
+        if not os.path.exists(paths["book"]):
+            raise HTTPException(404, "Chưa có Book PDF cho tài liệu này.")
+        rag = _get_ready_course(course_id)
+        rag.get_resource_generator().export_book_pdf()
+
+    return FileResponse(
+        paths["book_pdf"],
+        media_type="application/pdf",
+        filename=f"book_{course_id}.pdf",
+    )
+
+
+@app.get("/api/course/{course_id}/slide")
+async def get_saved_slide(course_id: str):
+    """Return the generated Slide JSON."""
+    paths = get_course_path(course_id)
+    slides = _read_json(paths["slides"], "Chưa có Slide cho tài liệu này.")
+    return {
+        "course_id": course_id,
+        "slides": slides,
+        "total_slides": len(slides),
+        "json_url": f"/api/course/{course_id}/slide.json",
+        "pdf_url": f"/api/course/{course_id}/slide.pdf" if os.path.exists(paths["slides_pdf"]) else None,
+    }
+
+
+@app.get("/api/course/{course_id}/slide.json")
+async def download_saved_slide_json(course_id: str):
+    """Download the generated Slide JSON."""
+    path = get_course_path(course_id)["slides"]
     if not os.path.exists(path):
-        raise HTTPException(404, "Chưa có bản đồ tư duy cho khóa học này.")
-        
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        raise HTTPException(404, "Chưa có Slide cho tài liệu này.")
+    return FileResponse(path, media_type="application/json", filename=f"slide_{course_id}.json")
+
+
+@app.get("/api/course/{course_id}/slide.pdf")
+async def download_saved_slide_pdf(course_id: str):
+    """Download the generated Slide PDF."""
+    paths = get_course_path(course_id)
+    if not os.path.exists(paths["slides_pdf"]):
+        if not os.path.exists(paths["slides"]):
+            raise HTTPException(404, "Chưa có Slide PDF cho tài liệu này.")
+        rag = _get_ready_course(course_id)
+        rag.get_resource_generator().export_slides_pdf()
+    return FileResponse(paths["slides_pdf"], media_type="application/pdf", filename=f"slide_{course_id}.pdf")
+
+
+@app.get("/api/course/{course_id}/quiz")
+async def get_saved_quiz(course_id: str):
+    """Return the generated Quiz JSON."""
+    paths = get_course_path(course_id)
+    questions = _read_json(paths["questions"], "Chưa có Quiz cho tài liệu này.")
+    return {
+        "course_id": course_id,
+        "questions": questions,
+        "total_questions": len(questions),
+        "json_url": f"/api/course/{course_id}/quiz.json",
+        "pdf_url": f"/api/course/{course_id}/quiz.pdf" if os.path.exists(paths["questions_pdf"]) else None,
+    }
+
+
+@app.get("/api/course/{course_id}/quiz.json")
+async def download_saved_quiz_json(course_id: str):
+    """Download the generated Quiz JSON."""
+    path = get_course_path(course_id)["questions"]
+    if not os.path.exists(path):
+        raise HTTPException(404, "Chưa có Quiz cho tài liệu này.")
+    return FileResponse(path, media_type="application/json", filename=f"quiz_{course_id}.json")
+
+
+@app.get("/api/course/{course_id}/quiz.pdf")
+async def download_saved_quiz_pdf(course_id: str):
+    """Download the generated Quiz PDF."""
+    paths = get_course_path(course_id)
+    if not os.path.exists(paths["questions_pdf"]):
+        if not os.path.exists(paths["questions"]):
+            raise HTTPException(404, "Chưa có Quiz PDF cho tài liệu này.")
+        rag = _get_ready_course(course_id)
+        rag.get_resource_generator().export_quiz_pdf()
+    return FileResponse(paths["questions_pdf"], media_type="application/pdf", filename=f"quiz_{course_id}.pdf")
+
+
+@app.get("/api/course/{course_id}/vid")
+async def get_saved_vid(course_id: str):
+    """Return the generated Vid metadata."""
+    vid_path = os.path.join(get_course_path(course_id)["videos"], "vid.json")
+    return {"course_id": course_id, "vid": _read_json(vid_path, "Chưa có Vid cho tài liệu này.")}
+
+
+@app.get("/api/course/{course_id}/vid/file")
+async def get_saved_vid_file(course_id: str):
+    """Return the generated Vid MP4 file."""
+    video_path = os.path.join(get_course_path(course_id)["videos"], "vid.mp4")
+    if not os.path.exists(video_path):
+        raise HTTPException(404, "Chưa có file Vid cho tài liệu này.")
+    return FileResponse(video_path, media_type="video/mp4", filename=f"vid_{course_id}.mp4")
 
 
 @app.get("/api/course/{course_id}/files")
 async def get_course_files(course_id: str):
-    """List all generated files for a course."""
+    """List generated public artifacts for a course."""
     paths = get_course_path(course_id)
     files = {}
 
-    if os.path.exists(paths["syllabus"]):
-        files["syllabus"] = paths["syllabus"]
-    if os.path.exists(paths["questions"]):
-        files["questions"] = paths["questions"]
-    if os.path.exists(paths["flashcards"]):
-        files["flashcards"] = paths["flashcards"]
+    for key in ["book", "book_pdf", "questions", "questions_pdf", "slides", "slides_pdf"]:
+        if os.path.exists(paths[key]):
+            files[key] = paths[key]
 
-    slides_dir = os.path.join(QUESTIONS_DIR, f"course_{course_id}_slides")
-    if os.path.exists(slides_dir):
-        files["slides"] = sorted(os.listdir(slides_dir))
-
-    guides_dir = paths["guides"]
-    if os.path.exists(guides_dir):
-        files["guides"] = sorted(os.listdir(guides_dir))
-
-    audio_dir = paths["audio"]
-    if os.path.exists(audio_dir):
-        files["audio"] = sorted(os.listdir(audio_dir))
+    video_dir = paths["videos"]
+    if os.path.exists(video_dir):
+        files["vid"] = sorted(os.listdir(video_dir))
 
     return {"course_id": course_id, "files": files}
 
 
 @app.get("/api/course/{course_id}/stats")
 async def get_course_stats(course_id: str):
-    """Get detailed course statistics."""
-    if not course_manager:
-        raise HTTPException(503, "Hệ thống chưa khởi tạo.")
+    """Return basic artifact availability stats."""
+    mgr = _get_course_manager()
+    if not mgr.contains(course_id):
+        raise HTTPException(404, f"Không tìm thấy tài liệu '{course_id}'.")
 
-    rag = get_course(course_id)
+    paths = get_course_path(course_id)
     stats = {
         "course_id": course_id,
-        "status": course_manager.get_course_status(course_id),
+        "status": mgr.get_course_status(course_id),
         "generated_at": _timestamp(),
+        "has_book": os.path.exists(paths["book"]),
+        "has_book_pdf": os.path.exists(paths["book_pdf"]),
+        "has_slide": os.path.exists(paths["slides"]),
+        "has_slide_pdf": os.path.exists(paths["slides_pdf"]),
+        "has_quiz": os.path.exists(paths["questions"]),
+        "has_quiz_pdf": os.path.exists(paths["questions_pdf"]),
+        "has_vid": os.path.exists(os.path.join(paths["videos"], "vid.mp4")),
     }
 
-    q_path = get_course_path(course_id)["questions"]
-    if os.path.exists(q_path):
+    if stats["has_quiz"]:
         try:
-            with open(q_path, "r", encoding="utf-8") as f:
+            with open(paths["questions"], "r", encoding="utf-8") as f:
                 stats["total_questions"] = len(json.load(f))
         except Exception:
             stats["total_questions"] = 0
 
-    cards_path = get_course_path(course_id)["flashcards"]
-    if os.path.exists(cards_path):
+    if stats["has_slide"]:
         try:
-            with open(cards_path, "r", encoding="utf-8") as f:
-                stats["total_flashcards"] = len(json.load(f))
+            with open(paths["slides"], "r", encoding="utf-8") as f:
+                stats["total_slides"] = len(json.load(f))
         except Exception:
-            stats["total_flashcards"] = 0
-
-    slides_dir = os.path.join(QUESTIONS_DIR, f"course_{course_id}_slides")
-    if os.path.exists(slides_dir):
-        stats["total_slides"] = len([
-            f for f in os.listdir(slides_dir) if f.endswith(".tex")
-        ])
-
-    guide_path = os.path.join(get_course_path(course_id)["guides"], "study_guide.md")
-    stats["has_study_guide"] = os.path.exists(guide_path)
-
-    script_path = os.path.join(get_course_path(course_id)["audio"], "podcast_script.json")
-    stats["has_podcast"] = os.path.exists(script_path)
+            stats["total_slides"] = 0
 
     return stats
 
 
-# ─── Entrypoint ────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",
-        port=8001,
+        port=8000,
         reload=False,
         log_level="info",
     )

@@ -1,7 +1,7 @@
 # Vector database package (FAISS)
 """
 Vector database abstraction layer.
-Currently using FAISS (local, disk-based) for RAG and Citation.
+Currently using FAISS (local, disk-based) for grounded generation.
 """
 
 from backend.vector_db.faiss_manager import (
