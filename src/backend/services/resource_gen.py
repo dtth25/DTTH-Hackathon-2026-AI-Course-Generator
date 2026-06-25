@@ -15,7 +15,8 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from backend.core.config import extract_json, get_course_path, get_llm, logger
 from backend.core.prompts import (
-    BOOK_GENERATION_PROMPT,
+    BOOK_OUTLINE_PROMPT,
+    BOOK_LESSON_PROMPT,
     QUIZ_V2_PROMPT,
     SLIDE_GENERATION_PROMPT,
     VID_SCENES_PROMPT,
@@ -56,6 +57,89 @@ class ResourceGenerator:
         if compact:
             return re.sub(r"\s+", " ", value).strip()
         return re.sub(r"[ \t]+", " ", value).replace("\n\n\n", "\n\n").strip()
+
+    def _replace_newlines_outside_math(self, content: str) -> str:
+        """Safely replace literal \\n sequences with real newlines only outside of math blocks."""
+        parts = re.split(r'(\$\$[\s\S]*?\$\$|\$[^\n$]*?\$)', content)
+        result = []
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith('$'):
+                # Inside math blocks, replace literal \n only if it's NOT a LaTeX command starting with n
+                result.append(re.sub(r'\\n(?![eauoisplgw])', '\n', part))
+            else:
+                result.append(part.replace('\\n', '\n'))
+        return "".join(result)
+
+    def _clean_text_for_pdf(self, text: Any) -> str:
+        """Process and clean LaTeX and newline formatting specifically for PDF output."""
+        value = str(text or "")
+        # First clean extraction markers
+        value = self._clean_generated_text(value, compact=False)
+        
+        # 1. Replace newlines safely using math-block aware logic
+        value = self._replace_newlines_outside_math(value)
+        
+        # 2. Convert common LaTeX formulas and symbols to unicode/readable plain text (longest/most specific first)
+        replacements = [
+            (r'\\readonly', ''),
+            (r'\\mathbb\{R\}', 'R'),
+            (r'\\mathbb\{F\}', 'F'),
+            (r'\\mathbb\{Q\}', 'Q'),
+            (r'\\mathbb\{C\}', 'C'),
+            (r'\\mathbb\{Z\}', 'Z'),
+            (r'\\mathbb\{N\}', 'N'),
+            (r'\\notin', ' không thuộc '),
+            (r'\\infty', '∞'),
+            (r'\\in', ' thuộc '),
+            (r'\\neq', ' ≠ '),
+            (r'\\ne', ' ≠ '),
+            (r'\\cdots', '...'),
+            (r'\\dots', '...'),
+            (r'\\cdot', ' . '),
+            (r'\\pm', '±'),
+            (r'\\deg', 'deg'),
+            (r'\\gcd', 'gcd'),
+            (r'\\sum_\{([^{}]+)\}^\{([^{}]+)\}', r'Tổng từ \1 đến \2'),
+            (r'\\sum', 'Tổng'),
+            (r'\\prod', 'Tích'),
+            (r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1)/(\2)'),
+            (r'\\sqrt\{([^{}]+)\}', r'sqrt(\1)'),
+            (r'\\alpha', 'α'),
+            (r'\\beta', 'β'),
+            (r'\\gamma', 'γ'),
+            (r'\\delta', 'δ'),
+            (r'\\theta', 'θ'),
+            (r'\\lambda', 'λ'),
+            (r'\\sigma', 'σ'),
+            (r'\\omega', 'ω'),
+            (r'\\phi', 'φ'),
+            (r'\\pi', 'π'),
+            (r'\\([a-zA-Z]+)', r'\1'), # strip remaining command backslashes
+        ]
+        
+        for pattern, repl in replacements:
+            value = re.sub(pattern, repl, value)
+            
+        # 3. Format subscripts and superscripts using standard ASCII representation to avoid font box errors
+        # Handle braced subscripts: a_{n-1} -> a_(n-1)
+        value = re.sub(r'_\{([^{}]+)\}', r'_(\1)', value)
+        # Handle single-char subscripts: a_n -> a_n, a_1 -> a_1
+        value = re.sub(r'_([0-9a-zA-Z])', r'_\1', value)
+        # Handle braced superscripts: x^{n-1} -> x^(n-1)
+        value = re.sub(r'\^\{([^{}]+)\}', r'^(\1)', value)
+        # Handle single-char superscripts: x^2 -> x^2, x^n -> x^n
+        value = re.sub(r'\^([0-9a-zA-Z])', r'^\1', value)
+            
+        # 4. Strip $ and $$ formula boundaries
+        value = value.replace('$$', '')
+        value = value.replace('$', '')
+        
+        # 5. Remove bold ** and inline code `
+        value = re.sub(r'\*\*|`', '', value)
+        
+        return value.strip()
 
     def _sanitize_payload(self, value: Any) -> Any:
         """Recursively sanitize public payload strings."""
@@ -287,7 +371,8 @@ class ResourceGenerator:
                 continue
 
             style = styles.get(style_name, styles["body"])
-            lines = self._wrap_lines(text, width=style["width"]) or [text]
+            clean_text = self._clean_text_for_pdf(text)
+            lines = self._wrap_lines(clean_text, width=style["width"]) or [clean_text]
             block_height = len(lines) * style["line_height"] + 12
             if y + block_height > page_height - margin:
                 finish_page()
@@ -352,7 +437,8 @@ class ResourceGenerator:
                 continue
 
             style = styles.get(style_name, styles["body"])
-            lines = self._wrap_lines(self._clean_generated_text(text, compact=False), width=style["width"]) or [text]
+            clean_text = self._clean_text_for_pdf(text)
+            lines = self._wrap_lines(clean_text, width=style["width"]) or [clean_text]
             block_height = len(lines) * style["line_height"] + 16
             if y + block_height > page_height - margin:
                 finish_page()
@@ -421,24 +507,160 @@ class ResourceGenerator:
 
         return self._render_artifact_pdf("Quiz học tập", elements, paths["questions_pdf"])
 
-    def generate_book(self, user_prompt: str = "", target_audience: str = "sinh viên"):
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 24})
-        query = user_prompt or "nội dung chính mục tiêu khái niệm ví dụ kết luận"
-        docs = retriever.invoke(query)
-        context = self._clean_docs_context(docs, max_docs=24, max_chars=1000)
+    async def _generate_lesson_content(
+        self,
+        book_title: str,
+        chapter_title: str,
+        lesson_title: str,
+        objectives: list,
+        user_prompt: str
+    ) -> dict:
+        query = f"{chapter_title} - {lesson_title} {user_prompt}".strip()
+        retriever = self.vectorstore.as_retriever(search_kwargs={"k": 3})
+        docs = await retriever.ainvoke(query)
+        context = self._clean_docs_context(docs, max_docs=3, max_chars=1200)
+
+        max_attempts = 5
+        backoff = 2.0
+        last_error = None
+        for attempt in range(max_attempts):
+            try:
+                prompt = ChatPromptTemplate.from_template(BOOK_LESSON_PROMPT)
+                chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
+                res = await chain.ainvoke(
+                    {
+                        "context": context,
+                        "book_title": book_title,
+                        "chapter_title": chapter_title,
+                        "lesson_title": lesson_title,
+                        "lesson_objectives": ", ".join(objectives) if objectives else "Tự động trích xuất ý chính",
+                    }
+                )
+                lesson_data = json.loads(extract_json(res), strict=False)
+                return {
+                    "lecture": lesson_data.get("lecture") or "Không có nội dung giảng bài.",
+                    "key_points": lesson_data.get("key_points") or [],
+                    "activity": lesson_data.get("activity") or "Hoạt động thực hành ngắn",
+                    "assessment": lesson_data.get("assessment") or []
+                }
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                if "429" in error_str and attempt < max_attempts - 1:
+                    sleep_time = backoff * (2 ** attempt)
+                    logger.warning("NIM API 429 rate limit hit for %s. Retrying in %.1fs... (Attempt %d/%d)", 
+                                   lesson_title, sleep_time, attempt + 1, max_attempts)
+                    await asyncio.sleep(sleep_time)
+                    continue
+                break
+
+        logger.warning("Failed generating lesson content for %s: %s", lesson_title, last_error)
+        points = self._doc_points(docs, limit=1, max_chars=620)
+        point = points[0] if points else {"text": "Tài liệu học tập."}
+        fallback_lesson = self._build_lesson_from_point(point, lesson_title)
+        return {
+            "lecture": fallback_lesson["lecture"],
+            "key_points": fallback_lesson["key_points"],
+            "activity": fallback_lesson["activity"],
+            "assessment": fallback_lesson["assessment"]
+        }
+
+    async def generate_book(self, user_prompt: str = "", target_audience: str = "sinh viên"):
+        total_chunks = 10
+        if hasattr(self.vectorstore, "index") and hasattr(self.vectorstore.index, "ntotal"):
+            total_chunks = self.vectorstore.index.ntotal
+
+        # Lấy số lượng chunk đa dạng hơn để bao quát tất cả chủ đề/khái niệm của tài liệu
+        if total_chunks <= 5:
+            max_docs = total_chunks
+        elif total_chunks <= 15:
+            max_docs = total_chunks
+        else:
+            max_docs = min(20, total_chunks)
+
+        retriever = self.vectorstore.as_retriever(
+            search_type="mmr",
+            search_kwargs={"k": max_docs, "fetch_k": min(50, total_chunks)}
+        )
+        query = user_prompt or "mục lục chương bài học định lý định nghĩa công thức ví dụ bài tập lý thuyết khái niệm"
+        docs = await retriever.ainvoke(query)
+        # Sử dụng max_chars lớn hơn (1200) để không làm mất hoặc cụt các công thức toán học/khái niệm chi tiết
+        context = self._clean_docs_context(docs, max_docs=max_docs, max_chars=1200)
         try:
-            prompt = ChatPromptTemplate.from_template(BOOK_GENERATION_PROMPT)
+            prompt = ChatPromptTemplate.from_template(BOOK_OUTLINE_PROMPT)
             chain = prompt | get_llm(temperature=0.3) | StrOutputParser()
-            res = chain.invoke(
+            res = await chain.ainvoke(
                 {
                     "context": context,
                     "user_prompt": user_prompt or "Không có",
                     "target_audience": target_audience or "người học chung",
                 }
             )
-            book = self._normalize_book(json.loads(extract_json(res)), docs, target_audience)
+            raw_outline = json.loads(extract_json(res), strict=False)
+            
+            book = {
+                "title": raw_outline.get("title") or "Sách học tập từ tài liệu đã tải lên",
+                "description": raw_outline.get("description") or f"Sách học tập dành cho {target_audience or 'người học'}.",
+                "estimated_duration": raw_outline.get("estimated_duration") or "3-5 giờ",
+                "chapters": []
+            }
+            
+            raw_chapters = raw_outline.get("chapters") or []
+            tasks = []
+            task_indices = []
+
+            # Cho phép tối đa 8 chương và tối đa 5 bài học mỗi chương để bao phủ đầy đủ tất cả các chủ đề/khái niệm
+            for ch_idx, raw_chapter in enumerate(raw_chapters[:8]):
+                chapter_title = raw_chapter.get("title") or f"Chương {ch_idx + 1}"
+                chapter_desc = raw_chapter.get("description") or ""
+                book_chapter = {
+                    "title": chapter_title,
+                    "description": chapter_desc,
+                    "lessons": []
+                }
+                book["chapters"].append(book_chapter)
+
+                raw_lessons = raw_chapter.get("lessons") or []
+                for les_idx, raw_lesson in enumerate(raw_lessons[:5]):
+                    lesson_title = raw_lesson.get("title") or f"Bài {ch_idx + 1}.{les_idx + 1}"
+                    lesson_duration = raw_lesson.get("duration") or "20-30 phút"
+                    lesson_objectives = raw_lesson.get("objectives") or []
+
+                    book_lesson = {
+                        "title": lesson_title,
+                        "duration": lesson_duration,
+                        "objectives": lesson_objectives,
+                        "lecture": "",
+                        "key_points": [],
+                        "activity": "",
+                        "assessment": []
+                    }
+                    book_chapter["lessons"].append(book_lesson)
+
+                    task = self._generate_lesson_content(
+                        book_title=book["title"],
+                        chapter_title=chapter_title,
+                        lesson_title=lesson_title,
+                        objectives=lesson_objectives,
+                        user_prompt=user_prompt
+                    )
+                    tasks.append(task)
+                    task_indices.append((ch_idx, les_idx))
+
+            if tasks:
+                sem = asyncio.Semaphore(2)
+
+                async def sem_worker(idx, task):
+                    await asyncio.sleep(idx * 0.5)  # Tránh gửi request đồng thời (stagger nhẹ)
+                    async with sem:
+                        return await task
+
+                results = await asyncio.gather(*(sem_worker(i, t) for i, t in enumerate(tasks)))
+                for (ch_idx, les_idx), lesson_content in zip(task_indices, results):
+                    book["chapters"][ch_idx]["lessons"][les_idx].update(lesson_content)
+
         except Exception as e:
-            logger.warning("Book generation failed, using fallback: %s", e)
+            logger.warning("Book outline generation failed, using fallback: %s", e)
             book = self._build_fallback_book(docs, target_audience)
 
         book = self._sanitize_payload(book)
@@ -447,6 +669,7 @@ class ResourceGenerator:
         self._save_json(paths["book"], book)
         self._render_book_pdf(book, paths["book_pdf"])
         return {"book": book, "pdf_url": f"/api/course/{self.course_id}/book.pdf"}
+
 
     def _build_fallback_quiz(self, docs, quantity: int, difficulty: str):
         points = self._doc_points(docs, limit=max(1, min(quantity, 10)), max_chars=220)
@@ -529,7 +752,7 @@ class ResourceGenerator:
                     "difficulty": difficulty,
                 }
             )
-            questions = self._normalize_quiz(json.loads(extract_json(res)), quantity, docs, difficulty)
+            questions = self._normalize_quiz(json.loads(extract_json(res), strict=False), quantity, docs, difficulty)
         except Exception as e:
             logger.warning("Quiz generation failed, using fallback: %s", e)
             questions = self._build_fallback_quiz(docs, quantity, difficulty)
@@ -586,7 +809,7 @@ class ResourceGenerator:
             prompt = ChatPromptTemplate.from_template(SLIDE_GENERATION_PROMPT)
             chain = prompt | get_llm(temperature=0.1) | StrOutputParser()
             res = chain.invoke({"context": context, "topic": topic, "num_slides": num_slides})
-            slides = self._normalize_slides(json.loads(extract_json(res)), num_slides, docs)
+            slides = self._normalize_slides(json.loads(extract_json(res), strict=False), num_slides, docs)
         except Exception as e:
             logger.warning("Slide generation failed, using fallback: %s", e)
             slides = self._build_fallback_slides(docs, num_slides)
@@ -861,7 +1084,7 @@ class ResourceGenerator:
                     "scene_count": scene_count,
                 }
             )
-            scenes = self._normalize_scenes(json.loads(extract_json(res)), scene_count, docs)
+            scenes = self._normalize_scenes(json.loads(extract_json(res), strict=False), scene_count, docs)
         except Exception as e:
             logger.warning("Vid script generation failed, using fallback: %s", e)
             scenes = self._build_fallback_scenes(docs, scene_count)
