@@ -4,7 +4,7 @@ from backend import main
 
 
 class FakeResourceGenerator:
-    def generate_book(self, user_prompt: str, target_audience: str):
+    async def generate_book(self, user_prompt: str, target_audience: str):
         return {
             "book": {"title": "Book", "chapters": []},
             "pdf_url": "/api/course/course123/book.pdf",
