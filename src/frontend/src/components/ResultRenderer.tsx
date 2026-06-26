@@ -3,10 +3,12 @@
 import { useState, type ReactNode } from "react";
 import {
   BookOpen,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Copy,
   Download,
   FileJson,
   FileVideo,
@@ -116,12 +118,68 @@ export function replaceNewlinesOutsideMath(content: string): string {
     .join("");
 }
 
+function PrettyCodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy code: ", err);
+    }
+  };
+
+  return (
+    <div className="my-5 overflow-hidden rounded-xl border border-zinc-200 shadow-sm dark:border-zinc-850">
+      {/* Code Box Header */}
+      <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-full bg-red-400/80" />
+          <span className="h-3 w-3 rounded-full bg-yellow-400/80" />
+          <span className="h-3 w-3 rounded-full bg-green-400/80" />
+        </div>
+        <div className="flex items-center gap-3">
+          {language && (
+            <span className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase select-none dark:text-zinc-400 font-mono">
+              {language}
+            </span>
+          )}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 rounded bg-zinc-200/50 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 p-1 px-2 text-xs font-medium text-zinc-600 transition-colors dark:text-zinc-300 cursor-pointer"
+            title="Sao chép mã"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                <span className="text-[10px] text-green-600 dark:text-green-400 font-semibold">Đã chép</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                <span className="text-[10px]">Sao chép</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      {/* Code Box Body */}
+      <div className="relative bg-zinc-950 p-4 font-mono text-xs text-zinc-100 overflow-x-auto max-w-full leading-relaxed">
+        <pre className="whitespace-pre">
+          <code>{code}</code>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 export function MarkdownBlock({ content }: { content: string }) {
   const processed = replaceNewlinesOutsideMath(content);
   const cleaned = stripInternalMarkers(processed, false).replace(/\r/g, "");
-  const formattedContent = cleanContentMarkdown(cleaned);
 
-  const lines = formattedContent.split("\n");
+  const lines = cleaned.split("\n");
   const blocks: ReactNode[] = [];
   
   let currentListItems: string[] = [];
@@ -133,7 +191,7 @@ export function MarkdownBlock({ content }: { content: string }) {
 
   const flushParagraph = () => {
     if (currentParagraphLines.length > 0) {
-      const text = currentParagraphLines.join(" ");
+      const text = cleanContentMarkdown(currentParagraphLines.join(" "));
       blocks.push(
         <p key={`p-${keyCounter++}`} className="text-sm leading-7 text-foreground/90">
           <KaTeXText>{text}</KaTeXText>
@@ -149,7 +207,7 @@ export function MarkdownBlock({ content }: { content: string }) {
         <ul key={`ul-${keyCounter++}`} className="space-y-1 pl-5 text-sm leading-6">
           {currentListItems.map((item, index) => (
             <li key={`li-${index}`} className="list-disc text-foreground/90">
-              <KaTeXText>{item}</KaTeXText>
+              <KaTeXText>{cleanContentMarkdown(item)}</KaTeXText>
             </li>
           ))}
         </ul>
@@ -161,16 +219,11 @@ export function MarkdownBlock({ content }: { content: string }) {
   const flushCodeBlock = () => {
     if (codeBlockLines.length > 0) {
       blocks.push(
-        <div key={`code-${keyCounter++}`} className="relative my-3 rounded-lg border bg-muted/60 p-4 font-mono text-xs overflow-x-auto max-w-full">
-          {codeBlockLanguage && (
-            <div className="absolute right-3 top-2 text-[10px] font-semibold text-muted-foreground uppercase select-none">
-              {codeBlockLanguage}
-            </div>
-          )}
-          <pre className="text-foreground/90 whitespace-pre leading-relaxed">
-            <code>{codeBlockLines.join("\n")}</code>
-          </pre>
-        </div>
+        <PrettyCodeBlock
+          key={`code-${keyCounter++}`}
+          language={codeBlockLanguage}
+          code={codeBlockLines.join("\n")}
+        />
       );
       codeBlockLines = [];
       inCodeBlock = false;
@@ -211,7 +264,7 @@ export function MarkdownBlock({ content }: { content: string }) {
       flushAll();
       blocks.push(
         <h4 key={`h-${keyCounter++}`} className="text-base font-semibold leading-tight mt-4 text-foreground">
-          <KaTeXText>{headingMatch[2]}</KaTeXText>
+          <KaTeXText>{cleanContentMarkdown(headingMatch[2])}</KaTeXText>
         </h4>
       );
       continue;
