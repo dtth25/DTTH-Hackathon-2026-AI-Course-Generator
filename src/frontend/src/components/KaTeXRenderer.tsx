@@ -83,12 +83,17 @@ function renderLatexSegments(text: string): ReactNode[] {
   while ((match = regex.exec(text)) !== null) {
     const displayMath = match[1]; // From $$...$$
     const inlineMath = match[2]; // From $...$
-    const latex = displayMath ?? inlineMath;
+    let latex = displayMath ?? inlineMath;
     const isDisplay = displayMath !== undefined;
 
     if (!looksLikeMath(latex)) {
       continue;
     }
+
+    // Escape underscores inside text-mode LaTeX commands to prevent KaTeX parse errors
+    latex = latex.replace(/\\(text(?:bf|it|sf|tt|md|rm)?|mbox)\s*\{([^{}]+)\}/g, (m, cmd, content) => {
+      return `\\${cmd}{${content.replace(/_/g, '\\_')}}`;
+    });
 
     // Thêm phần text trước khi gặp công thức
     if (match.index > lastIndex) {
