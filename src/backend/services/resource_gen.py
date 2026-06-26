@@ -374,7 +374,7 @@ class ResourceGenerator:
             clean_text = self._clean_text_for_pdf(text)
             lines = self._wrap_lines(clean_text, width=style["width"]) or [clean_text]
             block_height = len(lines) * style["line_height"] + 12
-            if y + block_height > page_height - margin:
+            if y + block_height > page_height - margin and y > margin:
                 finish_page()
                 image, draw, y = reset_page()
 
@@ -386,6 +386,9 @@ class ResourceGenerator:
                 )
 
             for line in lines:
+                if y + style["line_height"] > page_height - margin:
+                    finish_page()
+                    image, draw, y = reset_page()
                 draw.text((margin, y), line, font=style["font"], fill=style["fill"])
                 y += style["line_height"]
             y += 12
@@ -440,7 +443,7 @@ class ResourceGenerator:
             clean_text = self._clean_text_for_pdf(text)
             lines = self._wrap_lines(clean_text, width=style["width"]) or [clean_text]
             block_height = len(lines) * style["line_height"] + 16
-            if y + block_height > page_height - margin:
+            if y + block_height > page_height - margin and y > margin:
                 finish_page()
                 image, draw, y = reset_page()
 
@@ -452,6 +455,9 @@ class ResourceGenerator:
                 )
 
             for line in lines:
+                if y + style["line_height"] > page_height - margin:
+                    finish_page()
+                    image, draw, y = reset_page()
                 draw.text((margin, y), line, font=style["font"], fill=style["fill"])
                 y += style["line_height"]
             y += 12
