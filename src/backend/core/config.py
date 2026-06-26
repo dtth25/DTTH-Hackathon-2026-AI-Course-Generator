@@ -157,7 +157,6 @@ def get_llm(temperature: float = 0.1, max_output_tokens: int = 8192) -> ChatOpen
     )
 
 
-
 def _require_nvidia_api_key() -> str:
     """Return configured NVIDIA API key or raise an actionable error."""
     api_key = os.getenv("NVIDIA_API_KEY")
@@ -181,31 +180,38 @@ def repair_json_quotes_and_commas(s: str) -> str:
     out = []
     in_string = False
     stack = []  # Keep track of 'object' or 'array' context
+    expecting_key = False
     i = 0
+    string_start_idx = 0
     
     while i < n:
         c = s[i]
         if not in_string:
             if c == '{':
                 stack.append('object')
+                expecting_key = True
                 out.append(c)
                 i += 1
             elif c == '}':
                 if stack and stack[-1] == 'object':
                     stack.pop()
+                expecting_key = False
                 out.append(c)
                 i += 1
             elif c == '[':
                 stack.append('array')
+                expecting_key = False
                 out.append(c)
                 i += 1
             elif c == ']':
                 if stack and stack[-1] == 'array':
                     stack.pop()
+                expecting_key = False
                 out.append(c)
                 i += 1
             elif c == '"':
                 in_string = True
+                string_start_idx = i
                 out.append(c)
                 i += 1
             elif c == ',':
@@ -217,6 +223,16 @@ def repair_json_quotes_and_commas(s: str) -> str:
                     # Trailing comma: skip it
                     i = j
                     continue
+                
+                if stack and stack[-1] == 'object':
+                    expecting_key = True
+                else:
+                    expecting_key = False
+                out.append(c)
+                i += 1
+            elif c == ':':
+                if stack and stack[-1] == 'object':
+                    expecting_key = False
                 out.append(c)
                 i += 1
             else:
@@ -239,12 +255,47 @@ def repair_json_quotes_and_commas(s: str) -> str:
                     j += 1
                 
                 is_closing = False
+                current_context = stack[-1] if stack else 'object'
                 if j == n:
                     is_closing = True
-                elif s[j] in ('}', ']'):
-                    is_closing = True
-                elif s[j] == ':':
-                    is_closing = True
+                elif s[j] == '}':
+                    if current_context == 'object':
+                        # Look ahead after } to make sure it's actually closing the object
+                        k = j + 1
+                        while k < n and s[k].isspace():
+                            k += 1
+                        if k == n or s[k] in (']', '}'):
+                            is_closing = True
+                        elif s[k] == ',':
+                            # In an array of objects, closing } is followed by , and then {
+                            m = k + 1
+                            while m < n and s[m].isspace():
+                                m += 1
+                            if m < n and s[m] == '{':
+                                is_closing = True
+                elif s[j] == ']':
+                    if current_context == 'array':
+                        # Look ahead after ] to make sure it's actually closing the array
+                        k = j + 1
+                        while k < n and s[k].isspace():
+                            k += 1
+                        if k == n or s[k] in (',', '}', ']', ':'):
+                            is_closing = True
+                elif s[j] == ':' and expecting_key:
+                    # Find the next non-whitespace character after the colon
+                    val_start = j + 1
+                    while val_start < n and s[val_start].isspace():
+                        val_start += 1
+                    if val_start < n and s[val_start] in ('"', '[', '{', 't', 'f', 'n', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'):
+                        # Validate that the key we just finished is a valid schema key
+                        key_candidate = s[string_start_idx+1:i].strip()
+                        if key_candidate in {
+                            "title", "description", "estimated_duration", "chapters", "lessons",
+                            "duration", "objectives", "lecture", "key_points", "activity",
+                            "assessment", "question", "options", "correct", "explanation",
+                            "content", "layout_hint", "image_suggestion", "visual_text", "voiceover"
+                        }:
+                            is_closing = True
                 elif s[j] == ',':
                     # Look ahead after comma
                     k = j + 1
@@ -279,7 +330,19 @@ def repair_json_quotes_and_commas(s: str) -> str:
                                 while next_after_key < n and s[next_after_key].isspace():
                                     next_after_key += 1
                                 if next_after_key < n and s[next_after_key] == ':':
-                                    is_closing = True
+                                    # Find the next non-whitespace character after the colon
+                                    val_start = next_after_key + 1
+                                    while val_start < n and s[val_start].isspace():
+                                        val_start += 1
+                                    if val_start < n and s[val_start] in ('"', '[', '{', 't', 'f', 'n', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'):
+                                        key_candidate = s[k+1:key_close].strip()
+                                        if key_candidate in {
+                                            "title", "description", "estimated_duration", "chapters", "lessons",
+                                            "duration", "objectives", "lecture", "key_points", "activity",
+                                            "assessment", "question", "options", "correct", "explanation",
+                                            "content", "layout_hint", "image_suggestion", "visual_text", "voiceover"
+                                        }:
+                                            is_closing = True
                 
                 if is_closing:
                     in_string = False
@@ -305,13 +368,79 @@ def extract_json(text: Any) -> str:
         extracted = match.group(1).strip()
         
         # 1. Sửa lỗi dấu gạch chéo ngược lẻ trước dấu ngoặc kép đóng (escape quote ngoài ý muốn)
+        n = len(extracted)
         odd_backslash_pattern = r'(?<!\\)\\(?:\\\\)*"\s*(?=[,}\]])'
         def fix_backslash(m):
             matched = m.group(0)
-            quote_idx = matched.find('"')
-            backslashes = matched[:quote_idx]
-            rest = matched[quote_idx:]
-            return backslashes + '\\' + rest
+            end_pos = m.end() # Index of the lookahead character (',', '}', or ']')
+            
+            # Find next non-whitespace char after the lookahead char
+            j = end_pos + 1
+            while j < n and extracted[j].isspace():
+                j += 1
+                
+            char_after = extracted[end_pos]
+            is_real_closing = False
+            
+            if char_after == '}':
+                # End of object. Must be followed by ']', '}', EOF, or ',' followed by '{'.
+                if j == n or extracted[j] in (']', '}'):
+                    is_real_closing = True
+                elif extracted[j] == ',':
+                    # Look ahead after comma
+                    m = j + 1
+                    while m < n and extracted[m].isspace():
+                        m += 1
+                    if m < n and extracted[m] == '{':
+                        is_real_closing = True
+            elif char_after == ']':
+                # End of array. Must be followed by ',', '}', ']', or EOF.
+                if j == n or extracted[j] in (',', '}', ']', ':'):
+                    is_real_closing = True
+            elif char_after == ',':
+                # Followed by comma. The next token must be a key (if object) or a value start (if array)
+                if j < n:
+                    if extracted[j] == '"':
+                        # Object context: find closing quote of key candidate
+                        key_close = j + 1
+                        found_close = False
+                        while key_close < n:
+                            if extracted[key_close] == '\\':
+                                key_close += 2
+                            elif extracted[key_close] == '"':
+                                found_close = True
+                                break
+                            else:
+                                key_close += 1
+                        
+                        if found_close:
+                            next_after_key = key_close + 1
+                            while next_after_key < n and extracted[next_after_key].isspace():
+                                next_after_key += 1
+                            if next_after_key < n and extracted[next_after_key] == ':':
+                                val_start = next_after_key + 1
+                                while val_start < n and extracted[val_start].isspace():
+                                    val_start += 1
+                                if val_start < n and extracted[val_start] in ('"', '[', '{', 't', 'f', 'n', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'):
+                                    key_candidate = extracted[j+1:key_close].strip()
+                                    if key_candidate in {
+                                        "title", "description", "estimated_duration", "chapters", "lessons",
+                                        "duration", "objectives", "lecture", "key_points", "activity",
+                                        "assessment", "question", "options", "correct", "explanation",
+                                        "content", "layout_hint", "image_suggestion", "visual_text", "voiceover"
+                                    }:
+                                        is_real_closing = True
+                    elif extracted[j] in ('[', '{', 't', 'f', 'n', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'):
+                        # Array context: comma followed by a value start
+                        is_real_closing = True
+            
+            if is_real_closing:
+                quote_idx = matched.find('"')
+                backslashes = matched[:quote_idx]
+                rest = matched[quote_idx:]
+                return backslashes + '\\' + rest
+            else:
+                return matched
         
         extracted = re.sub(odd_backslash_pattern, fix_backslash, extracted)
 
@@ -319,8 +448,8 @@ def extract_json(text: Any) -> str:
         extracted = repair_json_quotes_and_commas(extracted)
 
         # 3. Sửa lỗi thoát (escape) ký tự backslash không hợp lệ (ví dụ trong công thức LaTeX \sum, \in)
-        # Chỉ coi b, f, n, r, t là ký tự thoát JSON hợp lệ nếu chúng KHÔNG được theo sau bởi tên lệnh LaTeX bắt đầu bằng ký tự đó
-        pattern = r'(?<!\\)\\(?!"|\\|/|b(?!eta|ar|egin|oldsymbol|mod)|f(?!rac|orall)|n(?!eq|otin|abla)|r(?!ightarrow|ho|ight)|t(?!o|au|heta|ilde|ext|imes)|u[0-9a-fA-F]{4})'
+        # Chỉ coi b, f, n, r, t là các escape sequence JSON hợp lệ nếu chúng không phải là một phần của lệnh LaTeX bắt đầu bằng ký tự đó (ví dụ \neq, \theta, \frac)
+        pattern = r'(?<!\\)\\(?!"|\\|/|u[0-9a-fA-F]{4}|b(?!eta\b|bar\b|egin\b|oldsymbol\b|bullet\b|bold\b|binom\b)|f(?!rac\b|orall\b|lat\b)|n(?!eq\b|otin\b|abla\b|u\b)|r(?!ightarrow\b|ho\b|ight\b|eal\b|angle\b)|t(?!o\b|au\b|heta\b|tilde\b|text\b|times\b|top\b|triangle\b))'
         return re.sub(pattern, r'\\\\', extracted)
     return "[]"
 
