@@ -35,3 +35,30 @@ def test_extract_json_repairs_latex_escapes():
     assert "\\\\frac" in res
     assert "\\\\sum" in res
     assert json.loads(res) == {"lecture": "Đa thức $P(x) = a_n x^n + \\frac{1}{2} x + \\sum_{i=1}^n x_i$"}
+
+def test_extract_json_repairs_nested_comma_quotes():
+    # Test unescaped nested quotes separated by commas
+    dirty_json = '{"lecture": "Các nghiệm là "x_1", "x_2", "x_3"..."}'
+    res = extract_json(dirty_json)
+    assert json.loads(res) == {"lecture": 'Các nghiệm là "x_1", "x_2", "x_3"...'}
+
+    # Test nested quotes list in another formatting
+    dirty_json2 = '{"lecture": "Ví dụ: chọn x. "Đa thức", "Phân số", "Đơn thức"...", "key_points": ["a"]}'
+    res2 = extract_json(dirty_json2)
+    assert json.loads(res2) == {
+        "lecture": 'Ví dụ: chọn x. "Đa thức", "Phân số", "Đơn thức"...',
+        "key_points": ["a"]
+    }
+
+
+def test_extract_json_preserves_code_fences():
+    fenced_json_with_code = '''```json
+{
+  "lecture": "Ví dụ thuật toán:\\n```python\\ndef gcd(a, b):\\n    return a if b == 0 else gcd(b, a % b)\\n```\\nGiải thích thêm."
+}
+```'''
+    res = extract_json(fenced_json_with_code)
+    parsed = json.loads(res)
+    assert parsed["lecture"] == "Ví dụ thuật toán:\n```python\ndef gcd(a, b):\n    return a if b == 0 else gcd(b, a % b)\n```\nGiải thích thêm."
+
+
