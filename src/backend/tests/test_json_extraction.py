@@ -62,3 +62,28 @@ def test_extract_json_preserves_code_fences():
     assert parsed["lecture"] == "Ví dụ thuật toán:\n```python\ndef gcd(a, b):\n    return a if b == 0 else gcd(b, a % b)\n```\nGiải thích thêm."
 
 
+def test_extract_json_repairs_key_like_quotes_inside_value():
+    dirty_json = '{"lecture": "Chúng ta có: "description", "key_points": cả hai đều là...", "key_points": ["a"]}'
+    res = extract_json(dirty_json)
+    parsed = json.loads(res)
+    assert parsed["lecture"] == 'Chúng ta có: "description", "key_points": cả hai đều là...'
+    assert parsed["key_points"] == ["a"]
+
+
+def test_extract_json_preserves_bracket_quotes_in_code():
+    dirty_json = '{"lecture": "clip.tokenize([\\"a cat\\", \\"a dog\\", \\"a laptop\"]).to(device)", "key_points": ["a"]}'
+    res = extract_json(dirty_json)
+    parsed = json.loads(res)
+    assert parsed["lecture"] == 'clip.tokenize(["a cat", "a dog", "a laptop"]).to(device)'
+    assert parsed["key_points"] == ["a"]
+
+
+def test_extract_json_preserves_dictionary_quotes_in_text():
+    dirty_json = '{"lecture": "Ví dụ dictionary: {"a": "b"}, tiếp theo là...", "key_points": ["a"]}'
+    res = extract_json(dirty_json)
+    parsed = json.loads(res)
+    assert parsed["lecture"] == 'Ví dụ dictionary: {"a": "b"}, tiếp theo là...'
+    assert parsed["key_points"] == ["a"]
+
+
+
