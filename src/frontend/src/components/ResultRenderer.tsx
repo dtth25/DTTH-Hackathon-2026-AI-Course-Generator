@@ -118,6 +118,93 @@ export function replaceNewlinesOutsideMath(content: string): string {
     .join("");
 }
 
+function highlightCode(code: string, language = ""): string {
+  const isPython = ["python", "py"].includes(language.toLowerCase());
+
+  const tokenRegex = isPython
+    ? /((?:#.*))|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^\'\\])*')|(\b\d+(?:\.\d+)?\b)|(@[a-zA-Z_][a-zA-Z0-9_]*)|(\b(?:def|class|import|from|as|return|if|else|elif|while|for|in|and|or|not|with|try|except|pass|assert|break|continue|yield|lambda|global|nonlocal|del)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()|([a-zA-Z_][a-zA-Z0-9_]*)/g
+    : /((?:\/\/.*|\/\*[\s\S]*?\*\/))|("(?:\\.|[^"\\])*"|'(?:\\.|[^\'\\])*'|`(?:\\.|[^\`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:function|class|const|let|var|return|if|else|switch|case|default|while|for|in|of|break|continue|import|from|export|default|try|catch|finally|throw|new|this|async|await|yield|true|false|null|undefined|NaN)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()|([a-zA-Z_][a-zA-Z0-9_]*)/g;
+
+  let lastIndex = 0;
+  let html = "";
+  let match;
+
+  const escapeHtml = (text: string) => {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  };
+
+  while ((match = tokenRegex.exec(code)) !== null) {
+    if (match.index > lastIndex) {
+      html += escapeHtml(code.slice(lastIndex, match.index));
+    }
+
+    const [
+      full,
+      comment,
+      str,
+      num,
+      decoratorOrKeyword,
+      keywordOrFunc,
+      funcOrWord,
+      otherWord
+    ] = match;
+
+    if (comment !== undefined) {
+      html += `<span class="text-zinc-500 italic">${escapeHtml(comment)}</span>`;
+    } else if (str !== undefined) {
+      html += `<span class="text-emerald-400">${escapeHtml(str)}</span>`;
+    } else if (num !== undefined) {
+      html += `<span class="text-amber-400">${escapeHtml(num)}</span>`;
+    } else if (isPython) {
+      const decorator = decoratorOrKeyword;
+      const keyword = keywordOrFunc;
+      const func = funcOrWord;
+      const word = otherWord;
+
+      if (decorator !== undefined) {
+        html += `<span class="text-yellow-400 font-mono">${escapeHtml(decorator)}</span>`;
+      } else if (keyword !== undefined) {
+        if (["True", "False", "None", "self"].includes(keyword)) {
+          html += `<span class="text-violet-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        } else {
+          html += `<span class="text-pink-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        }
+      } else if (func !== undefined) {
+        html += `<span class="text-sky-400">${escapeHtml(func)}</span>`;
+      } else if (word !== undefined) {
+        html += escapeHtml(word);
+      }
+    } else {
+      const keyword = decoratorOrKeyword;
+      const func = keywordOrFunc;
+      const word = funcOrWord;
+
+      if (keyword !== undefined) {
+        if (["true", "false", "null", "undefined", "NaN"].includes(keyword)) {
+          html += `<span class="text-violet-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        } else {
+          html += `<span class="text-pink-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        }
+      } else if (func !== undefined) {
+        html += `<span class="text-sky-400">${escapeHtml(func)}</span>`;
+      } else if (word !== undefined) {
+        html += escapeHtml(word);
+      }
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < code.length) {
+    html += escapeHtml(code.slice(lastIndex));
+  }
+
+  return html;
+}
+
 function PrettyCodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -132,7 +219,7 @@ function PrettyCodeBlock({ language, code }: { language: string; code: string })
   };
 
   return (
-    <div className="my-5 overflow-hidden rounded-xl border border-zinc-200 shadow-sm dark:border-zinc-850">
+    <div className="my-5 overflow-hidden rounded-xl border border-zinc-200 shadow-sm dark:border-zinc-800">
       {/* Code Box Header */}
       <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-1.5">
@@ -168,7 +255,7 @@ function PrettyCodeBlock({ language, code }: { language: string; code: string })
       {/* Code Box Body */}
       <div className="relative bg-zinc-950 p-4 font-mono text-xs text-zinc-100 overflow-x-auto max-w-full leading-relaxed">
         <pre className="whitespace-pre">
-          <code>{code}</code>
+          <code dangerouslySetInnerHTML={{ __html: highlightCode(code, language) }} />
         </pre>
       </div>
     </div>
