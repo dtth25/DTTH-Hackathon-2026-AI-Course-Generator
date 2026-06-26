@@ -42,3 +42,13 @@ Code hiện tại là source of truth cho project. Các tài liệu phải bám 
 - Book thay thế public concept "Course"; `course_id` chỉ còn là ID nội bộ của bộ tài liệu đã index.
 - FAISS metadata vẫn được giữ nội bộ để truy xuất và debug, nhưng không xuất hiện trong public response.
 - Demo cho người dùng nên chạy production frontend bằng `npm run build && npm run start` để tránh Next.js dev indicator.
+- **KaTeX & Xử lý Toán học trên UI:**
+  - Hỗ trợ hiển thị chữ tiếng Việt Unicode trong khối LaTeX bằng cách sử dụng cơ chế font fallback của hệ thống. Đồng thời chặn toàn bộ log cảnh báo nhiễu `No character metrics for` tại `console.warn` để giữ sạch console và terminal khi chạy Next.js dev server.
+  - Ngăn chặn lỗi tràn công thức toán học và tràn chữ ra ngoài lề trên UI bằng cách bọc các thẻ span KaTeX trong CSS `overflow-x-auto max-w-full` và áp dụng `break-words` cho container chính của MarkdownBlock.
+  - Chuyển đổi hiển thị của các mục **Mục tiêu**, **Ý chính cần nhớ**, và **Kiểm tra nhanh** từ việc split danh sách sang sử dụng `LessonMarkdownSection` (dùng `MarkdownBlock` để render toàn bộ). Việc này loại bỏ hoàn toàn lỗi vỡ cấu trúc KaTeX do các ký tự ngắt dòng `\n` hoặc dấu chấm phẩy phân tách các công thức.
+  - Tối ưu hóa bộ lọc danh sách trong `MarkdownBlock` để tự động gộp các dòng xuống dòng thô (không có dấu bullet) vào dòng bullet trước đó. Điều này giúp ngăn chặn hoàn toàn lỗi KaTeX bị cắt đôi công thức toán học do ký tự xuống dòng `\n` chen giữa.
+  - Hỗ trợ hiển thị định dạng khối mã nguồn (Markdown Code Block) bằng cách bảo toàn ký tự dấu backtick (\`) trong quá trình xử lý, và tự động render mã dưới dạng thẻ `<pre><code>` có style nền tối, font monospace, chống tràn và hiển thị tên ngôn ngữ ở góc trên bên phải.
+  - Cải tiến bộ lọc xử lý ký tự xuống dòng thô trong công thức LaTeX (`replaceNewlinesOutsideMath`) bằng regex thông minh. Regex này phân biệt chính xác giữa ký tự xuống dòng thô đứng sát biến số toán học đơn lẻ (như `\na`, `\nx`, `\nb`) để chuyển đổi thành xuống dòng thực tế, và các lệnh LaTeX thực thụ bắt đầu bằng chữ n (như `\ne`, `\nu`, `\neq`, `\nabla`) để giữ nguyên cấu trúc toán học.
+- **Xuất bản PDF của Book:**
+  - Để tránh lỗi ô vuông trống (thiếu font) khi xuất Book ra PDF trên backend, các ký hiệu toán học đặc biệt (số mũ, chỉ số dưới, dấu vô cực, dấu thuộc tập hợp,...) sẽ được chuyển đổi sang định dạng ASCII tiêu chuẩn trước khi tạo PDF, đảm bảo file PDF tải về hiển thị rõ ràng, dễ đọc trong khi Web UI vẫn giữ nguyên công thức LaTeX đẹp mắt.
+

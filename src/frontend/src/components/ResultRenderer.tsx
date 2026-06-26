@@ -3,10 +3,12 @@
 import { useState, type ReactNode } from "react";
 import {
   BookOpen,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Copy,
   Download,
   FileJson,
   FileVideo,
@@ -23,6 +25,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { API_BASE_URL, type GenerateResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { KaTeXText } from "@/components/KaTeXRenderer";
 
 type PlainObject = Record<string, unknown>;
 
@@ -86,74 +89,309 @@ function stripInternalMarkers(value: string, compact = true) {
     .replace(/\b(page|source|chunk_id)\s*:\s*[^,\n]+/giu, " ");
 
   if (compact) return cleaned.replace(/\s+/g, " ").trim();
-  return cleaned.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return cleaned.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
 }
 
-function markdownLines(content: string) {
-  return stripInternalMarkers(content, false).replace(/\r/g, "").split("\n");
+function cleanContentMarkdown(content: string): string {
+  const parts = content.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g);
+  return parts
+    .map((part) => {
+      if (part && part.startsWith("$")) {
+        return part;
+      }
+      // Keep backticks (`) to preserve code blocks styling
+      return part ? part.replace(/[*_]/g, "") : part;
+    })
+    .join("");
 }
 
-function MarkdownBlock({ content }: { content: string }) {
+export function replaceNewlinesOutsideMath(content: string): string {
+  const parts = content.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g);
+  return parts
+    .map((part) => {
+      if (part && part.startsWith("$")) {
+        // Inside math blocks, replace literal \n unless followed by a valid LaTeX command starting with n
+        return part.replace(/\\n(?![eui](?![a-zA-Z])|[a-zA-Z]{2,})/g, "\n");
+      }
+      return part ? part.replace(/\\n/g, "\n") : part;
+    })
+    .join("");
+}
+
+function highlightCode(code: string, language = ""): string {
+  const isPython = ["python", "py"].includes(language.toLowerCase());
+
+  const tokenRegex = isPython
+    ? /((?:#.*))|("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^\'\\])*')|(\b\d+(?:\.\d+)?\b)|(@[a-zA-Z_][a-zA-Z0-9_]*)|(\b(?:def|class|import|from|as|return|if|else|elif|while|for|in|and|or|not|with|try|except|pass|assert|break|continue|yield|lambda|global|nonlocal|del)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()|([a-zA-Z_][a-zA-Z0-9_]*)/g
+    : /((?:\/\/.*|\/\*[\s\S]*?\*\/))|("(?:\\.|[^"\\])*"|'(?:\\.|[^\'\\])*'|`(?:\\.|[^\`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:function|class|const|let|var|return|if|else|switch|case|default|while|for|in|of|break|continue|import|from|export|default|try|catch|finally|throw|new|this|async|await|yield|true|false|null|undefined|NaN)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()|([a-zA-Z_][a-zA-Z0-9_]*)/g;
+
+  let lastIndex = 0;
+  let html = "";
+  let match;
+
+  const escapeHtml = (text: string) => {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  };
+
+  while ((match = tokenRegex.exec(code)) !== null) {
+    if (match.index > lastIndex) {
+      html += escapeHtml(code.slice(lastIndex, match.index));
+    }
+
+    const [
+      full,
+      comment,
+      str,
+      num,
+      decoratorOrKeyword,
+      keywordOrFunc,
+      funcOrWord,
+      otherWord
+    ] = match;
+
+    if (comment !== undefined) {
+      html += `<span class="text-zinc-500 italic">${escapeHtml(comment)}</span>`;
+    } else if (str !== undefined) {
+      html += `<span class="text-emerald-400">${escapeHtml(str)}</span>`;
+    } else if (num !== undefined) {
+      html += `<span class="text-amber-400">${escapeHtml(num)}</span>`;
+    } else if (isPython) {
+      const decorator = decoratorOrKeyword;
+      const keyword = keywordOrFunc;
+      const func = funcOrWord;
+      const word = otherWord;
+
+      if (decorator !== undefined) {
+        html += `<span class="text-yellow-400 font-mono">${escapeHtml(decorator)}</span>`;
+      } else if (keyword !== undefined) {
+        if (["True", "False", "None", "self"].includes(keyword)) {
+          html += `<span class="text-violet-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        } else {
+          html += `<span class="text-pink-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        }
+      } else if (func !== undefined) {
+        html += `<span class="text-sky-400">${escapeHtml(func)}</span>`;
+      } else if (word !== undefined) {
+        html += escapeHtml(word);
+      }
+    } else {
+      const keyword = decoratorOrKeyword;
+      const func = keywordOrFunc;
+      const word = funcOrWord;
+
+      if (keyword !== undefined) {
+        if (["true", "false", "null", "undefined", "NaN"].includes(keyword)) {
+          html += `<span class="text-violet-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        } else {
+          html += `<span class="text-pink-400 font-semibold">${escapeHtml(keyword)}</span>`;
+        }
+      } else if (func !== undefined) {
+        html += `<span class="text-sky-400">${escapeHtml(func)}</span>`;
+      } else if (word !== undefined) {
+        html += escapeHtml(word);
+      }
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < code.length) {
+    html += escapeHtml(code.slice(lastIndex));
+  }
+
+  return html;
+}
+
+function PrettyCodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy code: ", err);
+    }
+  };
+
+  return (
+    <div className="my-5 overflow-hidden rounded-xl border border-zinc-200 shadow-sm dark:border-zinc-800">
+      {/* Code Box Header */}
+      <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-full bg-red-400/80" />
+          <span className="h-3 w-3 rounded-full bg-yellow-400/80" />
+          <span className="h-3 w-3 rounded-full bg-green-400/80" />
+        </div>
+        <div className="flex items-center gap-3">
+          {language && (
+            <span className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase select-none dark:text-zinc-400 font-mono">
+              {language}
+            </span>
+          )}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 rounded bg-zinc-200/50 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 p-1 px-2 text-xs font-medium text-zinc-600 transition-colors dark:text-zinc-300 cursor-pointer"
+            title="Sao chép mã"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                <span className="text-[10px] text-green-600 dark:text-green-400 font-semibold">Đã chép</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                <span className="text-[10px]">Sao chép</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      {/* Code Box Body */}
+      <div className="relative bg-zinc-950 p-4 font-mono text-xs text-zinc-100 overflow-x-auto max-w-full leading-relaxed">
+        <pre className="whitespace-pre">
+          <code dangerouslySetInnerHTML={{ __html: highlightCode(code, language) }} />
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+export function MarkdownBlock({ content }: { content: string }) {
+  const processed = replaceNewlinesOutsideMath(content);
+  const cleaned = stripInternalMarkers(processed, false).replace(/\r/g, "");
+
+  const lines = cleaned.split("\n");
   const blocks: ReactNode[] = [];
-  let listItems: string[] = [];
+  
+  let currentListItems: string[] = [];
+  let currentParagraphLines: string[] = [];
+  let inCodeBlock = false;
+  let codeBlockLanguage = "";
+  let codeBlockLines: string[] = [];
+  let keyCounter = 0;
+
+  const flushParagraph = () => {
+    if (currentParagraphLines.length > 0) {
+      const text = cleanContentMarkdown(currentParagraphLines.join(" "));
+      blocks.push(
+        <p key={`p-${keyCounter++}`} className="text-sm leading-7 text-foreground/90">
+          <KaTeXText>{text}</KaTeXText>
+        </p>
+      );
+      currentParagraphLines = [];
+    }
+  };
 
   const flushList = () => {
-    if (listItems.length > 0) {
+    if (currentListItems.length > 0) {
       blocks.push(
-        <ul key={`ul-${blocks.length}`} className="space-y-1 pl-5 text-sm leading-6">
-          {listItems.map((item, index) => (
-            <li key={`${item}-${index}`} className="list-disc">
-              {item}
+        <ul key={`ul-${keyCounter++}`} className="space-y-1 pl-5 text-sm leading-6">
+          {currentListItems.map((item, index) => (
+            <li key={`li-${index}`} className="list-disc text-foreground/90">
+              <KaTeXText>{cleanContentMarkdown(item)}</KaTeXText>
             </li>
           ))}
         </ul>
       );
-      listItems = [];
+      currentListItems = [];
     }
   };
 
-  markdownLines(content).forEach((rawLine) => {
-    const line = rawLine.trim();
-    if (!line) {
-      flushList();
-      return;
+  const flushCodeBlock = () => {
+    if (codeBlockLines.length > 0) {
+      blocks.push(
+        <PrettyCodeBlock
+          key={`code-${keyCounter++}`}
+          language={codeBlockLanguage}
+          code={codeBlockLines.join("\n")}
+        />
+      );
+      codeBlockLines = [];
+      inCodeBlock = false;
+      codeBlockLanguage = "";
+    }
+  };
+
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+    flushCodeBlock();
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Handle Code Block
+    if (trimmed.startsWith("```") || (inCodeBlock && trimmed.startsWith("``"))) {
+      if (inCodeBlock) {
+        flushCodeBlock();
+      } else {
+        flushAll();
+        inCodeBlock = true;
+        codeBlockLanguage = trimmed.slice(3).trim();
+      }
+      continue;
     }
 
-    const headingMatch = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    // Handle Headers
+    const headingMatch = /^(#{1,3})\s+(.+)$/.exec(trimmed);
     if (headingMatch) {
-      flushList();
+      flushAll();
       blocks.push(
-        <h4 key={`h-${blocks.length}`} className="text-base font-semibold leading-tight">
-          {headingMatch[2].replace(/[*_`]/g, "")}
+        <h4 key={`h-${keyCounter++}`} className="text-base font-semibold leading-tight mt-4 text-foreground">
+          <KaTeXText>{cleanContentMarkdown(headingMatch[2])}</KaTeXText>
         </h4>
       );
-      return;
+      continue;
     }
 
-    const bulletMatch = /^[-*]\s+(.+)$/.exec(line);
-    if (bulletMatch) {
-      listItems.push(bulletMatch[1].replace(/[*_`]/g, ""));
-      return;
+    // Handle Lists
+    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      flushParagraph();
+      const cleanLine = trimmed.replace(/^[-*]\s+/, "");
+      currentListItems.push(cleanLine);
+      continue;
     }
 
-    flushList();
-    blocks.push(
-      <p key={`p-${blocks.length}`} className="text-sm leading-7 text-foreground/90">
-        {line.replace(/[*_`]/g, "")}
-      </p>
-    );
-  });
+    // Handle Empty Line
+    if (trimmed === "") {
+      flushAll();
+      continue;
+    }
 
-  flushList();
-  return <div className="space-y-3">{blocks}</div>;
+    // Regular line (append to paragraph or list item)
+    if (currentListItems.length > 0) {
+      currentListItems[currentListItems.length - 1] += " " + trimmed;
+    } else {
+      currentParagraphLines.push(trimmed);
+    }
+  }
+
+  flushAll();
+
+  return <div className="space-y-3 break-words max-w-full overflow-x-auto">{blocks}</div>;
 }
 
 function textList(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map((item) => stripInternalMarkers(asString(item))).filter(Boolean);
+    return value
+      .map((item) => replaceNewlinesOutsideMath(stripInternalMarkers(asString(item))))
+      .filter(Boolean);
   }
 
-  const text = stripInternalMarkers(asString(value), false);
+  const text = replaceNewlinesOutsideMath(stripInternalMarkers(asString(value), false));
   if (!text) return [];
 
   return text
@@ -189,16 +427,33 @@ function DownloadLink({
   );
 }
 
-function LessonList({
+function LessonMarkdownSection({
   title,
   icon,
-  items,
+  content,
 }: {
   title: string;
   icon: ReactNode;
-  items: string[];
+  content: unknown;
 }) {
-  if (items.length === 0) return null;
+  if (!content) return null;
+
+  const markdownContent = (() => {
+    if (Array.isArray(content)) {
+      const items = content
+        .map((item) => {
+          const str = asString(item).trim();
+          if (!str) return "";
+          if (str.startsWith("- ") || str.startsWith("* ")) return str;
+          return `- ${str}`;
+        })
+        .filter(Boolean);
+      return items.length > 0 ? items.join("\n") : "";
+    }
+    return asString(content).trim();
+  })();
+
+  if (!markdownContent) return null;
 
   return (
     <div>
@@ -206,13 +461,9 @@ function LessonList({
         {icon}
         {title}
       </div>
-      <ul className="space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
-        {items.map((item, index) => (
-          <li key={`${item}-${index}`} className="list-disc">
-            {item}
-          </li>
-        ))}
-      </ul>
+      <div className="rounded-lg border bg-background p-3 text-sm leading-6 text-muted-foreground">
+        <MarkdownBlock content={markdownContent} />
+      </div>
     </div>
   );
 }
@@ -315,10 +566,10 @@ function BookResult({ result }: { result: GenerateResponse }) {
                       </summary>
 
                       <div className="space-y-5 px-4 pb-5">
-                        <LessonList
+                        <LessonMarkdownSection
                           title="Mục tiêu"
                           icon={<Target className="h-4 w-4" />}
-                          items={textList(lessonObj.objectives)}
+                          content={lessonObj.objectives}
                         />
                         <div>
                           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
@@ -334,10 +585,10 @@ function BookResult({ result }: { result: GenerateResponse }) {
                             />
                           </div>
                         </div>
-                        <LessonList
+                        <LessonMarkdownSection
                           title="Ý chính cần nhớ"
                           icon={<ListChecks className="h-4 w-4" />}
-                          items={textList(lessonObj.key_points)}
+                          content={lessonObj.key_points}
                         />
                         {Boolean(lessonObj.activity) && (
                           <div>
@@ -345,15 +596,15 @@ function BookResult({ result }: { result: GenerateResponse }) {
                               <Sparkles className="h-4 w-4" />
                               Hoạt động học tập
                             </div>
-                            <p className="rounded-lg border bg-background p-3 text-sm leading-6 text-muted-foreground">
-                              {stripInternalMarkers(asString(lessonObj.activity))}
-                            </p>
+                            <div className="rounded-lg border bg-background p-3 text-sm leading-6 text-muted-foreground">
+                              <MarkdownBlock content={asString(lessonObj.activity)} />
+                            </div>
                           </div>
                         )}
-                        <LessonList
+                        <LessonMarkdownSection
                           title="Kiểm tra nhanh"
                           icon={<ClipboardCheck className="h-4 w-4" />}
-                          items={textList(lessonObj.assessment)}
+                          content={lessonObj.assessment}
                         />
                       </div>
                     </details>
@@ -490,9 +741,9 @@ function QuizResult({ result }: { result: GenerateResponse }) {
 
   const score = submitted
     ? questions.reduce<number>((total, question, index) => {
-        const item = isObject(question) ? question : {};
-        return total + (answers[index] === Number(item.correct ?? 0) ? 1 : 0);
-      }, 0)
+      const item = isObject(question) ? question : {};
+      return total + (answers[index] === Number(item.correct ?? 0) ? 1 : 0);
+    }, 0)
     : 0;
 
   if (questions.length === 0) {
@@ -515,7 +766,7 @@ function QuizResult({ result }: { result: GenerateResponse }) {
               Câu {currentIndex + 1} / {questions.length}
             </div>
             <h3 className="text-xl font-semibold leading-snug">
-              {asString(current.question, "Câu hỏi")}
+              <KaTeXText>{asString(current.question, "Câu hỏi")}</KaTeXText>
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -567,7 +818,7 @@ function QuizResult({ result }: { result: GenerateResponse }) {
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">
                   {option.label}
                 </span>
-                <span className="leading-6">{stripInternalMarkers(option.value)}</span>
+                <span className="leading-6"><KaTeXText>{stripInternalMarkers(option.value)}</KaTeXText></span>
                 {submitted && isCorrect && (
                   <CheckCircle2 className="ml-auto h-4 w-4 shrink-0" />
                 )}
@@ -579,7 +830,7 @@ function QuizResult({ result }: { result: GenerateResponse }) {
 
         {submitted && Boolean(current.explanation) && (
           <p className="mt-4 rounded-md bg-muted/50 p-3 text-sm leading-6 text-muted-foreground">
-            {stripInternalMarkers(asString(current.explanation))}
+            <KaTeXText>{stripInternalMarkers(asString(current.explanation))}</KaTeXText>
           </p>
         )}
 

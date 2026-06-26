@@ -9,6 +9,7 @@ import {
   Button,
 } from "@/components/ui";
 import { API_BASE_URL, getBook } from "@/lib/api";
+import { MarkdownBlock } from "@/components/ResultRenderer";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -103,9 +104,9 @@ export default async function BookDetailPage({ params }: PageProps) {
                     <div key={lessonIndex} className="rounded-md border p-3">
                       <div className="font-medium">{lesson.title}</div>
                       {lesson.lecture && (
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                          {lesson.lecture}
-                        </p>
+                        <div className="mt-2 rounded-lg bg-muted/40 p-4">
+                          <MarkdownBlock content={lesson.lecture} />
+                        </div>
                       )}
                     </div>
                   ))}

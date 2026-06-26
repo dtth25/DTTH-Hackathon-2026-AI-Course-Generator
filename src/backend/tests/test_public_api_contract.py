@@ -4,7 +4,7 @@ from backend import main
 
 
 class FakeResourceGenerator:
-    def generate_book(self, user_prompt: str, target_audience: str):
+    async def generate_book(self, user_prompt: str, target_audience: str):
         return {
             "book": {"title": "Book", "chapters": []},
             "pdf_url": "/api/course/course123/book.pdf",
@@ -72,6 +72,8 @@ def assert_no_public_source_metadata(payload):
     assert '"page"' not in text
     assert "'source'" not in text
     assert '"source"' not in text
+    assert "source_file" not in text
+    assert "doc_id" not in text
 
 
 def test_generation_contract_has_only_four_public_outputs(monkeypatch):
@@ -142,3 +144,51 @@ def test_upload_accepts_multiple_documents(monkeypatch, tmp_path):
     assert payload["file_count"] == 2
     assert payload["filenames"] == ["a.txt", "b.txt"]
     assert payload["status"] == "processing"
+
+
+class FakeRagChains:
+    def __init__(self):
+        self.course_id = "test_course"
+        self.vectorstore = None
+
+
+def test_resource_generator_sanitization():
+    from backend.services.resource_gen import ResourceGenerator
+    rg = ResourceGenerator(FakeRagChains())
+
+    dirty_payload = {
+        "title": "Chương 1",
+        "page": 10,
+        "source": "document.pdf",
+        "chunk_id": 42,
+        "citations": ["citation 1"],
+        "source_file": "document.pdf",
+        "doc_id": "doc123",
+        "nested": {
+            "content": "some text",
+            "page": 11,
+            "citations": "leak",
+        },
+    }
+
+    clean_payload = rg._sanitize_payload(dirty_payload)
+    assert "title" in clean_payload
+    assert "page" not in clean_payload
+    assert "source" not in clean_payload
+    assert "chunk_id" not in clean_payload
+    assert "citations" not in clean_payload
+    assert "source_file" not in clean_payload
+    assert "doc_id" not in clean_payload
+    assert "nested" in clean_payload
+    assert "page" not in clean_payload["nested"]
+    assert "citations" not in clean_payload["nested"]
+
+    dirty_text = "page: 12, source: doc.pdf, chunk_id: 5, citations: source1, source_file: file.docx, doc_id: 123"
+    cleaned = rg._clean_generated_text(dirty_text)
+    assert "page" not in cleaned
+    assert "source" not in cleaned
+    assert "chunk_id" not in cleaned
+    assert "citations" not in cleaned
+    assert "source_file" not in cleaned
+    assert "doc_id" not in cleaned
+

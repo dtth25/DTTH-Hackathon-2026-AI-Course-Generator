@@ -1,5 +1,12 @@
 FROM python:3.11-slim
 
+# Install system dependencies & fonts for PDF generation
+RUN apt-get update && apt-get install -y \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-stix \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

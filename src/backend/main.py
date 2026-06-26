@@ -398,7 +398,7 @@ async def get_course_status(course_id: str):
 async def generate_book(req: GenerateBookRequest):
     """Generate the Book output and its downloadable PDF."""
     rag = _get_ready_course(req.course_id)
-    result = rag.get_resource_generator().generate_book(req.user_prompt, req.target_audience)
+    result = await rag.get_resource_generator().generate_book(req.user_prompt, req.target_audience)
     return {
         "course_id": req.course_id,
         "book": result.get("book", {}),
