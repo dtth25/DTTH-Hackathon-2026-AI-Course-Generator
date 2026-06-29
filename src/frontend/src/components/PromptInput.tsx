@@ -10,12 +10,7 @@ interface PromptInputProps {
   disabled?: boolean;
 }
 
-const PLACEHOLDER_SUGGESTIONS = [
-  'Ví dụ: "Tập trung vào phần nhập môn"',
-  'Ví dụ: "Ưu tiên các khái niệm chính"',
-  'Ví dụ: "Làm nội dung cho buổi học 45 phút"',
-  'Ví dụ: "Tạo bản tổng quan ngắn gọn"',
-];
+const PLACEHOLDER = 'Ví dụ: "Tập trung vào phần nhập môn"';
 
 export default function PromptInput({
   onSubmit,
@@ -23,11 +18,6 @@ export default function PromptInput({
   disabled = false,
 }: PromptInputProps) {
   const [prompt, setPrompt] = useState("");
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-
-  const handleFocus = () => {
-    setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDER_SUGGESTIONS.length);
-  };
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -41,8 +31,7 @@ export default function PromptInput({
         <textarea
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          onFocus={handleFocus}
-          placeholder={PLACEHOLDER_SUGGESTIONS[placeholderIndex]}
+          placeholder={PLACEHOLDER}
           disabled={disabled}
           rows={3}
           className="flex w-full resize-none rounded-lg border border-input bg-background px-4 py-3 text-sm shadow-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"

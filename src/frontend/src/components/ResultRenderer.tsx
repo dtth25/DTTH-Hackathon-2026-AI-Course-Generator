@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
-  FileJson,
   FileVideo,
   Layers,
   ListChecks,
@@ -406,12 +405,6 @@ function SlideResult({ result }: { result: GenerateResponse }) {
               icon={<Download className="h-4 w-4" />}
               variant="default"
             />
-            <DownloadLink
-              href={result.json_url}
-              label="JSON"
-              icon={<FileJson className="h-4 w-4" />}
-              variant="outline"
-            />
           </div>
         </div>
 
@@ -524,12 +517,6 @@ function QuizResult({ result }: { result: GenerateResponse }) {
               label="PDF"
               icon={<Download className="h-4 w-4" />}
               variant="default"
-            />
-            <DownloadLink
-              href={result.json_url}
-              label="JSON"
-              icon={<FileJson className="h-4 w-4" />}
-              variant="outline"
             />
           </div>
         </div>
