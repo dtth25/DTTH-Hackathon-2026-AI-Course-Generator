@@ -35,5 +35,11 @@ class Course(Base):
     embedding_status = Column(String, default="pending", nullable=False)
     quality_score = Column(Integer, default=0, nullable=False)
     error_message = Column(Text, nullable=True)  # Real reason processing failed, shown to the user
+    failure_stage = Column(String(50), nullable=True)
+    error_code = Column(String(80), nullable=True)
+    can_retry = Column(Boolean, default=False, nullable=False)
+    recommended_action = Column(String(80), nullable=True)
+    # Server-only diagnostic detail. It must never be included in a public response schema.
+    technical_error = Column(Text, nullable=True)
     # "gemini" remains only as a legacy marker. New and migrated courses use OpenRouter.
     embedding_provider = Column(String, default="openrouter", nullable=False)

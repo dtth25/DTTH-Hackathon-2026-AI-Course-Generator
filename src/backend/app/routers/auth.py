@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models.course import Course
 from app.models.email_otp import EmailOtpCode
+from app.models.processing_job import ProcessingJob
 from app.models.user import User
 from app.schemas.user import (
     DeleteAccountRequest,
@@ -245,13 +246,14 @@ def delete_account(
     db: Session = Depends(get_db),
 ) -> Any:
     """Permanently delete the caller's own account: every course's uploads + vector store
-    chunks, all OTP codes, and the user row itself. SQLite doesn't enforce the FK
+    chunks, processing jobs, all OTP codes, and the user row itself. SQLite doesn't enforce the FK
     ondelete=CASCADE on these tables (no PRAGMA foreign_keys=ON anywhere in this codebase),
     so each dependent table is cleaned up explicitly rather than relying on it."""
     if not verify_password(payload.password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mật khẩu không chính xác.")
 
     courses = db.query(Course).filter(Course.user_id == current_user.id).all()
+    db.query(ProcessingJob).filter(ProcessingJob.user_id == current_user.id).delete()
     if courses:
         from app.services.document_processor import get_document_processor
 

@@ -55,6 +55,11 @@ class CourseStatusResponse(BaseModel):
     filenames: List[str] = []
     file_count: int = 0
     error: Optional[str] = None
+    failure_stage: Optional[str] = None
+    error_code: Optional[str] = None
+    can_retry: bool = False
+    recommended_action: Optional[str] = None
+    job_id: Optional[str] = None
     document_quality_report: Optional[Dict[str, Any]] = None
 
 
@@ -69,3 +74,28 @@ class UploadResponse(BaseModel):
     file_count: int = 0
     status: str
     message: str
+    job_id: Optional[str] = None
+
+
+class JobResponse(BaseModel):
+    id: str
+    document_id: str
+    user_id: Optional[str] = None
+    job_type: str
+    status: str
+    progress: int
+    message: str
+    error: Optional[str] = None
+    error_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class DocumentRetryResponse(BaseModel):
+    document_id: str
+    status: str
+    stage: str
+    progress: int
+    message: str
+    job_id: str

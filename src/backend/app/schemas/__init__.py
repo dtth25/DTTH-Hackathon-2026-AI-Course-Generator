@@ -6,6 +6,8 @@ from app.schemas.course import (
     CourseListItem,
     CourseListResponse,
     CourseStatusResponse,
+    DocumentRetryResponse,
+    JobResponse,
     UploadResponse,
 )
 from app.schemas.generation import (
@@ -26,6 +28,8 @@ __all__ = [
     "CourseListItem",
     "CourseListResponse",
     "CourseStatusResponse",
+    "DocumentRetryResponse",
+    "JobResponse",
     "UploadResponse",
     "GenerateRequest",
     "GenerateResponse",
