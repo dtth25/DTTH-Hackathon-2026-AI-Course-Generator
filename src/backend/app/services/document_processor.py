@@ -6,6 +6,7 @@ import re
 import time
 from collections import Counter
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import List, Optional, Tuple
 from pydantic import BaseModel
@@ -28,6 +29,8 @@ logger = logging.getLogger(__name__)
 _PREFLIGHT_MAX_ATTEMPTS = 3
 _PREFLIGHT_INITIAL_DELAY_SECONDS = 0.25
 _PREFLIGHT_MAX_DELAY_SECONDS = 1.0
+PERSISTENCE_FAILURE_CODE = "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
+PERSISTENCE_FAILURE_MESSAGE = "Không thể lưu trạng thái xử lý tài liệu. Vui lòng thử lại."
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.?!][ \n]")
 _FRONT_MATTER_MARKERS = (
@@ -89,6 +92,14 @@ class ProcessingResult(BaseModel):
     chunk_count: int
     quality_score: int
     error: Optional[str] = None
+
+
+class TerminalPersistenceOutcome(StrEnum):
+    """A terminal write either committed, lost ownership, or hit durable storage."""
+
+    PERSISTED = "persisted"
+    LOST_CLAIM = "lost_claim"
+    ERROR = "error"
 
 
 def _provider_failure_from_health(error_code: Optional[str]) -> ProviderFailure:
@@ -252,6 +263,90 @@ class DocumentProcessor:
         course.recommended_action = recommended_action
         course.technical_error = technical_error
 
+    @staticmethod
+    def _terminal_course_values(
+        *, status: str, stage: str, progress: int, embedding_status: str, course_fields: dict
+    ) -> dict:
+        """Build only the course columns intended for a terminal state transition."""
+        course_values = {
+            "status": status,
+            "stage": stage,
+            "progress": progress,
+            "embedding_status": embedding_status,
+            "error_message": course_fields.get("error_message"),
+            "failure_stage": course_fields.get("failure_stage"),
+            "error_code": course_fields.get("error_code"),
+            "can_retry": course_fields.get("can_retry", False),
+            "recommended_action": course_fields.get("recommended_action"),
+            "technical_error": course_fields.get("technical_error"),
+        }
+        for field in ("chunk_count", "quality_score"):
+            if course_fields.get(field, 0) > 0:
+                course_values[field] = course_fields[field]
+        for field in ("name", "embedding_provider"):
+            if course_fields.get(field):
+                course_values[field] = course_fields[field]
+        return course_values
+
+    @staticmethod
+    def _guarded_terminal_update(
+        db,
+        *,
+        course_id: str,
+        job_id: Optional[str],
+        job_values: dict,
+        course_values: dict,
+    ) -> TerminalPersistenceOutcome:
+        """Commit a terminal job/course pair only while this attempt still owns both."""
+        if job_id:
+            active_course_owner = (
+                select(Course.user_id)
+                .where(
+                    Course.id == course_id,
+                    Course.is_deleted == False,  # noqa: E712
+                    Course.status == "processing",
+                )
+                .scalar_subquery()
+            )
+            latest_job_id = (
+                select(ProcessingJob.id)
+                .where(
+                    ProcessingJob.course_id == course_id,
+                    ProcessingJob.job_type == "preprocess",
+                )
+                .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            job_result = db.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.id == job_id,
+                    ProcessingJob.course_id == course_id,
+                    ProcessingJob.status == JobStatus.RUNNING.value,
+                    ProcessingJob.user_id == active_course_owner,
+                    ProcessingJob.id == latest_job_id,
+                )
+                .values(**job_values)
+            )
+            if job_result.rowcount != 1:
+                db.rollback()
+                return TerminalPersistenceOutcome.LOST_CLAIM
+        course_result = db.execute(
+            update(Course)
+            .where(
+                Course.id == course_id,
+                Course.is_deleted == False,  # noqa: E712
+                Course.status == "processing",
+            )
+            .values(**course_values)
+        )
+        if course_result.rowcount != 1:
+            db.rollback()
+            return TerminalPersistenceOutcome.LOST_CLAIM
+        db.commit()
+        return TerminalPersistenceOutcome.PERSISTED
+
     def _persist_terminal_state(
         self,
         course_id: str,
@@ -266,7 +361,7 @@ class DocumentProcessor:
         job_message: Optional[str] = None,
         db_session_factory=None,
         **course_fields,
-    ) -> bool:
+    ) -> TerminalPersistenceOutcome:
         """Atomically publish a terminal state only for the still-live attempt.
 
         The job claim occurs before the course update. Course deletion cancels active
@@ -279,98 +374,85 @@ class DocumentProcessor:
         else:
             factory = db_session_factory
         now = datetime.utcnow()
-        course_values = {
-            "status": status,
-            "stage": stage,
-            "progress": progress,
-            "embedding_status": embedding_status,
-            "error_message": course_fields.get("error_message"),
-            "failure_stage": course_fields.get("failure_stage"),
-            "error_code": course_fields.get("error_code"),
-            "can_retry": course_fields.get("can_retry", False),
-            "recommended_action": course_fields.get("recommended_action"),
-            "technical_error": course_fields.get("technical_error"),
+        course_values = self._terminal_course_values(
+            status=status,
+            stage=stage,
+            progress=progress,
+            embedding_status=embedding_status,
+            course_fields=course_fields,
+        )
+        job_values = {
+            "status": JobStatus.SUCCEEDED.value if job_succeeded else JobStatus.FAILED.value,
+            "updated_at": now,
+            "completed_at": now,
         }
-        if course_fields.get("chunk_count", 0) > 0:
-            course_values["chunk_count"] = course_fields["chunk_count"]
-        if course_fields.get("quality_score", 0) > 0:
-            course_values["quality_score"] = course_fields["quality_score"]
-        if course_fields.get("name"):
-            course_values["name"] = course_fields["name"]
-        if course_fields.get("embedding_provider"):
-            course_values["embedding_provider"] = course_fields["embedding_provider"]
+        if job_succeeded:
+            job_values.update(
+                progress=100,
+                message="Hoàn thành",
+                error_code=None,
+                error_message=None,
+            )
+        else:
+            job_values.update(
+                error_code=job_error_code,
+                error_message=job_message,
+                message=job_message or "Xử lý tài liệu thất bại.",
+            )
         with factory() as db:
             try:
-                if job_id:
-                    active_course_owner = (
-                        select(Course.user_id)
-                        .where(
-                            Course.id == course_id,
-                            Course.is_deleted == False,  # noqa: E712
-                            Course.status == "processing",
-                        )
-                        .scalar_subquery()
-                    )
-                    latest_job_id = (
-                        select(ProcessingJob.id)
-                        .where(
-                            ProcessingJob.course_id == course_id,
-                            ProcessingJob.job_type == "preprocess",
-                        )
-                        .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
-                        .limit(1)
-                        .scalar_subquery()
-                    )
-                    job_values = {
-                        "status": JobStatus.SUCCEEDED.value if job_succeeded else JobStatus.FAILED.value,
-                        "updated_at": now,
-                        "completed_at": now,
-                    }
-                    if job_succeeded:
-                        job_values.update(
-                            progress=100,
-                            message="Hoàn thành",
-                            error_code=None,
-                            error_message=None,
-                        )
-                    else:
-                        job_values.update(
-                            error_code=job_error_code,
-                            error_message=job_message,
-                            message=job_message or "Xử lý tài liệu thất bại.",
-                        )
-                    job_result = db.execute(
-                        update(ProcessingJob)
-                        .where(
-                            ProcessingJob.id == job_id,
-                            ProcessingJob.course_id == course_id,
-                            ProcessingJob.status == JobStatus.RUNNING.value,
-                            ProcessingJob.user_id == active_course_owner,
-                            ProcessingJob.id == latest_job_id,
-                        )
-                        .values(**job_values)
-                    )
-                    if job_result.rowcount != 1:
-                        db.rollback()
-                        return False
-                course_result = db.execute(
-                    update(Course)
-                    .where(
-                        Course.id == course_id,
-                        Course.is_deleted == False,  # noqa: E712
-                        Course.status == "processing",
-                    )
-                    .values(**course_values)
+                return self._guarded_terminal_update(
+                    db,
+                    course_id=course_id,
+                    job_id=job_id,
+                    job_values=job_values,
+                    course_values=course_values,
                 )
-                if course_result.rowcount != 1:
-                    db.rollback()
-                    return False
-                db.commit()
-                return True
             except Exception:
                 db.rollback()
                 logger.exception("Terminal processing-state persistence failed for course %s", course_id)
-                return False
+                return TerminalPersistenceOutcome.ERROR
+
+    def _persist_persistence_failure(
+        self, course_id: str, job_id: Optional[str], db_session_factory
+    ) -> TerminalPersistenceOutcome:
+        """Fresh-session fallback for a real terminal write failure, never job-only."""
+        now = datetime.utcnow()
+        course_values = self._terminal_course_values(
+            status="failed",
+            stage="failed",
+            progress=0,
+            embedding_status="failed",
+            course_fields={
+                "error_message": PERSISTENCE_FAILURE_MESSAGE,
+                "failure_stage": "persistence_failed",
+                "error_code": PERSISTENCE_FAILURE_CODE,
+                "can_retry": True,
+                "recommended_action": "retry_later",
+                "technical_error": "The terminal processing transaction could not be persisted.",
+            },
+        )
+        job_values = {
+            "status": JobStatus.FAILED.value,
+            "error_code": PERSISTENCE_FAILURE_CODE,
+            "error_message": PERSISTENCE_FAILURE_MESSAGE,
+            "message": PERSISTENCE_FAILURE_MESSAGE,
+            "updated_at": now,
+            "completed_at": now,
+        }
+        with db_session_factory() as db:
+            try:
+                return self._guarded_terminal_update(
+                    db,
+                    course_id=course_id,
+                    job_id=job_id,
+                    job_values=job_values,
+                    course_values=course_values,
+                )
+            except Exception:
+                db.rollback()
+                logger.exception("Fallback terminal persistence failed for course %s", course_id)
+                return TerminalPersistenceOutcome.ERROR
 
     @staticmethod
     def _attempt_is_active(course_id: str, job_id: Optional[str], db_session_factory) -> bool:
@@ -416,22 +498,54 @@ class DocumentProcessor:
     def _resolve_inactive_attempt(
         self, course_id: str, job_id: Optional[str], db_session_factory, vectors_written: bool
     ) -> ProcessingResult:
-        """Avoid resurrecting deleted/stale work and clean vectors created by a delete race."""
+        """Avoid resurrecting deleted/stale work and clean vectors created by a delete race.
+
+        A worker that lost its claim must not terminalize an old job by itself: the
+        current attempt or startup reconciliation owns the coherent course/job repair.
+        """
         if vectors_written and self._course_is_deleted(course_id, db_session_factory):
             self.vector_store.delete_course(course_id)
-        if job_id:
-            with db_session_factory() as db:
-                job = db.get(ProcessingJob, job_id)
-                if job is not None and job.status == JobStatus.RUNNING.value:
-                    now = datetime.utcnow()
-                    job.status = JobStatus.FAILED.value
-                    job.error_code = "DOCUMENT_PROCESSING_CANCELLED"
-                    job.error_message = "Tài liệu không còn khả dụng để xử lý."
-                    job.message = job.error_message
-                    job.completed_at = now
-                    job.updated_at = now
-                    db.commit()
         return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0)
+
+    def _resolve_terminal_outcome(
+        self,
+        outcome: TerminalPersistenceOutcome,
+        *,
+        course_id: str,
+        job_id: Optional[str],
+        db_session_factory,
+        vectors_written: bool,
+    ) -> ProcessingResult:
+        """Resolve a failed terminal write without turning a storage error into claim loss."""
+        if outcome == TerminalPersistenceOutcome.LOST_CLAIM:
+            return self._resolve_inactive_attempt(
+                course_id, job_id, db_session_factory, vectors_written
+            )
+
+        # The worker did write vectors, but its terminal transaction hit storage. Remove
+        # those vectors before the fresh-session fallback so an uncommitted course never
+        # appears ready through retrieval.
+        if vectors_written:
+            self.vector_store.delete_course(course_id)
+        fallback = self._persist_persistence_failure(course_id, job_id, db_session_factory)
+        if fallback == TerminalPersistenceOutcome.PERSISTED:
+            return ProcessingResult(
+                course_id=course_id,
+                status="failed",
+                chunk_count=0,
+                quality_score=0,
+                error=PERSISTENCE_FAILURE_MESSAGE,
+            )
+        # Do not fail just the job if the fallback storage operation also fails. The
+        # retained running attempt is intentionally recoverable by inline startup
+        # reconciliation (when explicitly enabled) or the future durable queue.
+        return ProcessingResult(
+            course_id=course_id,
+            status="failed",
+            chunk_count=0,
+            quality_score=0,
+            error=PERSISTENCE_FAILURE_MESSAGE,
+        )
 
     def _generate_course_title(self, all_documents: List[Document]) -> Optional[str]:
         """Best-effort AI-generated short course title from a sample of extracted text.
@@ -856,7 +970,7 @@ class DocumentProcessor:
                     raise ValueError("No valid text could be extracted from uploaded files.")
             except Exception as exc:
                 user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
-                if not self._persist_terminal_state(
+                terminal_outcome = self._persist_terminal_state(
                     course_id, status="failed", stage="failed", progress=0, embedding_status="failed",
                     job_id=job_id, job_succeeded=False,
                     job_error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", job_message=user_message,
@@ -864,8 +978,15 @@ class DocumentProcessor:
                     error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", can_retry=True,
                     recommended_action="upload_clearer_pdf", technical_error=str(exc)[:1000],
                     db_session_factory=db_session_factory,
-                ):
-                    return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
+                )
+                if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
+                    return self._resolve_terminal_outcome(
+                        terminal_outcome,
+                        course_id=course_id,
+                        job_id=job_id,
+                        db_session_factory=db_session_factory,
+                        vectors_written=False,
+                    )
                 logger.error("Document extraction failed for course %s: %s", course_id, exc)
                 return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 
@@ -879,12 +1000,19 @@ class DocumentProcessor:
                 return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
             quality_score = min(100, max(50, len(all_documents) * 5 + 60))
             course_title = self._generate_course_title(all_documents) or self._filename_fallback_title(file_paths[0])
-            if not self._persist_terminal_state(
+            terminal_outcome = self._persist_terminal_state(
                 course_id, status="ready", stage="completed", progress=100, embedding_status="completed",
                 job_id=job_id, job_succeeded=True, chunk_count=len(all_documents), quality_score=quality_score,
                 name=course_title, embedding_provider=embedding_provider, db_session_factory=db_session_factory,
-            ):
-                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
+            )
+            if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
+                return self._resolve_terminal_outcome(
+                    terminal_outcome,
+                    course_id=course_id,
+                    job_id=job_id,
+                    db_session_factory=db_session_factory,
+                    vectors_written=True,
+                )
             logger.info("Successfully processed course %s: %s chunks created.", course_id, len(all_documents))
             return ProcessingResult(course_id=course_id, status="ready", chunk_count=len(all_documents), quality_score=quality_score)
 
@@ -893,26 +1021,40 @@ class DocumentProcessor:
             failure_status = "paused_due_to_quota" if failure.code in {
                 ProviderErrorCode.KEY_LIMIT_EXCEEDED, ProviderErrorCode.CREDITS_EXHAUSTED,
             } else "failed"
-            if not self._persist_terminal_state(
+            terminal_outcome = self._persist_terminal_state(
                 course_id, status=failure_status, stage="failed", progress=0, embedding_status="failed",
                 job_id=job_id, job_succeeded=False, job_error_code=str(failure.code), job_message=failure.user_message,
                 error_message=failure.user_message, failure_stage="embedding_failed", error_code=str(failure.code),
                 can_retry=failure.can_retry, recommended_action=failure.recommended_action,
                 technical_error=failure.technical_message, db_session_factory=db_session_factory,
-            ):
-                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
+            )
+            if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
+                return self._resolve_terminal_outcome(
+                    terminal_outcome,
+                    course_id=course_id,
+                    job_id=job_id,
+                    db_session_factory=db_session_factory,
+                    vectors_written=False,
+                )
             logger.error("Provider failure processing course %s: %s", course_id, failure.code)
             return ProcessingResult(course_id=course_id, status=failure_status, chunk_count=0, quality_score=0, error=failure.user_message)
         except Exception as exc:
             user_message = "Không thể hoàn tất xử lý tài liệu. Vui lòng thử lại sau."
-            if not self._persist_terminal_state(
+            terminal_outcome = self._persist_terminal_state(
                 course_id, status="failed", stage="failed", progress=0, embedding_status="failed",
                 job_id=job_id, job_succeeded=False, job_error_code="DOCUMENT_PROCESSING_FAILED", job_message=user_message,
                 error_message=user_message, failure_stage="embedding_failed", error_code="DOCUMENT_PROCESSING_FAILED",
                 can_retry=True, recommended_action="retry_later", technical_error=str(exc)[:1000],
                 db_session_factory=db_session_factory,
-            ):
-                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
+            )
+            if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
+                return self._resolve_terminal_outcome(
+                    terminal_outcome,
+                    course_id=course_id,
+                    job_id=job_id,
+                    db_session_factory=db_session_factory,
+                    vectors_written=False,
+                )
             logger.error("Document processing failed for course %s: %s", course_id, exc)
             return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 

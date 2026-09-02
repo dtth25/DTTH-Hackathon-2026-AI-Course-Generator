@@ -103,6 +103,8 @@ Copy-Item .env.example .env -Force
 
 Backend chỉ load `.env` ở root repo bằng đường dẫn tuyệt đối. Khởi động lại backend sau khi đổi env để startup log hiển thị content model và embedding model đang active.
 
+`PROCESSING_EXECUTION_MODE=inline` và `INLINE_PROCESSING_RECOVERY_ENABLED=true` trong `.env.example` chỉ dành cho local/dev chạy **một** process FastAPI: khi restart, app có thể đánh dấu retryable các job inline bị gián đoạn. Nếu deploy nhiều API process/replica, phải dùng `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`; inline recovery không có lease liên-process. Queue/lease bền vững là phần mở rộng sau này.
+
 ## Backend Runbook
 
 One-time setup:

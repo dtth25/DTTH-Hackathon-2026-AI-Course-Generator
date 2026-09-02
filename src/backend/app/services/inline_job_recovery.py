@@ -7,6 +7,8 @@ until the planned durable queue/lease implementation replaces this helper.
 
 from datetime import datetime
 
+from sqlalchemy import exists, update
+
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
 
@@ -76,5 +78,34 @@ def reconcile_interrupted_inline_preprocess_jobs(db_session_factory=None) -> int
             course.can_retry = True
             course.recommended_action = "retry_later"
             course.technical_error = "Inline processing did not complete before process restart."
+        # A malformed/stale job above may have been terminalized without touching its
+        # unrelated course. Repair only courses that are still processing and now have
+        # no queued/running preprocess attempt; ready and deleted courses are excluded.
+        db.flush()
+        active_preprocess_exists = exists().where(
+            ProcessingJob.course_id == Course.id,
+            ProcessingJob.job_type == "preprocess",
+            ProcessingJob.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value]),
+        )
+        db.execute(
+            update(Course)
+            .where(
+                Course.is_deleted == False,  # noqa: E712
+                Course.status == "processing",
+                ~active_preprocess_exists,
+            )
+            .values(
+                status="failed",
+                stage="failed",
+                progress=0,
+                embedding_status="failed",
+                error_message=INLINE_INTERRUPTED_MESSAGE,
+                failure_stage="processing_interrupted",
+                error_code=INLINE_INTERRUPTED_CODE,
+                can_retry=True,
+                recommended_action="retry_later",
+                technical_error="Inline processing did not complete before process restart.",
+            )
+        )
         db.commit()
         return sum(job.status == JobStatus.FAILED.value for job in jobs)

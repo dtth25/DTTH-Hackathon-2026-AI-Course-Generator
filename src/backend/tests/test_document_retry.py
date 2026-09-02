@@ -341,13 +341,18 @@ def test_saved_file_discovery_rejects_symlinked_source(tmp_path, monkeypatch):
     assert files == [str(safe_file.resolve())]
 
 
-def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch):
+def test_terminal_execute_failure_purges_vectors_and_falls_back_atomically(monkeypatch):
     from app.services.document_processor import DocumentProcessor
     from app.services.vector_store import Document
 
     class VectorStoreStub:
+        deleted_courses = []
+
         def add_documents(self, *args, **kwargs):
             return None
+
+        def delete_course(self, course_id):
+            self.deleted_courses.append(course_id)
 
     course, user_id = _processor_course()
     with SessionLocal() as db:
@@ -363,9 +368,15 @@ def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch)
     from sqlalchemy.orm import Session
 
     original_execute = Session.execute
+    failures = 0
 
     def fail_terminal_course_update(session, statement, *args, **kwargs):
-        if getattr(getattr(statement, "table", None), "name", None) == "courses":
+        nonlocal failures
+        if (
+            getattr(getattr(statement, "table", None), "name", None) == "courses"
+            and failures == 0
+        ):
+            failures += 1
             raise RuntimeError("simulated course persistence failure")
         return original_execute(session, statement, *args, **kwargs)
 
@@ -376,8 +387,62 @@ def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch)
     with SessionLocal() as db:
         persisted_course = db.get(Course, course.id)
         persisted_job = db.get(ProcessingJob, job.id)
-        assert persisted_course.status == "processing"
+        assert persisted_course.status == "failed"
+        assert persisted_course.error_code == "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
+        assert persisted_course.can_retry is True
         assert persisted_job.status == "failed"
+        assert persisted_job.error_code == "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
+    assert processor.vector_store.deleted_courses == [course.id]
+
+
+def test_terminal_commit_failure_falls_back_atomically(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from app.services.vector_store import Document
+    from sqlalchemy.orm import Session
+
+    class VectorStoreStub:
+        deleted_courses = []
+
+        def add_documents(self, *args, **kwargs):
+            return None
+
+        def delete_course(self, course_id):
+            self.deleted_courses.append(course_id)
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    processor = DocumentProcessor(vector_store=VectorStoreStub())
+    monkeypatch.setattr(
+        processor,
+        "extract_and_chunk_file",
+        lambda *args: [Document(content="enough grounded content", metadata={"page": 1})],
+    )
+    fail_next_commit = False
+
+    def arm_terminal_commit_failure(*args, **kwargs):
+        nonlocal fail_next_commit
+        fail_next_commit = True
+        return None
+
+    monkeypatch.setattr(processor, "_generate_course_title", arm_terminal_commit_failure)
+    original_commit = Session.commit
+
+    def fail_only_terminal_commit(session):
+        nonlocal fail_next_commit
+        if fail_next_commit:
+            fail_next_commit = False
+            raise RuntimeError("simulated terminal commit failure")
+        return original_commit(session)
+
+    monkeypatch.setattr(Session, "commit", fail_only_terminal_commit)
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+
+    assert result.status == "failed"
+    assert processor.vector_store.deleted_courses == [course.id]
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).status == "failed"
+        assert db.get(ProcessingJob, job.id).status == "failed"
 
 
 def test_startup_reconciliation_fails_interrupted_inline_preprocess_job(monkeypatch):
@@ -449,6 +514,29 @@ def test_upload_cleans_partial_directory_when_second_file_write_fails(
     with SessionLocal() as db:
         assert db.query(Course).count() == 0
         assert db.query(ProcessingJob).count() == 0
+
+
+def test_upload_directory_collision_preserves_existing_contents(client, owner_headers, monkeypatch):
+    from types import SimpleNamespace
+
+    course_id = "collision123"
+    collision_dir = Path(settings.UPLOAD_DIR) / course_id
+    collision_dir.mkdir()
+    sentinel = collision_dir / "keep.txt"
+    sentinel.write_text("do not remove", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.routers.upload.uuid.uuid4",
+        lambda: SimpleNamespace(hex=f"{course_id}deadbeef"),
+    )
+
+    response = client.post(
+        "/api/upload",
+        headers=owner_headers,
+        files=[("files", ("collision.txt", b"content", "text/plain"))],
+    )
+
+    assert response.status_code == 500
+    assert sentinel.read_text(encoding="utf-8") == "do not remove"
 
 
 def test_upload_rejects_filename_that_would_exceed_component_limit(client, owner_headers):
@@ -628,7 +716,7 @@ def test_failed_terminal_claim_cannot_resurrect_deleted_course(monkeypatch):
         assert db.get(ProcessingJob, job.id).status == "failed"
 
 
-def test_inline_reconciliation_terminalizes_invalid_jobs_without_mutating_courses(monkeypatch):
+def test_inline_reconciliation_terminalizes_invalid_jobs_and_repairs_stuck_courses(monkeypatch):
     from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
 
     course, user_id = _processor_course()
@@ -669,7 +757,9 @@ def test_inline_reconciliation_terminalizes_invalid_jobs_without_mutating_course
     assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 1
     with SessionLocal() as db:
         assert db.get(ProcessingJob, stale_job_id).status == "failed"
-        assert db.get(Course, stale_course_id).status == "processing"
+        stale_course = db.get(Course, stale_course_id)
+        assert stale_course.status == "failed"
+        assert stale_course.can_retry is True
 
     with SessionLocal() as db:
         stale_attempt_course = Course(user_id=user_id, filenames=["source.txt"], status="processing")
@@ -696,7 +786,9 @@ def test_inline_reconciliation_terminalizes_invalid_jobs_without_mutating_course
     assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 1
     with SessionLocal() as db:
         assert db.get(ProcessingJob, old_job_id).status == "failed"
-        assert db.get(Course, stale_attempt_course_id).status == "processing"
+        stale_attempt_course = db.get(Course, stale_attempt_course_id)
+        assert stale_attempt_course.status == "failed"
+        assert stale_attempt_course.can_retry is True
 
 
 def test_inline_reconciliation_terminalizes_deleted_and_missing_course_jobs(monkeypatch):
@@ -738,6 +830,17 @@ def test_processing_execution_mode_is_validated_and_recovery_defaults_off():
     assert Settings(**values).INLINE_PROCESSING_RECOVERY_ENABLED is False
     with pytest.raises(ValidationError, match="PROCESSING_EXECUTION_MODE"):
         Settings(**values, PROCESSING_EXECUTION_MODE="inlien")
+
+
+def test_single_process_inline_recovery_is_documented_in_shipped_env_surface():
+    repo_root = Path(__file__).resolve().parents[3]
+    env_example = (repo_root / ".env.example").read_text(encoding="utf-8")
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+
+    assert "PROCESSING_EXECUTION_MODE=inline" in env_example
+    assert "INLINE_PROCESSING_RECOVERY_ENABLED=true" in env_example
+    assert "PROCESSING_EXECUTION_MODE=distributed" in readme
+    assert "INLINE_PROCESSING_RECOVERY_ENABLED=false" in readme
 
 
 def test_delete_cancels_active_preprocess_job(client, failed_course_with_file, owner_headers):

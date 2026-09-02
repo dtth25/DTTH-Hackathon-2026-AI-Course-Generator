@@ -107,8 +107,10 @@ async def upload_files(
 
     # Save to local filesystem
     upload_dir = os.path.join(settings.UPLOAD_DIR, course_id)
+    created_upload_dir = False
     try:
         os.makedirs(upload_dir, exist_ok=False)
+        created_upload_dir = True
         for filename, content in file_contents:
             timestamp_prefix = int(time.time())
             safe_filename = f"{timestamp_prefix}_{filename}"
@@ -122,7 +124,8 @@ async def upload_files(
             saved_filenames.append(filename)
             saved_file_paths.append(file_path)
     except Exception as exc:
-        shutil.rmtree(upload_dir, ignore_errors=True)
+        if created_upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
         raise _upload_failure() from exc
 
     # Create Course record in database
@@ -152,7 +155,8 @@ async def upload_files(
         db.commit()
     except Exception as exc:
         db.rollback()
-        shutil.rmtree(upload_dir, ignore_errors=True)
+        if created_upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
         raise _upload_failure() from exc
     try:
         _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
