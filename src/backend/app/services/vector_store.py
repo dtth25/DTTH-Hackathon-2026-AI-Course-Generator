@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import chromadb
+from app.services.provider_errors import ProviderRequestError, classify_openrouter_error
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,13 @@ class Document(BaseModel):
 class OpenRouterEmbeddingFunction:
     """Chroma embedding function backed by OpenRouter."""
 
-    def __init__(self, api_key: str, model: str, max_retries: int = 3):
+    def __init__(self, api_key: str, model: str, max_retries: int = 3, max_retry_delay: float = 60):
         from openai import OpenAI
 
         self._client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
         self._model = model
         self._max_retries = max(1, max_retries)
+        self._max_retry_delay = max(0.0, max_retry_delay)
 
     def name(self) -> str:
         return "openrouter"
@@ -37,18 +39,25 @@ class OpenRouterEmbeddingFunction:
 
     def _embed(self, texts: List[str]) -> List[List[float]]:
         delay = 1.0
-        last_exc: Optional[Exception] = None
+        last_failure = None
         for attempt in range(1, self._max_retries + 1):
             try:
                 response = self._client.embeddings.create(model=self._model, input=texts)
                 return [item.embedding for item in response.data]
-            except Exception as e:
-                last_exc = e
-                logger.warning(f"OpenRouter embedding batch attempt {attempt}/{self._max_retries} failed: {e}")
-                if attempt < self._max_retries:
-                    time.sleep(delay)
-                    delay *= 2
-        raise RuntimeError(f"OpenRouter embedding failed after {self._max_retries} attempts: {last_exc}")
+            except Exception as exc:
+                failure = classify_openrouter_error(exc)
+                last_failure = failure
+                logger.warning(
+                    "OpenRouter embedding attempt %s/%s failed with %s",
+                    attempt,
+                    self._max_retries,
+                    failure.code,
+                )
+                if not failure.automatic_retry or attempt == self._max_retries:
+                    raise ProviderRequestError(failure) from exc
+                time.sleep(min(delay, self._max_retry_delay))
+                delay *= 2
+        raise ProviderRequestError(last_failure)
 
 
 def _build_embedding_function() -> Optional[OpenRouterEmbeddingFunction]:
@@ -61,7 +70,12 @@ def _build_embedding_function() -> Optional[OpenRouterEmbeddingFunction]:
     if not api_key:
         return None
     try:
-        return OpenRouterEmbeddingFunction(api_key=api_key, model=settings.OPENROUTER_EMBEDDING_MODEL)
+        return OpenRouterEmbeddingFunction(
+            api_key=api_key,
+            model=settings.OPENROUTER_EMBEDDING_MODEL,
+            max_retries=settings.EMBEDDING_MAX_RETRIES,
+            max_retry_delay=settings.EMBEDDING_MAX_RETRY_DELAY,
+        )
     except Exception as e:
         logger.warning(f"Failed to initialize OpenRouter embedding function: {e}")
         return None
