@@ -42,7 +42,12 @@ def _status_code(exc: Exception) -> Optional[int]:
 
 
 def _sanitize_technical_message(message: str) -> str:
-    sanitized = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+|\bbearer\s+)[^\s,;]+", r"\1[REDACTED]", message)
+    sanitized = re.sub(
+        r"(?i)([\"'])(api[_ -]?key|password|token|authorization)(\1\s*:\s*)([\"'])[^\"']*\4",
+        r"\1\2\3\4[REDACTED]\4",
+        message,
+    )
+    sanitized = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+|\bbearer\s+)[^\s,;]+", r"\1[REDACTED]", sanitized)
     sanitized = re.sub(
         r"(?i)(\b(?:api[_ -]?key|password|token)\s*[:=]\s*)[^\s,;]+",
         r"\1[REDACTED]",

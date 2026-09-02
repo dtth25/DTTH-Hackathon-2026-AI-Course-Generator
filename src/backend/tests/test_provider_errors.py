@@ -65,3 +65,27 @@ def test_technical_message_redacts_provider_secrets():
     assert "hunter2" not in failure.technical_message
     assert "jwt-secret" not in failure.technical_message
     assert "connection reset" in failure.technical_message
+
+
+def test_technical_message_redacts_json_secret_values():
+    exc = RuntimeError(
+        '{"api_key":"json-secret", "password": "json-password", '
+        '"token" : "json-token", "Authorization": "Bearer json-bearer"}; upstream failed'
+    )
+    failure = classify_openrouter_error(exc)
+    for secret in ("json-secret", "json-password", "json-token", "json-bearer"):
+        assert secret not in failure.technical_message
+    assert "api_key" in failure.technical_message
+    assert "upstream failed" in failure.technical_message
+
+
+def test_technical_message_redacts_python_dict_secret_values():
+    exc = RuntimeError(
+        "{'API_KEY': 'dict-secret', 'Password' : 'dict-password', "
+        "'TOKEN':'dict-token', 'authorization': 'Bearer dict-bearer'}; request failed"
+    )
+    failure = classify_openrouter_error(exc)
+    for secret in ("dict-secret", "dict-password", "dict-token", "dict-bearer"):
+        assert secret not in failure.technical_message
+    assert "API_KEY" in failure.technical_message
+    assert "request failed" in failure.technical_message
