@@ -75,26 +75,40 @@ def create_otp(db: Session, user: User, purpose: str, commit: bool = True) -> st
 
 
 class OtpVerificationError(Exception):
-    """Raised with a Vietnamese, user-facing reason when an OTP check fails."""
+    """A stable machine code plus safe public copy for an OTP check failure."""
+
+    def __init__(self, code: str, message: str, *, remaining_attempts: Optional[int] = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.remaining_attempts = remaining_attempts
+
+    def detail(self) -> dict:
+        detail = {"code": self.code, "message": self.message}
+        if self.remaining_attempts is not None:
+            detail["remaining_attempts"] = self.remaining_attempts
+        return detail
 
 
 def verify_otp(db: Session, user: User, purpose: str, submitted_code: str) -> None:
     """Raises OtpVerificationError on any failure; returns None (and consumes the code) on success."""
     otp = latest_active_code(db, user, purpose)
     if otp is None:
-        raise OtpVerificationError("Không tìm thấy mã xác thực đang hiệu lực. Vui lòng gửi lại mã.")
+        raise OtpVerificationError("otp_missing", "Không tìm thấy mã xác thực đang hiệu lực. Vui lòng gửi lại mã.")
 
     if datetime.utcnow() > otp.expires_at:
-        raise OtpVerificationError("Mã xác thực đã hết hạn. Vui lòng gửi lại mã.")
+        raise OtpVerificationError("otp_expired", "Mã xác thực đã hết hạn. Vui lòng gửi lại mã.")
 
     if otp.attempts >= settings.EMAIL_OTP_MAX_ATTEMPTS:
-        raise OtpVerificationError("Mã đã bị khoá do nhập sai quá nhiều lần. Vui lòng gửi lại mã.")
+        raise OtpVerificationError("otp_locked", "Mã đã bị khóa do nhập sai quá nhiều lần. Vui lòng gửi lại mã.")
 
     if _hash_code(submitted_code.strip()) != otp.code_hash:
         otp.attempts += 1
         db.commit()
         remaining = max(0, settings.EMAIL_OTP_MAX_ATTEMPTS - otp.attempts)
-        raise OtpVerificationError(f"Mã xác thực không đúng. Còn {remaining} lần thử.")
+        raise OtpVerificationError(
+            "otp_invalid", "Mã xác thực không đúng.", remaining_attempts=remaining
+        )
 
     otp.consumed_at = datetime.utcnow()
     db.commit()

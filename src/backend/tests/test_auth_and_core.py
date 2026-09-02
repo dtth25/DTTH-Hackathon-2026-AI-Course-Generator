@@ -45,7 +45,8 @@ def test_auth_verify_email_wrong_then_right_code(client):
         "/api/auth/verify-email", json={"email": "verifyuser@example.com", "code": "999999"}
     )
     assert wrong.status_code == 400
-    assert "không đúng" in wrong.json()["detail"]
+    assert wrong.json()["detail"]["code"] == "otp_invalid"
+    assert wrong.json()["detail"]["remaining_attempts"] >= 0
 
     right = client.post(
         "/api/auth/verify-email", json={"email": "verifyuser@example.com", "code": "000000"}
@@ -160,6 +161,110 @@ def test_delete_account_wrong_password(client):
         json={"password": "not-the-right-password"},
     )
     assert res.status_code == 401
+    assert res.json()["detail"]["code"] == "wrong_password"
+
+
+def test_auth_errors_use_stable_structured_codes(client, monkeypatch):
+    from app.services import email_service
+    from app.models.user import User
+    from app.services.database import SessionLocal
+
+    first = client.post(
+        "/api/auth/register", json={"email": "duplicate@example.com", "password": "password123"}
+    )
+    assert first.status_code == 201
+    duplicate = client.post(
+        "/api/auth/register", json={"email": "duplicate@example.com", "password": "password123"}
+    )
+    assert duplicate.json()["detail"]["code"] == "email_already_registered"
+
+    invalid_login = client.post(
+        "/api/auth/login", json={"email": "duplicate@example.com", "password": "wrong"}
+    )
+    assert invalid_login.json()["detail"]["code"] == "invalid_credentials"
+
+    db = SessionLocal()
+    try:
+        db.query(User).filter(User.email == "duplicate@example.com").update({"is_active": False})
+        db.commit()
+    finally:
+        db.close()
+    disabled_login = client.post(
+        "/api/auth/login", json={"email": "duplicate@example.com", "password": "password123"}
+    )
+    assert disabled_login.json()["detail"]["code"] == "account_disabled"
+
+    already_verified = client.post(
+        "/api/auth/register", json={"email": "verified@example.com", "password": "password123"}
+    )
+    assert already_verified.status_code == 201
+    assert client.post(
+        "/api/auth/verify-email", json={"email": "verified@example.com", "code": "000000"}
+    ).status_code == 200
+    repeat = client.post(
+        "/api/auth/verify-email", json={"email": "verified@example.com", "code": "000000"}
+    )
+    assert repeat.json()["detail"]["code"] == "email_already_verified"
+
+    invalid_verify = client.post(
+        "/api/auth/verify-email", json={"email": "missing@example.com", "code": "000000"}
+    )
+    assert invalid_verify.json()["detail"]["code"] == "invalid_verification_identity"
+    invalid_reset = client.post(
+        "/api/auth/reset-password",
+        json={"email": "missing@example.com", "code": "000000", "new_password": "password456"},
+    )
+    assert invalid_reset.json()["detail"]["code"] == "invalid_reset_identity"
+
+    def email_failure(*_args, **_kwargs):
+        raise RuntimeError("untrusted mail provider detail")
+
+    monkeypatch.setattr(email_service, "send_verification_code", email_failure)
+    send_failure = client.post(
+        "/api/auth/register", json={"email": "send-failure@example.com", "password": "password123"}
+    )
+    assert send_failure.json()["detail"] == {
+        "code": "verification_email_send_failed",
+        "message": "Không gửi được email xác thực. Vui lòng thử lại sau.",
+    }
+
+
+def test_auth_otp_failure_codes_are_structured(client):
+    from datetime import datetime, timedelta
+
+    from app.models.email_otp import EmailOtpCode
+    from app.models.user import User
+    from app.services import otp_service
+    from app.services.database import SessionLocal
+
+    email = "otp-errors@example.com"
+    assert client.post(
+        "/api/auth/register", json={"email": email, "password": "password123"}
+    ).status_code == 201
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).one()
+        db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).delete()
+        db.commit()
+        missing = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
+        assert missing.json()["detail"]["code"] == "otp_missing"
+
+        otp_service.create_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL)
+        otp = db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).one()
+        otp.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        db.commit()
+        expired = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
+        assert expired.json()["detail"]["code"] == "otp_expired"
+
+        otp_service.create_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL)
+        otp = db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).one()
+        otp.attempts = settings.EMAIL_OTP_MAX_ATTEMPTS
+        db.commit()
+        locked = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
+        assert locked.json()["detail"]["code"] == "otp_locked"
+    finally:
+        db.close()
 
 
 def test_delete_account_purges_everything(client):

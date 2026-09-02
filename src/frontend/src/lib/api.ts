@@ -25,21 +25,47 @@ import type {
  * it instead of parsing `.message` back out. */
 export type ApiErrorCode =
   | "UNKNOWN_ERROR"
+  | "UNAUTHENTICATED"
   | "FORBIDDEN"
   | "SOURCE_FILE_MISSING"
   | "DOCUMENT_RETRY_NOT_ALLOWED"
   | "DOCUMENT_RETRY_UNAVAILABLE"
   | "DOCUMENT_SCHEDULING_FAILED"
+  | "email_already_registered"
+  | "verification_email_send_failed"
+  | "invalid_credentials"
+  | "account_disabled"
   | "email_not_verified"
+  | "email_already_verified"
+  | "otp_missing"
+  | "otp_expired"
+  | "otp_locked"
+  | "otp_invalid"
+  | "invalid_verification_identity"
+  | "invalid_reset_identity"
+  | "wrong_password"
   | "version_cap_reached";
 
 const SAFE_HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
+  UNAUTHENTICATED: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
   FORBIDDEN: "Bạn không có quyền truy cập tài nguyên này.",
   SOURCE_FILE_MISSING: "Không tìm thấy tệp nguồn đã tải lên.",
   DOCUMENT_RETRY_NOT_ALLOWED: "Tài liệu chưa ở trạng thái có thể thử lại.",
   DOCUMENT_RETRY_UNAVAILABLE: "Không thể bắt đầu thử lại tài liệu.",
   DOCUMENT_SCHEDULING_FAILED: "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
   email_not_verified: "Email chưa được xác thực. Vui lòng xác thực ngay.",
+  email_already_registered: "Email này đã được sử dụng. Vui lòng chọn email khác.",
+  verification_email_send_failed: "Không gửi được email xác thực. Vui lòng thử lại sau.",
+  invalid_credentials: "Email hoặc mật khẩu không chính xác.",
+  account_disabled: "Tài khoản của bạn đã bị vô hiệu hóa.",
+  email_already_verified: "Tài khoản đã được xác thực trước đó.",
+  otp_missing: "Không tìm thấy mã xác thực đang hiệu lực. Vui lòng gửi lại mã.",
+  otp_expired: "Mã xác thực đã hết hạn. Vui lòng gửi lại mã.",
+  otp_locked: "Mã đã bị khóa do nhập sai quá nhiều lần. Vui lòng gửi lại mã.",
+  otp_invalid: "Mã xác thực không đúng.",
+  invalid_verification_identity: "Email hoặc mã không đúng.",
+  invalid_reset_identity: "Email hoặc mã không đúng.",
+  wrong_password: "Mật khẩu không chính xác.",
 };
 
 const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
@@ -47,7 +73,19 @@ const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
   "DOCUMENT_RETRY_NOT_ALLOWED",
   "DOCUMENT_RETRY_UNAVAILABLE",
   "DOCUMENT_SCHEDULING_FAILED",
+  "email_already_registered",
+  "verification_email_send_failed",
+  "invalid_credentials",
+  "account_disabled",
   "email_not_verified",
+  "email_already_verified",
+  "otp_missing",
+  "otp_expired",
+  "otp_locked",
+  "otp_invalid",
+  "invalid_verification_identity",
+  "invalid_reset_identity",
+  "wrong_password",
   "version_cap_reached",
 ]);
 
@@ -96,11 +134,37 @@ function safeHttpErrorCode(detail: unknown, status: number): ApiErrorCode {
       return code as ApiErrorCode;
     }
   }
+  if (status === 401) return "UNAUTHENTICATED";
   return status === 403 ? "FORBIDDEN" : "UNKNOWN_ERROR";
 }
 
-function safeHttpErrorMessage(code: ApiErrorCode): string {
+function safeHttpErrorMessage(code: ApiErrorCode, detail: unknown): string {
+  if (code === "otp_invalid" && detail && typeof detail === "object") {
+    const attempts = (detail as { remaining_attempts?: unknown }).remaining_attempts;
+    if (typeof attempts === "number" && Number.isInteger(attempts) && attempts >= 0 && attempts <= 5) {
+      return `Mã xác thực không đúng. Còn ${attempts} lần thử.`;
+    }
+  }
   return SAFE_HTTP_ERROR_MESSAGES[code] ?? "Đã xảy ra lỗi. Vui lòng thử lại.";
+}
+
+function parseHttpErrorDetail(responseText: string): unknown {
+  try {
+    const body: unknown = JSON.parse(responseText);
+    return body && typeof body === "object" && "detail" in body
+      ? (body as { detail?: unknown }).detail
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Shared by fetch and XHR uploads so every HTTP error keeps its structured
+ * detail for branching without turning untrusted server text into UI copy. */
+function apiRequestErrorFromHttpResponse(status: number, responseText: string): ApiRequestError {
+  const detail = parseHttpErrorDetail(responseText);
+  const code = safeHttpErrorCode(detail, status);
+  return new ApiRequestError(safeHttpErrorMessage(code, detail), status, detail, code);
 }
 
 // Base URL for the FastAPI backend. Prefer the documented public env vars;
@@ -147,27 +211,18 @@ export async function apiFetch<T>(
     throw error;
   }
 
-  const isAuthEndpoint =
-    path === "/api/auth/login" || path === "/api/auth/register";
+  const isAuthEndpoint = path.startsWith("/api/auth/");
 
   if (response.status === 401 && !isAuthEndpoint) {
     removeToken();
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
-    throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+    throw apiRequestErrorFromHttpResponse(response.status, await response.text());
   }
 
   if (!response.ok) {
-    let detail: unknown;
-    try {
-      const errorBody = await response.json();
-      detail = errorBody.detail;
-    } catch {
-      // The stable fallback deliberately avoids rendering arbitrary HTTP payloads.
-    }
-    const code = safeHttpErrorCode(detail, response.status);
-    throw new ApiRequestError(safeHttpErrorMessage(code), response.status, detail, code);
+    throw apiRequestErrorFromHttpResponse(response.status, await response.text());
   }
 
   if (response.status === 204) {
@@ -328,23 +383,22 @@ export async function apiUploadFiles(
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+          try {
+            resolve(JSON.parse(xhr.responseText) as UploadResponse);
+          } catch {
+            reject(apiRequestErrorFromHttpResponse(xhr.status, ""));
+          }
         } else if (xhr.status === 401) {
           removeToken();
           window.location.href = "/login";
-          reject(new Error("Phiên đăng nhập đã hết hạn."));
+          reject(apiRequestErrorFromHttpResponse(xhr.status, xhr.responseText));
         } else {
-          try {
-            const err = JSON.parse(xhr.responseText);
-            reject(new Error(err.detail || "Upload thất bại."));
-          } catch {
-            reject(new Error("Upload thất bại. Vui lòng thử lại."));
-          }
+          reject(apiRequestErrorFromHttpResponse(xhr.status, xhr.responseText));
         }
       });
 
       xhr.addEventListener("error", () => {
-        reject(new Error("Lỗi kết nối. Vui lòng kiểm tra backend."));
+        reject(new ApiNetworkError());
       });
 
       xhr.send(formData);

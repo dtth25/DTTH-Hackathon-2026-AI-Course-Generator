@@ -38,6 +38,11 @@ from app.services.otp_service import OtpVerificationError
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _auth_error(status_code: int, code: str, message: str, **extra: Any) -> HTTPException:
+    """Keep frontend-visible auth failures stable without exposing exception text."""
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message, **extra})
+
+
 def _get_request_token(request: Request) -> Optional[str]:
     """Read the JWT from either the Authorization header or the HttpOnly cookie —
     shared by logout and account deletion, both of which blacklist the current token."""
@@ -56,10 +61,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
     Does NOT log the user in — login is blocked until /verify-email succeeds."""
     existing_user = db.query(User).filter(User.email == user_in.email.lower()).first()
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email đã được sử dụng. Vui lòng chọn email khác.",
-        )
+        raise _auth_error(status.HTTP_400_BAD_REQUEST, "email_already_registered", "Email này đã được sử dụng. Vui lòng chọn email khác.")
 
     db_user = User(
         email=user_in.email.lower(),
@@ -79,10 +81,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
     except Exception as e:
         db.rollback()
         logger.error("Failed to send verification email during register: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Không gửi được email xác thực. Vui lòng thử lại sau.",
-        )
+        raise _auth_error(status.HTTP_502_BAD_GATEWAY, "verification_email_send_failed", "Không gửi được email xác thực. Vui lòng thử lại sau.")
 
     db.commit()
     return {
@@ -98,15 +97,15 @@ def verify_email(
     """Confirm a verification code and log the user in on success."""
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email hoặc mã không đúng.")
+        raise _auth_error(status.HTTP_400_BAD_REQUEST, "invalid_verification_identity", "Email hoặc mã không đúng.")
 
     if user.is_verified:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tài khoản đã được xác thực trước đó.")
+        raise _auth_error(status.HTTP_400_BAD_REQUEST, "email_already_verified", "Tài khoản đã được xác thực trước đó.")
 
     try:
         otp_service.verify_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL, payload.code)
     except OtpVerificationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail())
 
     user.is_verified = True
     db.commit()
@@ -163,12 +162,12 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     """Verify the reset code and set a new password. Does not auto-login."""
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email hoặc mã không đúng.")
+        raise _auth_error(status.HTTP_400_BAD_REQUEST, "invalid_reset_identity", "Email hoặc mã không đúng.")
 
     try:
         otp_service.verify_otp(db, user, otp_service.PURPOSE_RESET_PASSWORD, payload.code)
     except OtpVerificationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail())
 
     user.hashed_password = get_password_hash(payload.new_password)
     db.commit()
@@ -184,15 +183,12 @@ def login(
     if not user or not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email hoặc mật khẩu không chính xác.",
+            detail={"code": "invalid_credentials", "message": "Email hoặc mật khẩu không chính xác."},
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản của bạn đã bị vô hiệu hóa.",
-        )
+        raise _auth_error(status.HTTP_403_FORBIDDEN, "account_disabled", "Tài khoản của bạn đã bị vô hiệu hóa.")
 
     if not user.is_verified:
         raise HTTPException(
@@ -251,7 +247,7 @@ def delete_account(
     ondelete=CASCADE on these tables (no PRAGMA foreign_keys=ON anywhere in this codebase),
     so each dependent table is cleaned up explicitly rather than relying on it."""
     if not verify_password(payload.password, current_user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mật khẩu không chính xác.")
+        raise _auth_error(status.HTTP_401_UNAUTHORIZED, "wrong_password", "Mật khẩu không chính xác.")
 
     courses = db.query(Course).filter(Course.user_id == current_user.id).all()
     course_ids = [course.id for course in courses]

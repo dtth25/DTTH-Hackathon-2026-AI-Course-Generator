@@ -79,7 +79,7 @@ export interface CourseStatusResponse {
   has_vid?: boolean;
   error?: string;
   failure_stage?: string;
-  error_code?: DocumentFailureCode | "NETWORK_UNAVAILABLE" | string;
+  error_code?: CourseErrorCode | null;
   can_retry?: boolean;
   recommended_action?: DocumentRecommendedAction | null;
   job_id?: string;
@@ -94,12 +94,42 @@ export type DocumentFailureCode =
   | "OPENROUTER_UNAVAILABLE"
   | "OPENROUTER_TIMEOUT"
   | "DOCUMENT_TEXT_EXTRACTION_FAILED"
-  | "OPENROUTER_REQUEST_FAILED";
+  | "OPENROUTER_REQUEST_FAILED"
+  | "DOCUMENT_SCHEDULING_FAILED"
+  | "DOCUMENT_PROCESSING_FAILED"
+  | "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
+  | "DOCUMENT_PROCESSING_CANCELLED";
+
+export type CourseErrorCode = DocumentFailureCode | "NETWORK_UNAVAILABLE";
+
+const COURSE_ERROR_CODES: readonly CourseErrorCode[] = [
+  "OPENROUTER_KEY_INVALID",
+  "OPENROUTER_KEY_LIMIT_EXCEEDED",
+  "OPENROUTER_CREDITS_EXHAUSTED",
+  "OPENROUTER_ACCESS_DENIED",
+  "OPENROUTER_RATE_LIMITED",
+  "OPENROUTER_UNAVAILABLE",
+  "OPENROUTER_TIMEOUT",
+  "DOCUMENT_TEXT_EXTRACTION_FAILED",
+  "OPENROUTER_REQUEST_FAILED",
+  "DOCUMENT_SCHEDULING_FAILED",
+  "DOCUMENT_PROCESSING_FAILED",
+  "DOCUMENT_PROCESSING_PERSISTENCE_FAILED",
+  "DOCUMENT_PROCESSING_CANCELLED",
+  "NETWORK_UNAVAILABLE",
+];
+
+export function normalizeCourseErrorCode(value: unknown): CourseErrorCode | null {
+  return typeof value === "string" && (COURSE_ERROR_CODES as readonly string[]).includes(value)
+    ? (value as CourseErrorCode)
+    : null;
+}
 
 export const DOCUMENT_RECOMMENDED_ACTIONS = [
   "restore_provider_quota",
   "retry_later",
   "upload_clearer_pdf",
+  "contact_admin",
 ] as const;
 
 export type DocumentRecommendedAction =
@@ -132,7 +162,7 @@ export interface JobResponse {
   progress: number;
   message: string;
   error?: string | null;
-  error_code?: DocumentFailureCode | string | null;
+  error_code?: CourseErrorCode | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;

@@ -42,6 +42,7 @@ import {
 import type { CourseStatusResponse, StudyPackResponse } from "@/lib/types";
 import {
   normalizeCourseStatus,
+  normalizeCourseErrorCode,
   normalizeDocumentRecommendedAction,
 } from "@/lib/types";
 import { CONTAINER_NARROW } from "@/lib/layout";
@@ -258,10 +259,14 @@ function DashboardContent() {
     },
   };
   const cfg = statusConfig[status];
-  const isNetworkUnavailable = course.error_code === "NETWORK_UNAVAILABLE";
+  const errorCode = normalizeCourseErrorCode(course.error_code);
+  const isNetworkUnavailable = errorCode === "NETWORK_UNAVAILABLE";
+  const hasUnknownErrorCode = course.error_code != null && errorCode === null;
   const failureMessage = isNetworkUnavailable
     ? NETWORK_UNAVAILABLE_MESSAGE
-    : course.error || "Xử lý tài liệu thất bại.";
+    : hasUnknownErrorCode
+      ? "Xử lý tài liệu thất bại."
+      : course.error || "Xử lý tài liệu thất bại.";
   const recommendedAction = normalizeDocumentRecommendedAction(course.recommended_action);
   const canRetryDocument = Boolean(
     isNetworkUnavailable ||
@@ -341,7 +346,12 @@ function DashboardContent() {
               )}
               {recommendedAction === "upload_clearer_pdf" && (
                 <span className="mt-2 block">
-                  Thử lại cùng tệp này sẽ không giúp. Hãy tải tệp rõ hơn hoặc thay tệp nguồn.
+                  Thử lại cùng tệp này sẽ không giúp. Hãy tạo khóa học mới từ tệp rõ hơn; khóa học đang lỗi vẫn được giữ nguyên.
+                </span>
+              )}
+              {recommendedAction === "contact_admin" && (
+                <span className="mt-2 block">
+                  Tệp đã tải lên vẫn được giữ nguyên. Liên hệ quản trị viên để kiểm tra quyền truy cập hoặc dung lượng AI trước khi tiếp tục.
                 </span>
               )}
               {retryError && <span role="alert" className="mt-2 block text-error">{retryError}</span>}
@@ -349,14 +359,14 @@ function DashboardContent() {
           }
           onAction={
             recommendedAction === "upload_clearer_pdf"
-              ? () => router.push(`/courses/create?replace=${encodeURIComponent(course.course_id)}`)
+              ? () => router.push("/courses/create")
               : canRetryDocument
                 ? handleDocumentRetry
                 : undefined
           }
           actionLabel={
             recommendedAction === "upload_clearer_pdf"
-              ? "Tải tệp thay thế"
+              ? "Tạo khóa học mới từ tệp rõ hơn"
               : retrying
                 ? "Đang thử lại"
                 : "Thử lập chỉ mục lại"

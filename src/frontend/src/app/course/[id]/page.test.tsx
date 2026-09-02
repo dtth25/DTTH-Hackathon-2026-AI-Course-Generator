@@ -173,7 +173,7 @@ describe("course workspace", () => {
     expect(await screen.findByRole("heading", { name: "Không tìm thấy khóa học" })).toBeVisible();
   });
 
-  it("asks for a replacement file instead of retrying unreadable PDF extraction", async () => {
+  it("creates a new course from a clearer file instead of pretending to replace the source", async () => {
     const user = userEvent.setup();
     vi.mocked(apiGetCourseStatus).mockResolvedValue({
       course_id: "course-1",
@@ -189,9 +189,27 @@ describe("course workspace", () => {
     expect(
       await screen.findByText(/Thử lại cùng tệp này sẽ không giúp/u)
     ).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Tải tệp thay thế" }));
+    expect(screen.getByText(/khóa học đang lỗi vẫn được giữ nguyên/iu)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Tạo khóa học mới từ tệp rõ hơn" }));
     expect(apiRetryDocument).not.toHaveBeenCalled();
-    expect(navigation.push).toHaveBeenCalledWith("/courses/create?replace=course-1");
+    expect(navigation.push).toHaveBeenCalledWith("/courses/create");
+  });
+
+  it("offers preserved-file admin contact guidance for access-denied failures", async () => {
+    vi.mocked(apiGetCourseStatus).mockResolvedValue({
+      course_id: "course-1",
+      status: "error",
+      error: "Không thể dùng khóa AI hiện tại.",
+      error_code: "OPENROUTER_ACCESS_DENIED",
+      can_retry: false,
+      recommended_action: "contact_admin",
+    });
+
+    render(<CourseDashboardPage />);
+
+    expect(await screen.findByText(/Tệp đã tải lên vẫn được giữ nguyên/u)).toBeVisible();
+    expect(screen.getByText(/Liên hệ quản trị viên/u)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Thử lập chỉ mục lại" })).not.toBeInTheDocument();
   });
 
   it("falls back safely when the backend sends an unknown recommended action", async () => {
@@ -208,6 +226,20 @@ describe("course workspace", () => {
     expect(await screen.findByText("Cần kiểm tra lại tài liệu.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Thử lập chỉ mục lại" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Tải tệp thay thế" })).not.toBeInTheDocument();
+  });
+
+  it("uses generic copy when the backend sends an unknown failure code", async () => {
+    vi.mocked(apiGetCourseStatus).mockResolvedValue({
+      course_id: "course-1",
+      status: "error",
+      error: "untrusted provider payload",
+      error_code: "UNKNOWN_PROVIDER_FAILURE" as never,
+    });
+
+    render(<CourseDashboardPage />);
+
+    expect(await screen.findByText("Xử lý tài liệu thất bại.")).toBeVisible();
+    expect(screen.queryByText("untrusted provider payload")).not.toBeInTheDocument();
   });
 
   it("does not overlap slow polls and stops after ready", async () => {
