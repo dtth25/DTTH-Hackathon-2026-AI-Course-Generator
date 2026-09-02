@@ -249,7 +249,8 @@ for (const viewport of PRODUCT_VIEWPORTS) {
               status: "error",
               filenames: ["tai-lieu-minh-hoa.pdf"],
               file_count: 1,
-              error: "Không đọc được cấu trúc của tệp nguồn.",
+              error: "Không thể đọc văn bản trong tệp.",
+              error_code: "DOCUMENT_TEXT_EXTRACTION_FAILED",
             },
           ],
           total: 1,
@@ -257,7 +258,7 @@ for (const viewport of PRODUCT_VIEWPORTS) {
       })
     );
     await page.goto("/courses");
-    await expect(page.getByText("Không đọc được cấu trúc của tệp nguồn.")).toBeVisible();
+    await expect(page.getByText("Không thể đọc văn bản trong tệp.")).toBeVisible();
     await expectVisualSnapshot(page, `ingestion-error-${viewport.name}-light`);
   });
 }

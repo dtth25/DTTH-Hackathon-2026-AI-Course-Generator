@@ -157,10 +157,8 @@ def test_course_status_reflects_real_state_not_simulated(client):
     assert status_res2.json()["message"] == "Đang phân tích và xử lý tài liệu..."
 
 
-def test_course_status_failed_exposes_real_error(client):
-    """A course that failed real processing must surface the actual error reason via
-    /status (error field + Vietnamese message), and via GET /courses/all — not a generic
-    "Lỗi" badge with no explanation (error is never persisted -> None was the old bug)."""
+def test_course_status_failed_exposes_safe_error(client):
+    """A failed course exposes its closed public error code and safe Vietnamese copy."""
     from app.models.course import Course
     from app.services.database import SessionLocal
 
@@ -176,7 +174,8 @@ def test_course_status_failed_exposes_real_error(client):
     try:
         course = db.query(Course).filter(Course.id == course_id).first()
         course.status = "failed"
-        course.error_message = "Không thể trích xuất văn bản từ file PDF (file có thể bị hỏng)."
+        course.error_message = "raw extractor diagnostic must not reach clients"
+        course.error_code = "DOCUMENT_TEXT_EXTRACTION_FAILED"
         db.commit()
     finally:
         db.close()
@@ -185,14 +184,16 @@ def test_course_status_failed_exposes_real_error(client):
     assert status_res.status_code == 200
     body = status_res.json()
     assert body["status"] == "failed"
-    assert body["error"] == "Không thể trích xuất văn bản từ file PDF (file có thể bị hỏng)."
+    assert body["error_code"] == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+    assert body["error"] == "Không thể đọc văn bản trong tệp."
     assert body["message"] == body["error"]
 
     list_res = client.get("/api/courses/all", headers=headers)
     assert list_res.status_code == 200
     items = [c for c in list_res.json()["courses"] if c["course_id"] == course_id]
     assert len(items) == 1
-    assert items[0]["error"] == "Không thể trích xuất văn bản từ file PDF (file có thể bị hỏng)."
+    assert items[0]["error_code"] == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+    assert items[0]["error"] == "Không thể đọc văn bản trong tệp."
 
 
 def test_delete_course_and_cleanup(client, test_upload_dir):
