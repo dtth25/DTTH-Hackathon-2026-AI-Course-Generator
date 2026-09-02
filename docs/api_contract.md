@@ -10,11 +10,11 @@ Product surface hiện tại là **Document-to-Study-Pack**: user upload tài li
 
 Auth supports Bearer JWT and an HttpOnly cookie named `agy_session` for browser flows. Upload, dashboard, generation, output, job, and delete endpoints require an active user unless explicitly marked as health or public demo.
 
-- `POST /auth/register` / `POST /api/auth/register`: create a user. Email is lowercased and unique. Password is hashed with bcrypt. Default role is `user`.
-- `POST /auth/login` / `POST /api/auth/login`: return `{ access_token, token_type, user }` and set the auth cookie.
-- `POST /auth/logout` / `POST /api/auth/logout`: clear the auth cookie.
-- `GET /auth/me` / `GET /api/auth/me`: return the current public user profile. Response never contains `password_hash`.
-- Admin endpoints require `require_admin`: `GET /admin/users`, `GET /admin/users/{user_id}`, `PATCH /admin/users/{user_id}`, `POST /admin/users/{user_id}/disable`, `POST /admin/users/{user_id}/enable`, `POST /admin/users/{user_id}/make-admin`, `POST /admin/users/{user_id}/make-user`, `DELETE /admin/users/{user_id}`, `POST /admin/users/{user_id}/reset-password`.
+- `POST /api/auth/register`: create a user. Email is lowercased and unique. Password is hashed with bcrypt. Default role is `user`.
+- `POST /api/auth/login`: return `{ access_token, token_type, user }` and set the auth cookie.
+- `POST /api/auth/logout`: clear the auth cookie.
+- `GET /api/auth/me`: return the current public user profile. Response never contains `password_hash`.
+- Admin endpoints require `require_admin`: `GET /api/admin/users`, `GET /api/admin/users/{user_id}`, `PATCH /api/admin/users/{user_id}`, `POST /api/admin/users/{user_id}/disable`, `POST /api/admin/users/{user_id}/enable`, `POST /api/admin/users/{user_id}/make-admin`, `POST /api/admin/users/{user_id}/make-user`, `DELETE /api/admin/users/{user_id}`, `POST /api/admin/users/{user_id}/reset-password`.
 - Disabled users cannot login/use protected APIs; backend prevents deleting, disabling, or demoting the last active admin.
 - First admin bootstrap uses `CREATE_DEFAULT_ADMIN=true`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and only creates an admin if no admin exists. The password is never logged.
 
@@ -26,6 +26,25 @@ Auth supports Bearer JWT and an HttpOnly cookie named `agy_session` for browser 
 - `DELETE /api/courses/{course_id}`: xóa course khỏi cache, generated files và vector DB.
 - `DELETE /api/documents/{document_id}` hoặc `DELETE /documents/{document_id}`: xóa document, upload file, vector entries, generated outputs và cache hash do ứng dụng quản lý khi có thể. Endpoint yêu cầu user sở hữu document, trừ admin.
 
+### `GET /api/admin/provider-health`
+
+Admin-only cached OpenRouter preflight. It is not part of `/health` readiness and it never returns a key, key hash, bearer token, raw provider response, or technical diagnostic. Query `force=true` bypasses the short cache.
+
+```json
+{
+  "available": true,
+  "error_code": null,
+  "checked_at": "2026-09-02T12:00:00Z",
+  "limit": 10,
+  "limit_remaining": 5.5,
+  "limit_reset": "monthly",
+  "content_model_available": true,
+  "embedding_model_available": true
+}
+```
+
+`error_code` in this admin diagnostic is an internal operational code; it is not a frontend/user error contract. The public document and artifact APIs expose only the provider-neutral `AI_*` codes listed below.
+
 ## 2. Upload & Status
 
 ### `POST /api/upload`
@@ -34,27 +53,30 @@ Input: `multipart/form-data`.
 
 Supported fields:
 - `files`: một hoặc nhiều file PDF, DOCX, TXT.
-- `file`: legacy single-file field, vẫn được hỗ trợ để tránh vỡ client cũ.
+- `files[]`: compatibility spelling for `files`.
 
 Validation:
 - filename required.
 - extension phải là `.pdf`, `.docx`, `.txt`.
 - file không rỗng.
 - mỗi file size <= 50MB.
+- tối đa 5 file mỗi request.
 
 Response:
 
 ```json
 {
   "course_id": "abc123def456",
-  "document_id": "abc123def456",
-  "filename": "2 files",
+  "document_id": "a-separate-upload-id",
   "filenames": ["intro.pdf", "exercise.docx"],
   "file_count": 2,
   "status": "processing",
-  "message": "Đã nhận 2 file và đang phân tích tài liệu. ID tài liệu: abc123def456"
+  "message": "Đã nhận 2 file và đang phân tích...",
+  "job_id": "uuid"
 }
 ```
+
+`course_id` is the identifier used by polling, retry, outputs, and ownership checks. Save `job_id` as well when a client needs the durable preprocess-job envelope.
 
 ### `GET /api/course/{course_id}/status`
 
@@ -64,74 +86,54 @@ Response:
   "status": "ready",
   "stage": "completed",
   "progress": 100,
-  "progress_message": "Hoàn thành!",
+  "message": "Tài liệu đã sẵn sàng.",
   "filenames": ["intro.pdf", "exercise.docx"],
   "file_count": 2,
-  "total_processing_time": 18.4
-}
-```
-
-Possible statuses: `pending`, `processing`, `ready`, `completed_limited`, `failed`, `paused_due_to_quota`, `unknown`.
-Possible preprocessing stages: `uploading`, `extracting_text`, `cleaning_text`, `chunking`, `embedding`, `storing_vectors`, `completed`, `completed_limited`, `failed`, `paused_due_to_quota`, `analysis_failed`, `extraction_failed`, `embedding_failed`, `vector_index_failed`, `insufficient_context`.
-When available, response may include `preprocess_profile` with file size, page count, extracted character count, chunk count, embedding request count, cache hits/misses, retry count, throttle sleep time, and per-step timings.
-If preprocessing fails after the configured OpenRouter embedding retries are exhausted, the response has a public error message suitable for retrying later. Provider credentials and model details are never exposed to the client.
-
-### `GET /documents/{document_id}/status`
-
-Stable polling endpoint for upload/preprocess progress. `document_id` currently equals `course_id`.
-
-```json
-{
-  "document_id": "abc123def456",
-  "status": "embedding",
-  "stage": "embedding",
-  "failure_stage": null,
-  "progress": 56,
-  "message": "Đang tạo embedding và kiểm soát quota...",
   "error": null,
-  "user_message": null,
-  "technical_error": null,
+  "error_code": null,
+  "failure_stage": null,
   "can_retry": false,
   "recommended_action": null,
-  "error_code": null
+  "job_id": "uuid"
 }
 ```
 
-Possible statuses: `extracting_text`, `cleaning_text`, `chunking`, `embedding`, `storing_vectors`, `completed`, `completed_limited`, `failed`, `paused_due_to_quota`.
+The canonical polling endpoint above has an alias at `GET /api/courses/{course_id}/status`. Relevant course states are `processing`, `ready`, `failed`, and `paused_due_to_quota`. A quota/key-capacity failure uses `paused_due_to_quota`; it is not a scan/PDF diagnosis.
 
-When preprocessing fails, the endpoint stores and returns structured failure details:
+When preprocessing fails, the endpoint returns a safe structured failure envelope:
 
 ```json
 {
-  "document_id": "abc123def456",
-  "status": "failed",
-  "stage": "extraction_failed",
-  "failure_stage": "extraction_failed",
-  "progress": 0,
-  "message": "PDF này có vẻ là bản scan/ảnh hoặc không có lớp text đủ rõ.",
-  "error": "PDF này có vẻ là bản scan/ảnh hoặc không có lớp text đủ rõ.",
-  "user_message": "PDF này có vẻ là bản scan/ảnh hoặc không có lớp text đủ rõ.",
-  "technical_error": "ValueError: ...",
+  "course_id": "abc123def456",
+  "status": "paused_due_to_quota",
+  "stage": "failed",
+  "failure_stage": "embedding_failed",
+  "progress": 30,
+  "message": "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
+  "error": "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
   "can_retry": true,
-  "recommended_action": "upload_clearer_pdf",
-  "error_code": "PDF_TEXT_EXTRACTION_FAILED"
+  "recommended_action": "restore_provider_quota",
+  "error_code": "AI_QUOTA_EXHAUSTED",
+  "job_id": "uuid"
 }
 ```
 
-`technical_error` is for developer/debug UI only; do not show it inline to normal users.
+`can_retry` tells the UI that retry is permitted after the recommended operator/user action. Supported actions are `restore_provider_quota`, `retry_later`, `contact_admin`, and `upload_clearer_pdf`. `technical_error` is retained only on the server for logs/admin diagnosis; it is never returned to regular users in course, job, or artifact responses.
 
-### `POST /documents/{document_id}/retry`
+Public `error_code` values are closed and provider-neutral: `AI_CONFIGURATION_ERROR`, `AI_ACCESS_DENIED`, `AI_QUOTA_EXHAUSTED`, `AI_RATE_LIMITED`, `AI_UNAVAILABLE`, `AI_TIMEOUT`, `AI_REQUEST_FAILED`, `DOCUMENT_TEXT_EXTRACTION_FAILED`, `DOCUMENT_SCHEDULING_FAILED`, `DOCUMENT_PROCESSING_FAILED`, `DOCUMENT_PROCESSING_PERSISTENCE_FAILED`, `DOCUMENT_PROCESSING_CANCELLED`, `INLINE_PROCESSING_INTERRUPTED`, `ARTIFACT_SOURCE_UNAVAILABLE`, `BOOK_GENERATION_FAILED`, `SLIDE_GENERATION_FAILED`, `QUIZ_GENERATION_FAILED`, and `VIDEO_GENERATION_FAILED`. Clients must not branch on raw `OPENROUTER_*` codes or provider text.
 
-Retries preprocessing from the saved upload file without requiring a new upload. `POST /api/documents/{document_id}/retry` is also available.
+### `POST /api/documents/{course_id}/retry`
+
+Retries preprocessing from the saved upload file without requiring a second upload. It is accepted only while the same owned course is `failed` or `paused_due_to_quota`; active/ready courses return `409`, a missing saved source returns `409`, and another user receives `404`. An administrator may retry for support, while the resulting job remains owned by the course owner.
 
 ```json
 {
   "document_id": "abc123def456",
   "status": "processing",
-  "stage": "extracting_text",
+  "stage": "extracting",
   "progress": 0,
-  "message": "Đang chạy lại phân tích tài liệu...",
-  "job_id": "..."
+  "message": "Đang thử lại xử lý tài liệu từ tệp đã tải lên.",
+  "job_id": "uuid"
 }
 ```
 
@@ -163,20 +165,21 @@ The frontend should show `page` and `excerpt` to users. `source_chunk_id` must o
 
 ### `GET /api/jobs/{job_id}`
 
-Local/dev job metadata endpoint. Hiện tại dùng inline local thread queue; schema giữ tương thích để sau này chuyển sang Postgres + Redis worker.
+Durable preprocess-job metadata endpoint. The owner (or an administrator) may read it; another user receives `404`. Current local/dev execution is inline `BackgroundTasks`, while the stored schema is intentionally compatible with a future durable worker.
 
 ```json
 {
   "id": "uuid",
   "document_id": "abc123def456",
-  "user_id": "uuid optional",
+  "user_id": "uuid",
   "job_type": "preprocess",
   "status": "queued",
   "progress": 0,
-  "message": "Queued",
+  "message": "Đang chờ xử lý",
   "error": null,
-  "created_at": 0,
-  "updated_at": 0,
+  "error_code": null,
+  "created_at": "2026-09-02T12:00:00",
+  "updated_at": "2026-09-02T12:00:00",
   "completed_at": null
 }
 ```

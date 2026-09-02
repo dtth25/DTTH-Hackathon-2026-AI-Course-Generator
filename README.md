@@ -105,6 +105,35 @@ Backend chỉ load `.env` ở root repo bằng đường dẫn tuyệt đối. K
 
 `PROCESSING_EXECUTION_MODE=inline` và `INLINE_PROCESSING_RECOVERY_ENABLED=true` trong `.env.example` chỉ dành cho local/dev chạy **một** process FastAPI: khi restart, app có thể đánh dấu retryable các job inline bị gián đoạn. Nếu deploy nhiều API process/replica, phải dùng `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`; inline recovery không có lease liên-process. Queue/lease bền vững là phần mở rộng sau này.
 
+## OpenRouter recovery runbook
+
+Khi upload/indexing dừng ở `paused_due_to_quota`, người dùng sẽ thấy mã public `AI_QUOTA_EXHAUSTED`, `can_retry=true` và `recommended_action=restore_provider_quota`; không có raw provider message hoặc `technical_error` trong response. Upload gốc vẫn được giữ. Sau khi quản trị viên khôi phục capacity, người dùng nhấn thử lại (hoặc gọi `POST /api/documents/{course_id}/retry`) để cùng `course_id` chạy lại — không upload lần hai. Poll `GET /api/course/{course_id}/status` hoặc `GET /api/jobs/{job_id}` đến terminal state. Job/retry đều enforce ownership; user khác nhận `404`.
+
+Quản trị viên có thể xem preflight đã được redaction tại `GET /api/admin/provider-health` (không phải `/admin/...`). `/health` chỉ phản ánh readiness local, không warm-up hay quyết định provider capacity.
+
+Từ root repo, kiểm tra quota của key trong container mà không in key:
+
+```powershell
+docker compose exec backend python3 -c "import os,httpx,json; d=httpx.get('https://openrouter.ai/api/v1/key',headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']},timeout=20).json()['data']; print(json.dumps({k:d.get(k) for k in ['limit','limit_remaining','usage','limit_reset','expires_at']},indent=2))"
+```
+
+Nếu bare `python3` trong image không có dependency app như `httpx`, dùng cùng lệnh qua environment đã sync dependency:
+
+```powershell
+docker compose exec backend uv run --project . python3 -c "import os,httpx,json; d=httpx.get('https://openrouter.ai/api/v1/key',headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']},timeout=20).json()['data']; print(json.dumps({k:d.get(k) for k in ['limit','limit_remaining','usage','limit_reset','expires_at']},indent=2))"
+```
+
+`limit_remaining=0` cùng `limit_reset=null` không tự hồi phục bằng cách chờ: tăng/gỡ key limit hoặc thay key, sau đó recreate backend và đợi stack healthy:
+
+```powershell
+docker compose up -d --no-deps --force-recreate backend
+docker compose up -d --wait
+```
+
+`EMBEDDING_MAX_RETRIES` chỉ retry lỗi transient. Key-limit `403`/credit exhaustion dừng sau một embedding attempt để tránh tiêu tốn quota vô ích; sau khôi phục capacity, retry từ saved upload mới tạo job xử lý tiếp theo.
+
+Lưu ý vận hành: `PROCESSING_EXECUTION_MODE=inline` + `INLINE_PROCESSING_RECOVERY_ENABLED=true` chỉ an toàn khi đúng một FastAPI process sở hữu BackgroundTasks. Với nhiều API process/replica, đặt `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`; mode distributed/queue/lease bền vững là Plan B, chưa được repo này triển khai.
+
 ## Backend Runbook
 
 One-time setup:
@@ -239,9 +268,10 @@ Data mặc định nằm dưới `src/data/chroma` nếu backend start từ `src
 Các route chính:
 
 - Readiness: `GET /health`.
-- Auth: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/me` và alias `/api/auth/...`.
-- Admin users: `/admin/users`, `/admin/users/{user_id}`, `/admin/users/{user_id}/disable|enable|make-admin|make-user|reset-password`.
-- Upload/status: `POST /api/upload`, `GET /documents/{document_id}/status`, `GET /api/course/{course_id}/status`.
+- Auth: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`.
+- Admin users: `/api/admin/users`, `/api/admin/users/{user_id}`, `/api/admin/users/{user_id}/disable|enable|make-admin|make-user|reset-password`.
+- Admin provider capacity: `GET /api/admin/provider-health` (admin-only, redacted).
+- Upload/status: `POST /api/upload` (returns `job_id`), `GET /api/course/{course_id}/status`, `GET /api/jobs/{job_id}`, `POST /api/documents/{course_id}/retry`.
 - Source grounding: `GET /documents/{document_id}/sources`, alias `/api/documents/{document_id}/sources`.
 - Direct generation: `POST /api/generate-book`, `/api/generate-slide`, `/api/generate-quiz`, `/api/generate-vid`.
 - Study Pack/course outputs: `/api/course/{course_id}/study-pack`, `/readiness`, `/stats`.
