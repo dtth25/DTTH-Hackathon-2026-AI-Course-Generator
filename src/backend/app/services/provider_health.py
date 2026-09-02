@@ -1,6 +1,7 @@
 """Cached, secret-free OpenRouter availability preflight for administrators."""
 
 from datetime import UTC, datetime
+import math
 import threading
 import time
 from typing import Any, Optional
@@ -13,6 +14,18 @@ from app.services.provider_errors import ProviderErrorCode, classify_openrouter_
 
 
 OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1"
+_CAPACITY_NUMERIC_FIELDS = (
+    "limit",
+    "limit_remaining",
+    "usage",
+    "usage_daily",
+    "usage_weekly",
+    "usage_monthly",
+    "byok_usage",
+    "byok_usage_daily",
+    "byok_usage_weekly",
+    "byok_usage_monthly",
+)
 
 
 class ProviderHealth(BaseModel):
@@ -34,10 +47,11 @@ _cache_lock = threading.Lock()
 
 
 def _safe_number(value: object) -> Optional[float]:
-    """Return JSON numeric values only, excluding bool which is not a quota."""
+    """Return finite JSON numeric values only, excluding bool which is not a quota."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value)
+    number = float(value)
+    return number if math.isfinite(number) else None
 
 
 def _model_ids(payload: object) -> set[str]:
@@ -90,13 +104,18 @@ def _check_openrouter_health() -> ProviderHealth:
             raise ValueError("OpenRouter key response did not contain a data object")
 
         key_data: dict[str, Any] = key_payload["data"]
-        limit = _safe_number(key_data.get("limit"))
-        limit_remaining = _safe_number(key_data.get("limit_remaining"))
+        capacity_values = {field: _safe_number(key_data.get(field)) for field in _CAPACITY_NUMERIC_FIELDS}
+        if any(
+            key_data.get(field) is not None and capacity_values[field] is None
+            for field in _CAPACITY_NUMERIC_FIELDS
+        ):
+            raise ValueError("OpenRouter key response contained an invalid numeric capacity value")
+
+        limit = capacity_values["limit"]
+        limit_remaining = capacity_values["limit_remaining"]
         limit_reset_value = key_data.get("limit_reset")
         limit_reset = limit_reset_value if isinstance(limit_reset_value, str) else None
 
-        if key_data.get("limit_remaining") is not None and limit_remaining is None:
-            raise ValueError("OpenRouter key response contained an invalid limit_remaining")
         if limit_remaining is not None and limit_remaining <= 0:
             return _unavailable_health(
                 ProviderErrorCode.KEY_LIMIT_EXCEEDED,
@@ -151,5 +170,5 @@ def get_openrouter_health(force: bool = False) -> ProviderHealth:
             return _cached_health
 
         _cached_health = _check_openrouter_health()
-        _cached_at = now
+        _cached_at = time.monotonic()
         return _cached_health

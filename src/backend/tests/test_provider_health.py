@@ -115,6 +115,16 @@ def test_provider_health_uses_ttl_cache(fake_httpx):
     assert fake_httpx.call_count == 3
 
 
+def test_provider_health_caches_from_preflight_completion_time(fake_httpx, monkeypatch):
+    monotonic_values = iter((100.0, 190.0, 190.0))
+    monkeypatch.setattr("app.services.provider_health.time.monotonic", lambda: next(monotonic_values))
+
+    get_openrouter_health(force=True)
+    get_openrouter_health()
+
+    assert fake_httpx.call_count == 3
+
+
 def test_provider_health_checks_distinct_key_and_model_response_shapes(fake_httpx):
     health = get_openrouter_health(force=True)
 
@@ -138,6 +148,37 @@ def test_provider_health_fails_closed_when_model_payload_is_not_a_data_list(fake
     assert health.error_code == "OPENROUTER_REQUEST_FAILED"
     assert health.content_model_available is False
     assert health.embedding_model_available is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("limit", float("nan")),
+        ("limit_remaining", float("inf")),
+        ("usage", float("-inf")),
+    ],
+    ids=("nan-limit", "positive-infinity-remaining", "negative-infinity-usage"),
+)
+def test_provider_health_rejects_non_finite_key_capacity_values(fake_httpx, field, value):
+    fake_httpx.responses = [
+        FakeResponse(
+            200,
+            {
+                "data": {
+                    "limit": 10,
+                    "limit_remaining": 5.5,
+                    "usage": 4.5,
+                    field: value,
+                }
+            },
+        )
+    ]
+
+    health = get_openrouter_health(force=True)
+
+    assert health.available is False
+    assert health.error_code == "OPENROUTER_REQUEST_FAILED"
+    assert fake_httpx.call_count == 1
 
 
 def test_provider_health_uses_task_one_classifier_for_request_failures(fake_httpx, monkeypatch):
