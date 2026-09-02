@@ -2,6 +2,7 @@
 
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import logger, settings
@@ -253,7 +254,13 @@ def delete_account(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mật khẩu không chính xác.")
 
     courses = db.query(Course).filter(Course.user_id == current_user.id).all()
-    db.query(ProcessingJob).filter(ProcessingJob.user_id == current_user.id).delete()
+    course_ids = [course.id for course in courses]
+    db.query(ProcessingJob).filter(
+        or_(
+            ProcessingJob.user_id == current_user.id,
+            ProcessingJob.course_id.in_(course_ids),
+        )
+    ).delete(synchronize_session=False)
     if courses:
         from app.services.document_processor import get_document_processor
 
