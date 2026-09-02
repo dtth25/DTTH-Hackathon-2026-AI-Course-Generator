@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 from typing import Optional
 
 
@@ -40,9 +41,43 @@ def _status_code(exc: Exception) -> Optional[int]:
     return value if isinstance(value, int) else None
 
 
+def _sanitize_technical_message(message: str) -> str:
+    sanitized = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+|\bbearer\s+)[^\s,;]+", r"\1[REDACTED]", message)
+    sanitized = re.sub(
+        r"(?i)(\b(?:api[_ -]?key|password|token)\s*[:=]\s*)[^\s,;]+",
+        r"\1[REDACTED]",
+        sanitized,
+    )
+    sanitized = re.sub(r"(?i)\bsk-[a-z0-9_-]+", "sk-[REDACTED]", sanitized)
+    return sanitized[:1000]
+
+
+def _transport_failure_kind(exc: Exception) -> Optional[ProviderErrorCode]:
+    seen: set[int] = set()
+    current: Optional[BaseException] = exc
+    for _ in range(8):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        name = type(current).__name__.casefold()
+        module = type(current).__module__.casefold()
+        if isinstance(current, TimeoutError) or "timeout" in name:
+            return ProviderErrorCode.TIMEOUT
+        if isinstance(current, ConnectionError) or any(
+            marker in name for marker in ("connection", "connecterror", "networkerror", "network")
+        ):
+            return ProviderErrorCode.UNAVAILABLE
+        if module.startswith(("httpx", "openai")) and any(
+            marker in name for marker in ("readerror", "writeerror", "protocolerror")
+        ):
+            return ProviderErrorCode.UNAVAILABLE
+        current = current.__cause__ or current.__context__
+    return None
+
+
 def classify_openrouter_error(exc: Exception) -> ProviderFailure:
     status = _status_code(exc)
-    technical = str(exc)[:1000]
+    technical = _sanitize_technical_message(str(exc))
     folded = technical.casefold()
     if status == 401:
         return ProviderFailure(
@@ -104,10 +139,21 @@ def classify_openrouter_error(exc: Exception) -> ProviderFailure:
             status,
             technical,
         )
-    if "timeout" in folded or "timed out" in folded:
+    transport_code = _transport_failure_kind(exc)
+    if transport_code == ProviderErrorCode.TIMEOUT or "timeout" in folded or "timed out" in folded:
         return ProviderFailure(
             ProviderErrorCode.TIMEOUT,
             "Kết nối dịch vụ AI quá thời gian chờ.",
+            True,
+            True,
+            "retry_later",
+            status,
+            technical,
+        )
+    if transport_code == ProviderErrorCode.UNAVAILABLE:
+        return ProviderFailure(
+            ProviderErrorCode.UNAVAILABLE,
+            "Dịch vụ AI tạm thời không khả dụng.",
             True,
             True,
             "retry_later",

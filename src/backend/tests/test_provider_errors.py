@@ -2,6 +2,7 @@ from app.services.provider_errors import (
     ProviderErrorCode,
     classify_openrouter_error,
 )
+import httpx
 
 
 class FakeStatusError(Exception):
@@ -34,3 +35,33 @@ def test_invalid_key_and_payment_are_not_automatically_retried():
     assert payment.code == ProviderErrorCode.CREDITS_EXHAUSTED
     assert invalid.automatic_retry is False
     assert payment.automatic_retry is False
+
+
+def test_typed_httpx_timeout_is_automatically_retryable():
+    request = httpx.Request("GET", "https://openrouter.ai/api/v1")
+    failure = classify_openrouter_error(httpx.ReadTimeout("read timed out", request=request))
+    assert failure.code == ProviderErrorCode.TIMEOUT
+    assert failure.automatic_retry is True
+
+
+def test_wrapped_httpx_connection_error_is_automatically_retryable():
+    request = httpx.Request("GET", "https://openrouter.ai/api/v1")
+    transport_error = httpx.ConnectError("connection reset", request=request)
+    wrapper = RuntimeError("provider transport failed")
+    wrapper.__cause__ = transport_error
+    failure = classify_openrouter_error(wrapper)
+    assert failure.code == ProviderErrorCode.UNAVAILABLE
+    assert failure.automatic_retry is True
+
+
+def test_technical_message_redacts_provider_secrets():
+    exc = RuntimeError(
+        "request failed Authorization: Bearer bearer-secret "
+        "api_key=sk-or-v1-super-secret password=hunter2 token=jwt-secret; connection reset"
+    )
+    failure = classify_openrouter_error(exc)
+    assert "bearer-secret" not in failure.technical_message
+    assert "sk-or-v1-super-secret" not in failure.technical_message
+    assert "hunter2" not in failure.technical_message
+    assert "jwt-secret" not in failure.technical_message
+    assert "connection reset" in failure.technical_message
