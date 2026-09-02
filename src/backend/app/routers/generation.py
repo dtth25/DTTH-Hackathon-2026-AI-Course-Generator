@@ -21,7 +21,7 @@ from app.schemas.generation import (
 )
 from app.services.generator import Generator
 from app.services.llm import LLMService
-from app.services.public_errors import public_error
+from app.services.public_errors import public_error, sanitize_public_payload
 from app.services.vector_store import get_vector_store
 from app.services.versioning import (
     GenerationInFlightError,
@@ -330,15 +330,12 @@ def get_book(
     get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "book", version)
-    data = generator._load_artifact_json(course_id, "book.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "book", version_id)) if version_id else None
+    data = sanitize_public_payload(generator._load_artifact_json(course_id, "book.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "book", version_id))) if version_id else None
     info = generator.get_artifact_status(course_id, "book", version_id)
     error_code, error_message = public_artifact_error(info, "book")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
-    if data:
-        for ch in data.get("chapters", []):
-            ch.pop("source_chunk_ids", None)
     return {
         "status": status_val,
         "error": error_message,
@@ -367,15 +364,12 @@ def get_slide(
     get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "slides", version)
-    data = generator._load_artifact_json(course_id, "slides.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "slides", version_id)) if version_id else None
+    data = sanitize_public_payload(generator._load_artifact_json(course_id, "slides.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "slides", version_id))) if version_id else None
     info = generator.get_artifact_status(course_id, "slides", version_id)
     error_code, error_message = public_artifact_error(info, "slides")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
-    if data:
-        for sl in data.get("slides", []):
-            sl.pop("source_chunk_ids", None)
     return {
         "status": status_val,
         "error": error_message,
@@ -404,11 +398,8 @@ def get_quiz(
     get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "quiz", version)
-    raw = generator._load_artifact_json(course_id, "quiz.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "quiz", version_id)) if version_id else None
+    raw = sanitize_public_payload(generator._load_artifact_json(course_id, "quiz.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "quiz", version_id))) if version_id else None
     questions = raw.get("questions", []) if raw else None
-    if questions:
-        for q in questions:
-            q.pop("source_chunk_ids", None)
     info = generator.get_artifact_status(course_id, "quiz", version_id)
     error_code, error_message = public_artifact_error(info, "quiz")
     status_val = info.get("status") or ("ready" if questions else "empty")
@@ -442,15 +433,12 @@ def get_vid(
     get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "vid", version)
-    data = generator._load_artifact_json(course_id, "vid.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "vid", version_id)) if version_id else None
+    data = sanitize_public_payload(generator._load_artifact_json(course_id, "vid.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "vid", version_id))) if version_id else None
     info = generator.get_artifact_status(course_id, "vid", version_id)
     error_code, error_message = public_artifact_error(info, "vid")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
-    if data:
-        for sc in data.get("scenes", []):
-            sc.pop("source_chunk_ids", None)
     return {
         "status": status_val,
         "error": error_message,

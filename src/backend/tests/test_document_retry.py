@@ -373,6 +373,125 @@ def test_empty_extraction_is_an_extraction_failure(monkeypatch):
         assert persisted.recommended_action == "upload_clearer_pdf"
 
 
+class _OcrStatusError(Exception):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class _AlwaysFailingOcrCompletions:
+    def __init__(self, error: Exception):
+        self.error = error
+        self.calls = 0
+
+    def create(self, **_kwargs):
+        self.calls += 1
+        raise self.error
+
+
+@pytest.mark.parametrize("document_shape", ["fully_scanned", "mixed"])
+@pytest.mark.parametrize(
+    ("provider_error", "expected_internal_code", "expected_public_code", "expected_status", "expected_calls"),
+    [
+        (
+            _OcrStatusError(403, "Key limit exceeded (total limit)"),
+            "OPENROUTER_KEY_LIMIT_EXCEEDED",
+            "AI_QUOTA_EXHAUSTED",
+            "paused_due_to_quota",
+            1,
+        ),
+        (
+            _OcrStatusError(503, "provider unavailable"),
+            "OPENROUTER_UNAVAILABLE",
+            "AI_UNAVAILABLE",
+            "failed",
+            2,
+        ),
+    ],
+)
+def test_ocr_provider_failure_survives_extraction_and_reaches_public_status(
+    client,
+    owner_headers,
+    tmp_path,
+    monkeypatch,
+    document_shape,
+    provider_error,
+    expected_internal_code,
+    expected_public_code,
+    expected_status,
+    expected_calls,
+):
+    import fitz
+
+    from app.services.document_processor import DocumentProcessor
+    from app.services.llm import LLMService
+
+    user_id = client.get("/api/auth/me", headers=owner_headers).json()["id"]
+    with SessionLocal() as db:
+        course = Course(
+            user_id=user_id,
+            filenames=[f"{document_shape}.pdf"],
+            status="processing",
+            stage="extracting",
+        )
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        course_id = course.id
+
+    pdf_path = tmp_path / f"{document_shape}.pdf"
+    pdf = fitz.open()
+    if document_shape == "mixed":
+        text_page = pdf.new_page()
+        text_page.insert_textbox(
+            fitz.Rect(72, 72, 520, 760),
+            " ".join(["Nội dung văn bản có thể đọc được"] * 30),
+        )
+    pdf.new_page()
+    pdf.save(pdf_path)
+    pdf.close()
+
+    completions = _AlwaysFailingOcrCompletions(provider_error)
+
+    def fake_llm_init(self, model=None):
+        self.model = model or settings.OPENROUTER_MODEL
+        self.client = type(
+            "Client",
+            (),
+            {"chat": type("Chat", (), {"completions": completions})()},
+        )()
+
+    preflight_calls = []
+    monkeypatch.setattr(LLMService, "__init__", fake_llm_init)
+    monkeypatch.setattr(
+        "app.services.document_processor.get_openrouter_health",
+        lambda **_: (preflight_calls.append(True), _health(available=True))[1],
+    )
+    monkeypatch.setattr(settings, "PDF_ENABLE_OCR", True)
+    monkeypatch.setattr(settings, "PDF_SCAN_SAMPLE_PAGES", 12)
+    monkeypatch.setattr(settings, "PDF_TEXT_MIN_CHARS_PER_PAGE", 50)
+    monkeypatch.setattr(settings, "PDF_OCR_MAX_PAGES", 12)
+
+    result = DocumentProcessor(vector_store=None).process_course(
+        course_id, [str(pdf_path)], SessionLocal
+    )
+
+    assert preflight_calls == [True]
+    assert completions.calls == expected_calls
+    assert result.status == expected_status
+    with SessionLocal() as db:
+        persisted = db.get(Course, course_id)
+        assert persisted.error_code == expected_internal_code
+        assert persisted.failure_stage == "embedding_failed"
+        assert persisted.recommended_action != "upload_clearer_pdf"
+
+    response = client.get(f"/api/course/{course_id}/status", headers=owner_headers)
+    assert response.status_code == 200
+    assert response.json()["error_code"] == expected_public_code
+    assert response.json()["recommended_action"] != "upload_clearer_pdf"
+    assert "DOCUMENT_TEXT_EXTRACTION_FAILED" not in response.text
+
+
 def test_saved_file_discovery_rejects_symlinked_source(tmp_path, monkeypatch):
     from app.services.document_processor import DocumentProcessor
 

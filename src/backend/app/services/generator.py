@@ -27,6 +27,7 @@ from app.schemas.generator_output import (
     validate_and_score_output,
 )
 from app.services.llm import LLMService
+from app.services.public_errors import sanitize_public_payload
 from app.services.pdf_book import build_book_pdf
 from app.services.text_format import clean_text
 from app.services.vector_store import Document, VectorStore
@@ -1344,10 +1345,10 @@ class Generator:
             ),
             study_pack=StudyPackData(
                 title=book_json.get("title", "Course Title") if book_json else "Course Title",
-                book=book_json,
-                slides=slides_json,
-                quiz=quiz_json.get("questions", []) if quiz_json else [],
-                vid=vid_json,
+                book=sanitize_public_payload(book_json),
+                slides=sanitize_public_payload(slides_json),
+                quiz=sanitize_public_payload(quiz_json.get("questions", [])) if quiz_json else [],
+                vid=sanitize_public_payload(vid_json),
                 readiness=readiness,
                 quality_scores=quality_scores,
                 grounding=grounding,

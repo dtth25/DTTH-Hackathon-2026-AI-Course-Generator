@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiNetworkError,
+  ApiResponseError,
   ApiRequestError,
   apiFetch,
+  apiGetBook,
   apiGetCourseStatus,
   apiGetCurrentUser,
   apiGetJob,
@@ -66,6 +68,17 @@ describe("apiFetch network errors", () => {
     );
   });
 
+  it("preserves empty 204 behavior without trying to read a body", async () => {
+    const text = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 204, text } as unknown as Response)
+    );
+
+    await expect(apiFetch("/api/auth/logout")).resolves.toBeUndefined();
+    expect(text).not.toHaveBeenCalled();
+  });
+
   it("never promotes an arbitrary backend detail into the public error message", async () => {
     vi.stubGlobal(
       "fetch",
@@ -110,6 +123,83 @@ describe("apiFetch network errors", () => {
 
     await expect(apiGetCourseStatus("course-1")).rejects.toBe(abort);
     await expect(apiGetCourseStatus("course-1")).rejects.not.toBeInstanceOf(ApiNetworkError);
+  });
+
+  it("normalizes a TypeError while reading the course response body", async () => {
+    const bodyFailure = new TypeError("network stream terminated: provider trace");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockRejectedValue(bodyFailure),
+        json: vi.fn().mockRejectedValue(bodyFailure),
+      } as unknown as Response)
+    );
+
+    await expect(apiGetCourseStatus("course-1")).rejects.toMatchObject({
+      name: "ApiNetworkError",
+      code: "NETWORK_UNAVAILABLE",
+      message: NETWORK_MESSAGE,
+    });
+  });
+
+  it("turns truncated retry JSON into a typed provider-neutral response error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('{"status":"processing","provider_trace":', { status: 202 })
+      )
+    );
+
+    const request = apiRetryDocument("course-1");
+    await expect(request).rejects.toBeInstanceOf(ApiResponseError);
+    await expect(request).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.",
+    });
+    await expect(request).rejects.not.toMatchObject({ message: expect.stringMatching(/provider_trace|SyntaxError/u) });
+  });
+
+  it("rejects a valid but invalid artifact payload without exposing it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify("raw provider payload"), { status: 200 }))
+    );
+
+    await expect(apiGetBook("course-1")).rejects.toMatchObject({
+      name: "ApiResponseError",
+      code: "INVALID_RESPONSE",
+      message: "Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.",
+    });
+  });
+
+  it("keeps AbortError silent when response body reading aborts", async () => {
+    const abort = new DOMException("raw aborted body", "AbortError");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockRejectedValue(abort),
+        json: vi.fn().mockRejectedValue(abort),
+      } as unknown as Response)
+    );
+
+    await expect(apiGetCourseStatus("course-1")).rejects.toBe(abort);
+  });
+
+  it("normalizes response-body TypeError for structured non-2xx responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: vi.fn().mockRejectedValue(new TypeError("socket closed with raw detail")),
+      } as unknown as Response)
+    );
+
+    await expect(apiRetryDocument("course-1")).rejects.toBeInstanceOf(ApiNetworkError);
   });
 
   it("uses encoded backend paths for document retry and job status", async () => {
@@ -223,10 +313,38 @@ describe("apiUploadFiles progress transport", () => {
     xhr.responseText = "not json";
     xhr.dispatch("load");
     await expect(malformedRequest).rejects.toMatchObject({
-      name: "ApiRequestError",
-      code: "UNKNOWN_ERROR",
-      message: "Đã xảy ra lỗi. Vui lòng thử lại.",
+      name: "ApiResponseError",
+      code: "INVALID_RESPONSE",
+      message: "Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.",
     });
+  });
+
+  it("keeps an XHR abort typed and silent", async () => {
+    vi.stubGlobal("XMLHttpRequest", MockXmlHttpRequest);
+    const request = apiUploadFiles([new File(["pdf"], "notes.pdf")], vi.fn());
+    MockXmlHttpRequest.instance!.dispatch("abort");
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await expect(request).rejects.not.toBeInstanceOf(ApiResponseError);
+  });
+
+  it("normalizes XHR responseText read failures and timeouts", async () => {
+    vi.stubGlobal("XMLHttpRequest", MockXmlHttpRequest);
+    const readRequest = apiUploadFiles([new File(["pdf"], "notes.pdf")], vi.fn());
+    const xhr = MockXmlHttpRequest.instance!;
+    xhr.status = 201;
+    Object.defineProperty(xhr, "responseText", {
+      configurable: true,
+      get: () => {
+        throw new TypeError("raw response stream failure");
+      },
+    });
+    xhr.dispatch("load");
+    await expect(readRequest).rejects.toBeInstanceOf(ApiNetworkError);
+
+    const timeoutRequest = apiUploadFiles([new File(["pdf"], "notes.pdf")], vi.fn());
+    MockXmlHttpRequest.instance!.dispatch("timeout");
+    await expect(timeoutRequest).rejects.toBeInstanceOf(ApiNetworkError);
   });
 });
 

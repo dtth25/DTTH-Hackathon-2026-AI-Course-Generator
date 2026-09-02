@@ -748,6 +748,8 @@ class DocumentProcessor:
                                     "source_file": clean_filename,
                                 }
                             )
+            except ProviderRequestError:
+                raise
             except Exception as e:
                 # Fallback for dummy/test PDF files in unit tests that contain plain text
                 try:
@@ -830,8 +832,8 @@ class DocumentProcessor:
 
     def _ocr_page(self, doc: "fitz.Document", page_index: int, dpi: int) -> Optional[str]:
         """Render a PDF page to an image and ask OpenRouter vision to transcribe its text.
-        Best-effort: returns None on any failure so the caller keeps whatever text
-        extraction already produced (possibly empty/short)."""
+        Rendering failures remain best-effort, but provider request failures propagate so
+        scanned pages cannot silently disappear from an otherwise-ready document."""
         try:
             page = doc[page_index]
             zoom = dpi / 72.0
@@ -841,6 +843,8 @@ class DocumentProcessor:
             from app.services.llm import LLMService
 
             return LLMService().ocr_page_image(image_bytes) or None
+        except ProviderRequestError:
+            raise
         except Exception as e:
             logger.warning(f"OCR fallback failed for page {page_index + 1}: {e}")
             return None
@@ -1047,6 +1051,8 @@ class DocumentProcessor:
                     all_documents.extend(self.extract_and_chunk_file(path, course_id))
                 if not all_documents:
                     raise ValueError("No valid text could be extracted from uploaded files.")
+            except ProviderRequestError:
+                raise
             except Exception as exc:
                 user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
                 terminal_outcome = self._persist_terminal_state(

@@ -4,7 +4,7 @@ Internal provider codes and diagnostics remain useful in persistence and logs.  
 must be translated before crossing an HTTP response boundary.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 
 PROVIDER_CODE_MAP = {
@@ -38,6 +38,49 @@ PUBLIC_MESSAGES = {
     "QUIZ_GENERATION_FAILED": "Không thể tạo bài trắc nghiệm. Vui lòng thử lại.",
     "VIDEO_GENERATION_FAILED": "Không thể tạo video. Vui lòng thử lại.",
 }
+
+
+_INTERNAL_RESPONSE_KEYS = frozenset(
+    {
+        "source_chunk_ids",
+        "source_chunk_id",
+        "chunk_id",
+        "source",
+        "citation",
+        "citations",
+        "debug",
+        "technical",
+        "technical_error",
+        "technical_metadata",
+    }
+)
+
+
+def sanitize_public_payload(value: Any) -> Any:
+    """Return a recursively sanitized JSON-compatible copy for public responses.
+
+    Grounding identifiers and technical diagnostics remain present in artifact files and
+    course metadata for internal scoring/retrieval. Only the response copy is filtered,
+    including legacy payloads that placed private fields below unexpected nested objects.
+    """
+    if isinstance(value, dict):
+        return {
+            key: sanitize_public_payload(nested)
+            for key, nested in value.items()
+            if not _is_internal_response_key(key)
+        }
+    if isinstance(value, list):
+        return [sanitize_public_payload(nested) for nested in value]
+    if isinstance(value, tuple):
+        return [sanitize_public_payload(nested) for nested in value]
+    return value
+
+
+def _is_internal_response_key(key: Any) -> bool:
+    normalized = str(key).casefold().replace("-", "_").replace(" ", "_")
+    return normalized in _INTERNAL_RESPONSE_KEYS or normalized.startswith(
+        ("debug_", "technical_")
+    )
 
 
 def public_error_code(error_code: Optional[str], default: str) -> str:

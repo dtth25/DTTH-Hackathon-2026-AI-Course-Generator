@@ -105,6 +105,19 @@ export class ApiNetworkError extends Error {
   }
 }
 
+export const INVALID_RESPONSE_MESSAGE =
+  "Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.";
+
+/** A stable response-contract failure that never includes parser or body details. */
+export class ApiResponseError extends Error {
+  readonly code = "INVALID_RESPONSE" as const;
+
+  constructor() {
+    super(INVALID_RESPONSE_MESSAGE);
+    this.name = "ApiResponseError";
+  }
+}
+
 function isAbortError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -146,6 +159,32 @@ function apiRequestErrorFromHttpResponse(status: number, responseText: string): 
   const detail = parseHttpErrorDetail(responseText);
   const code = safeHttpErrorCode(detail, status);
   return new ApiRequestError(safeHttpErrorMessage(code), status, detail, code);
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof TypeError) throw new ApiNetworkError();
+    throw new ApiResponseError();
+  }
+}
+
+function parseSuccessfulResponse<T>(responseText: string): T {
+  try {
+    const value: unknown = JSON.parse(responseText);
+    if (value === null || typeof value !== "object") throw new SyntaxError();
+    return value as T;
+  } catch {
+    throw new ApiResponseError();
+  }
+}
+
+function safeResponseReadError(error: unknown): unknown {
+  if (isAbortError(error)) return error;
+  if (error instanceof TypeError) return new ApiNetworkError();
+  return error instanceof ApiResponseError ? error : new ApiResponseError();
 }
 
 // Base URL for the FastAPI backend. Prefer the documented public env vars;
@@ -210,8 +249,14 @@ export async function apiFetch<T>(
     throw error;
   }
 
+  if (response.ok && response.status === 204) {
+    return undefined as T;
+  }
+
+  const responseText = await readResponseText(response);
+
   if (!response.ok) {
-    const requestError = apiRequestErrorFromHttpResponse(response.status, await response.text());
+    const requestError = apiRequestErrorFromHttpResponse(response.status, responseText);
     if (response.status === 401 && !preservesSessionOn401(path, init?.method, requestError.code)) {
       removeToken();
       if (typeof window !== "undefined") {
@@ -221,11 +266,7 @@ export async function apiFetch<T>(
     throw requestError;
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
+  return parseSuccessfulResponse<T>(responseText);
 }
 
 // ============================================================
@@ -378,22 +419,33 @@ export async function apiUploadFiles(
       });
 
       xhr.addEventListener("load", () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText) as UploadResponse);
-          } catch {
-            reject(apiRequestErrorFromHttpResponse(xhr.status, ""));
+        try {
+          const responseText = xhr.responseText;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(parseSuccessfulResponse<UploadResponse>(responseText));
+          } else if (xhr.status === 401) {
+            removeToken();
+            window.location.href = "/login";
+            reject(apiRequestErrorFromHttpResponse(xhr.status, responseText));
+          } else if (xhr.status === 0) {
+            reject(new ApiNetworkError());
+          } else {
+            reject(apiRequestErrorFromHttpResponse(xhr.status, responseText));
           }
-        } else if (xhr.status === 401) {
-          removeToken();
-          window.location.href = "/login";
-          reject(apiRequestErrorFromHttpResponse(xhr.status, xhr.responseText));
-        } else {
-          reject(apiRequestErrorFromHttpResponse(xhr.status, xhr.responseText));
+        } catch (error) {
+          reject(safeResponseReadError(error));
         }
       });
 
       xhr.addEventListener("error", () => {
+        reject(new ApiNetworkError());
+      });
+
+      xhr.addEventListener("abort", () => {
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+      });
+
+      xhr.addEventListener("timeout", () => {
         reject(new ApiNetworkError());
       });
 

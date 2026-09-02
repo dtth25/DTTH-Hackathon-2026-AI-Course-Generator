@@ -2,10 +2,12 @@
 
 import json
 import os
+from pathlib import Path
 from app.models.course import Course
 from app.services.database import SessionLocal
 from app.services.generator import Generator
 from app.services.llm import LLMService
+from app.services.public_errors import sanitize_public_payload
 from app.services.vector_store import Document, get_vector_store
 
 
@@ -280,6 +282,145 @@ def test_generation_api_endpoints_complete(client):
     res_src = client.get(f"/documents/{course_id}/sources", headers=headers)
     assert res_src.status_code == 200
     assert "sources" in res_src.json()
+
+
+def _assert_no_internal_grounding_keys(value):
+    forbidden = {
+        "source_chunk_ids",
+        "source_chunk_id",
+        "chunk_id",
+        "source",
+        "citation",
+        "citations",
+        "debug",
+        "technical",
+        "technical_error",
+        "technical_metadata",
+    }
+    if isinstance(value, dict):
+        assert forbidden.isdisjoint(value)
+        assert not any(
+            str(key).casefold().startswith(("debug_", "technical_"))
+            for key in value
+        )
+        for nested in value.values():
+            _assert_no_internal_grounding_keys(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _assert_no_internal_grounding_keys(nested)
+
+
+def test_recursive_public_payload_sanitizer_does_not_mutate_persisted_data():
+    raw = {
+        "title": "Legacy artifact",
+        "chapters": [
+            {
+                "source_chunk_ids": ["chunk-1"],
+                "nested": {"chunk_id": "chunk-1", "debug": {"provider": "internal"}},
+            }
+        ],
+        "technical_metadata": {"model": "internal"},
+        "debug_info": {"trace": "internal"},
+    }
+
+    public = sanitize_public_payload(raw)
+
+    _assert_no_internal_grounding_keys(public)
+    assert raw["chapters"][0]["source_chunk_ids"] == ["chunk-1"]
+    assert raw["chapters"][0]["nested"]["chunk_id"] == "chunk-1"
+
+
+def test_study_pack_and_individual_artifact_routes_strip_nested_internal_metadata(client):
+    from app.core.config import settings
+    from app.services.versioning import artifact_directory_path
+
+    email = "aggregate-sanitizer@example.com"
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password123", "full_name": "Aggregate Sanitizer"},
+    )
+    assert registered.status_code == 201
+    verified = client.post(
+        "/api/auth/verify-email", json={"email": email, "code": "000000"}
+    )
+    headers = {"Authorization": f"Bearer {verified.json()['access_token']}"}
+    user_id = client.get("/api/auth/me", headers=headers).json()["id"]
+
+    artifacts = {
+        "book": {
+            "title": "Book",
+            "chapters": [{"chapter_title": "One", "source_chunk_ids": ["book-1"], "nested": {"source": "raw"}}],
+        },
+        "slides": {
+            "title": "Slides",
+            "slides": [{"title": "One", "source_chunk_ids": ["slide-1"], "nested": [{"chunk_id": "slide-1"}]}],
+        },
+        "quiz": {
+            "title": "Quiz",
+            "questions": [{"question": "One?", "source_chunk_ids": ["quiz-1"], "nested": {"citations": ["raw"]}}],
+        },
+        "vid": {
+            "title": "Video",
+            "scenes": [{"title": "One", "source_chunk_ids": ["vid-1"], "nested": {"debug": "raw", "technical_error": "raw"}}],
+            "technical_metadata": {"provider": "internal"},
+        },
+    }
+    versions = {}
+    for artifact, payload in artifacts.items():
+        version_id = f"legacy-{artifact}"
+        versions[artifact] = {
+            "active": version_id,
+            "versions": {version_id: {"status": "ready", "label": artifact}},
+        }
+        artifact_dir = Path(
+            artifact_directory_path(settings.UPLOAD_DIR, "aggregate-sanitizer", artifact, version_id)
+        )
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        filename = "slides.json" if artifact == "slides" else f"{artifact}.json"
+        (artifact_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
+
+    metadata = {
+        "study_pack": {
+            "artifacts": versions,
+            "readiness": {},
+            "quality_scores": {},
+            "grounding": {},
+        },
+        "source_chunk_ids": ["persisted-grounding"],
+    }
+    with SessionLocal() as db:
+        course = Course(
+            id="aggregate-sanitizer",
+            user_id=user_id,
+            filenames=["legacy.pdf"],
+            status="ready",
+            stage="completed",
+            metadata_json=json.dumps(metadata),
+        )
+        db.add(course)
+        db.commit()
+
+    aggregate = client.get("/api/course/aggregate-sanitizer/study-pack", headers=headers)
+    assert aggregate.status_code == 200
+    _assert_no_internal_grounding_keys(aggregate.json())
+    assert "source_chunk_ids" not in aggregate.text
+    assert "chunk_id" not in aggregate.text
+
+    for route in ("book", "slide", "quiz", "vid"):
+        response = client.get(f"/api/course/aggregate-sanitizer/{route}", headers=headers)
+        assert response.status_code == 200
+        _assert_no_internal_grounding_keys(response.json())
+
+    for artifact, original in artifacts.items():
+        version_id = f"legacy-{artifact}"
+        artifact_dir = Path(
+            artifact_directory_path(settings.UPLOAD_DIR, "aggregate-sanitizer", artifact, version_id)
+        )
+        filename = "slides.json" if artifact == "slides" else f"{artifact}.json"
+        assert json.loads((artifact_dir / filename).read_text(encoding="utf-8")) == original
+    with SessionLocal() as db:
+        persisted = json.loads(db.get(Course, "aggregate-sanitizer").metadata_json)
+        assert persisted["source_chunk_ids"] == ["persisted-grounding"]
 
 
 def test_book_generator_error_propagation():

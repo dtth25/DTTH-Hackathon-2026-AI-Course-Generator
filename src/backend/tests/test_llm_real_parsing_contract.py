@@ -4,6 +4,13 @@ import pytest
 
 from app.core.config import Settings, settings
 from app.services.llm import LLMGenerationError, LLMService
+from app.services.provider_errors import ProviderErrorCode, ProviderRequestError
+
+
+class _FakeStatusError(Exception):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class _FakeCompletion:
@@ -145,7 +152,7 @@ def test_production_client_initialization_failure_is_loud(monkeypatch):
 def test_ocr_retries_the_same_paid_model_and_preserves_image_payload(monkeypatch):
     monkeypatch.setattr(settings, "OPENROUTER_MODEL", "google/gemini-2.5-pro")
     llm, completions = _llm_with_fake_client(
-        [RuntimeError("temporary provider error"), "Nội dung trang PDF"]
+        [_FakeStatusError(503, "temporary provider error"), "Nội dung trang PDF"]
     )
 
     result = llm.ocr_page_image(b"fake-png")
@@ -160,11 +167,33 @@ def test_ocr_retries_the_same_paid_model_and_preserves_image_payload(monkeypatch
     assert message_content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-def test_ocr_returns_empty_after_two_failed_paid_attempts():
+def test_ocr_empty_success_is_genuine_no_text_without_retry():
     llm, completions = _llm_with_fake_client([None, None])
 
     assert llm.ocr_page_image(b"fake-png") == ""
-    assert len(completions.calls) == 2
+    assert len(completions.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_code", "expected_calls"),
+    [
+        (_FakeStatusError(401, "invalid api key"), ProviderErrorCode.KEY_INVALID, 1),
+        (_FakeStatusError(402, "payment required"), ProviderErrorCode.CREDITS_EXHAUSTED, 1),
+        (_FakeStatusError(403, "Key limit exceeded (total limit)"), ProviderErrorCode.KEY_LIMIT_EXCEEDED, 1),
+        (_FakeStatusError(403, "model access denied"), ProviderErrorCode.ACCESS_DENIED, 1),
+        (_FakeStatusError(503, "provider unavailable"), ProviderErrorCode.UNAVAILABLE, 2),
+    ],
+)
+def test_ocr_raises_classified_provider_failures_with_bounded_calls(
+    error, expected_code, expected_calls
+):
+    llm, completions = _llm_with_fake_client([error, error])
+
+    with pytest.raises(ProviderRequestError) as caught:
+        llm.ocr_page_image(b"fake-png")
+
+    assert caught.value.failure.code == expected_code
+    assert len(completions.calls) == expected_calls
 
 
 def test_openrouter_model_defaults_to_gemini_pro(monkeypatch):

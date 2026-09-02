@@ -22,6 +22,10 @@ from app.schemas.generator_output import (
     VidOutput,
     VidScene,
 )
+from app.services.provider_errors import (
+    ProviderRequestError,
+    classify_openrouter_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,9 +170,13 @@ class LLMService:
         )
 
     def ocr_page_image(self, image_bytes: bytes) -> str:
-        """Best-effort OCR: send a rendered PDF page image to OpenRouter vision and return the
-        transcribed plain text. Returns '' in offline/mock mode or on any failure — callers
-        fall back to whatever text extraction already produced."""
+        """Transcribe one rendered PDF page through the configured OpenRouter model.
+
+        A valid empty provider response means that the page genuinely has no readable
+        text. Request failures use the shared provider classifier: permanent failures stop
+        after one call, while transient failures get the single same-model retry allowed by
+        the OCR contract. Typed failures must reach the document pipeline for persistence.
+        """
         if not self.client:
             return ""
         content = [{"type": "text", "text": "Trích xuất toàn bộ văn bản có thể đọc được trong ảnh này, giữ nguyên thứ tự đọc tự nhiên. Chỉ trả về văn bản thuần, không thêm giải thích hay định dạng markdown."}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}"}}]
@@ -185,15 +193,24 @@ class LLMService:
                 text = response.choices[0].message.content if response.choices else None
                 if text and text.strip():
                     return text.strip()
-                raise LLMGenerationError("OpenRouter returned an empty OCR response")
+                return ""
             except Exception as exc:
+                failure = (
+                    exc.failure
+                    if isinstance(exc, ProviderRequestError)
+                    else classify_openrouter_error(exc)
+                )
                 logger.warning(
-                    "OCR via OpenRouter model %s failed on attempt %s/2: %s",
+                    "OCR via OpenRouter model %s failed on attempt %s/2 with %s",
                     model,
                     attempt,
-                    exc,
+                    failure.code,
                 )
-        return ""
+                if not failure.automatic_retry or attempt == 2:
+                    if isinstance(exc, ProviderRequestError):
+                        raise
+                    raise ProviderRequestError(failure) from exc
+        raise AssertionError("unreachable OCR retry state")
 
     def generate_course_title(self, context: str) -> CourseTitleOutput:
         """Generate a short, human-friendly course title from a sample of extracted document text."""

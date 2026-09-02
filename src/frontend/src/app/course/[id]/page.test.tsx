@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CourseDashboardPage from "./page";
 import {
   ApiNetworkError,
+  ApiResponseError,
   ApiRequestError,
   apiGetCourseStatus,
   apiGetStudyPack,
@@ -47,6 +48,12 @@ vi.mock("@/lib/api", () => ({
     code = "NETWORK_UNAVAILABLE" as const;
     constructor() {
       super("Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.");
+    }
+  },
+  ApiResponseError: class ApiResponseError extends Error {
+    code = "INVALID_RESPONSE" as const;
+    constructor() {
+      super("Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.");
     }
   },
   ApiRequestError: class ApiRequestError extends Error {
@@ -163,6 +170,17 @@ describe("course workspace", () => {
     expect(screen.queryByRole("heading", { name: "Không tìm thấy khóa học" })).not.toBeInTheDocument();
   });
 
+  it("renders only safe copy when the course response body is invalid", async () => {
+    vi.mocked(apiGetCourseStatus).mockRejectedValue(new ApiResponseError());
+
+    render(<CourseDashboardPage />);
+
+    expect(
+      await screen.findByText("Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
+    ).toBeVisible();
+    expect(screen.queryByText(/SyntaxError|provider_trace|Unexpected end/u)).not.toBeInTheDocument();
+  });
+
   it("keeps the missing-course heading for an actual 404", async () => {
     vi.mocked(apiGetCourseStatus).mockRejectedValue(
       new ApiRequestError("Không tìm thấy khóa học.", 404)
@@ -193,6 +211,26 @@ describe("course workspace", () => {
     await user.click(screen.getByRole("button", { name: "Tạo khóa học mới từ tệp rõ hơn" }));
     expect(apiRetryDocument).not.toHaveBeenCalled();
     expect(navigation.push).toHaveBeenCalledWith("/courses/create");
+  });
+
+  it("renders only safe copy when the retry response body is truncated", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiGetCourseStatus).mockResolvedValue({
+      course_id: "course-1",
+      status: "paused_due_to_quota",
+      error_code: "AI_QUOTA_EXHAUSTED",
+      can_retry: true,
+      recommended_action: "restore_provider_quota",
+    });
+    vi.mocked(apiRetryDocument).mockRejectedValue(new ApiResponseError());
+
+    render(<CourseDashboardPage />);
+    await user.click(await screen.findByRole("button", { name: "Thử lập chỉ mục lại" }));
+
+    expect(
+      await screen.findByText("Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
+    ).toBeVisible();
+    expect(screen.queryByText(/SyntaxError|provider_trace|Unexpected end/u)).not.toBeInTheDocument();
   });
 
   it("offers preserved-file admin contact guidance for access-denied failures", async () => {

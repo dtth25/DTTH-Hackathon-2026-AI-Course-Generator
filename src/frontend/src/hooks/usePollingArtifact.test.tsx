@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { ApiResponseError } from "@/lib/api";
 import { usePollingArtifact } from "./usePollingArtifact";
 
 describe("usePollingArtifact", () => {
@@ -23,6 +24,28 @@ describe("usePollingArtifact", () => {
 
     await waitFor(() => expect(result.current.error).toBe("Tạo học liệu thất bại."));
     expect(result.current.error).not.toContain("Failed to fetch");
+  });
+
+  it("never exposes invalid artifact response diagnostics", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new ApiResponseError());
+
+    const { result } = renderHook(() =>
+      usePollingArtifact({
+        courseId: "course-1",
+        fetchFn,
+        isReady: () => false,
+        timeoutMs: 60_000,
+        timeoutMessage: "Timed out",
+        defaultErrorMessage: "Tạo học liệu thất bại.",
+      })
+    );
+
+    await waitFor(() =>
+      expect(result.current.error).toBe(
+        "Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại."
+      )
+    );
+    expect(result.current.error).not.toMatch(/SyntaxError|provider_trace|Unexpected end/u);
   });
 
   it("keeps polling the generated version after the user switches views", async () => {
