@@ -111,16 +111,19 @@ Khi upload/indexing dừng ở `paused_due_to_quota`, người dùng sẽ thấy
 
 Quản trị viên có thể xem preflight đã được redaction tại `GET /api/admin/provider-health` (không phải `/admin/...`). `/health` chỉ phản ánh readiness local, không warm-up hay quyết định provider capacity.
 
-Từ root repo, kiểm tra quota của key trong container mà không in key:
-
-```powershell
-docker compose exec backend python3 -c "import os,httpx,json; d=httpx.get('https://openrouter.ai/api/v1/key',headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']},timeout=20).json()['data']; print(json.dumps({k:d.get(k) for k in ['limit','limit_remaining','usage','limit_reset','expires_at']},indent=2))"
-```
-
-Nếu bare `python3` trong image không có dependency app như `httpx`, dùng cùng lệnh qua environment đã sync dependency:
+Từ root repo, kiểm tra quota của key trong dependency environment của backend mà không in key:
 
 ```powershell
 docker compose exec backend uv run --project . python3 -c "import os,httpx,json; d=httpx.get('https://openrouter.ai/api/v1/key',headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']},timeout=20).json()['data']; print(json.dumps({k:d.get(k) for k in ['limit','limit_remaining','usage','limit_reset','expires_at']},indent=2))"
+```
+
+`uv sync --frozen --no-dev` installs runtime dependencies into the project environment;
+the image's bare global `python3` does not import those dependencies. If an operator has
+deliberately installed the same dependencies globally, this plan-required alternative is
+equivalent, but it is not the supported image command:
+
+```powershell
+docker compose exec backend python3 -c "import os,httpx,json; d=httpx.get('https://openrouter.ai/api/v1/key',headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']},timeout=20).json()['data']; print(json.dumps({k:d.get(k) for k in ['limit','limit_remaining','usage','limit_reset','expires_at']},indent=2))"
 ```
 
 `limit_remaining=0` cùng `limit_reset=null` không tự hồi phục bằng cách chờ: tăng/gỡ key limit hoặc thay key, sau đó recreate backend và đợi stack healthy:
@@ -269,16 +272,16 @@ Các route chính:
 
 - Readiness: `GET /health`.
 - Auth: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`.
-- Admin users: `/api/admin/users`, `/api/admin/users/{user_id}`, `/api/admin/users/{user_id}/disable|enable|make-admin|make-user|reset-password`.
+- Admin users: `GET /api/admin/users`.
 - Admin provider capacity: `GET /api/admin/provider-health` (admin-only, redacted).
 - Upload/status: `POST /api/upload` (returns `job_id`), `GET /api/course/{course_id}/status`, `GET /api/jobs/{job_id}`, `POST /api/documents/{course_id}/retry`.
 - Source grounding: `GET /documents/{document_id}/sources`, alias `/api/documents/{document_id}/sources`.
 - Direct generation: `POST /api/generate-book`, `/api/generate-slide`, `/api/generate-quiz`, `/api/generate-vid`.
-- Study Pack/course outputs: `/api/course/{course_id}/study-pack`, `/readiness`, `/stats`.
-- Saved artifacts: `/api/course/{course_id}/book`, `/book.pdf`, `/slide`, `/slide.pptx`, `/quiz`, `/quiz-key.pdf`, `/vid`, `/vid/file`, `/files`.
-- Delete: `DELETE /api/courses/{course_id}`, `DELETE /api/documents/{document_id}`, `DELETE /documents/{document_id}`.
+- Study Pack: `GET /api/course/{course_id}/study-pack` (also under `/api/courses/{course_id}/study-pack`).
+- Saved artifacts: `/api/course/{course_id}/book`, `/book.pdf`, `/slide`, `/slide.pptx`, `/slide.pdf`, `/slide-images/{slide_num}`, `/quiz`, `/quiz-key.pdf`, `/vid`, `/vid.mp4` (each content route also has an `/api/courses/{course_id}/...` alias).
+- Course deletion: `DELETE /api/courses/{course_id}`; account deletion: `DELETE /api/auth/me`.
 
-Upload dùng multipart field `files` cho multi-document. Legacy field `file` vẫn được hỗ trợ cho single-file client cũ.
+Upload accepts multipart `files` or compatibility spelling `files[]`; `file` is not an accepted field.
 
 ## Security & Metadata Policy
 
