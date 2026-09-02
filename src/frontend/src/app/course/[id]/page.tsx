@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,17 +13,11 @@ import {
   Presentation,
   HelpCircle,
   Video,
+  FileUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import {
   Tabs,
   TabsContent,
@@ -41,10 +35,15 @@ import {
   apiGetCourseStatus,
   apiGetStudyPack,
   apiRetryDocument,
+  ApiNetworkError,
+  ApiRequestError,
   NETWORK_UNAVAILABLE_MESSAGE,
 } from "@/lib/api";
 import type { CourseStatusResponse, StudyPackResponse } from "@/lib/types";
-import { normalizeCourseStatus } from "@/lib/types";
+import {
+  normalizeCourseStatus,
+  normalizeDocumentRecommendedAction,
+} from "@/lib/types";
 import { CONTAINER_NARROW } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { DEFAULT_POLL_MS } from "@/hooks/usePollingArtifact";
@@ -57,118 +56,141 @@ export default function CourseDashboardPage() {
   );
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
+}
+
+function asError(error: unknown, fallback: string): Error {
+  return error instanceof Error ? error : new Error(fallback);
+}
+
 function DashboardContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [course, setCourse] = useState<CourseStatusResponse | null>(null);
   const [studyPack, setStudyPack] = useState<StudyPackResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<Error | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  const shouldPollCourseStatus = course?.status === "processing";
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
 
-  const isAbortError = (err: unknown) =>
-    typeof err === "object" &&
-    err !== null &&
-    "name" in err &&
-    (err as { name?: unknown }).name === "AbortError";
+  const isCurrentGeneration = useCallback((generation: number) =>
+    generationRef.current === generation, []);
 
-  const errorMessage = (err: unknown) =>
-    err instanceof Error ? err.message : "Không thể tải thông tin khóa học.";
+  const cancelActiveWork = useCallback(() => {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    pollTimerRef.current = null;
+    requestAbortRef.current?.abort();
+    requestAbortRef.current = null;
+  }, []);
 
-  const handleRefetch = () => {
-    if (!params.id) return;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      apiGetCourseStatus(params.id),
-      apiGetStudyPack(params.id).catch(() => null),
-    ])
-      .then(([statusData, packData]) => {
-        setCourse(statusData);
-        setStudyPack(packData);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      })
-      .finally(() => setLoading(false));
-  };
+  const beginGeneration = useCallback(() => {
+    cancelActiveWork();
+    generationRef.current += 1;
+    return generationRef.current;
+  }, [cancelActiveWork]);
 
-  useEffect(() => {
-    if (!params.id) return;
-    let active = true;
-    Promise.all([
-      apiGetCourseStatus(params.id),
-      apiGetStudyPack(params.id).catch(() => null),
-    ])
-      .then(([statusData, packData]) => {
-        if (active) {
-          setCourse(statusData);
-          setStudyPack(packData);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (active && !isAbortError(err)) {
-          setError(errorMessage(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [params.id]);
+  const fetchCourseSnapshot = useCallback(async (courseId: string, generation: number) => {
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
+    try {
+      const [statusData, packData] = await Promise.all([
+        apiGetCourseStatus(courseId, { signal: controller.signal }),
+        apiGetStudyPack(courseId, { signal: controller.signal }).catch((error) => {
+          if (isAbortError(error)) throw error;
+          return null;
+        }),
+      ]);
+      return isCurrentGeneration(generation) ? { statusData, packData } : null;
+    } finally {
+      if (requestAbortRef.current === controller) requestAbortRef.current = null;
+    }
+  }, [isCurrentGeneration]);
 
-  useEffect(() => {
-    if (!params.id || !shouldPollCourseStatus) return;
-
-    const interval = setInterval(async () => {
+  const schedulePolling = useCallback((courseId: string, generation: number) => {
+    const poll = async () => {
+      if (!isCurrentGeneration(generation)) return;
       try {
-        const [statusData, packData] = await Promise.all([
-          apiGetCourseStatus(params.id),
-          apiGetStudyPack(params.id).catch(() => null),
-        ]);
-        setCourse(statusData);
-        setStudyPack(packData);
-      } catch (err) {
-        if (!isAbortError(err)) {
-          // The next polling interval handles transient network failures without
-          // replacing a usable course workspace with an error screen.
-        }
+        const snapshot = await fetchCourseSnapshot(courseId, generation);
+        if (!snapshot || !isCurrentGeneration(generation)) return;
+        setCourse(snapshot.statusData);
+        setStudyPack(snapshot.packData);
+        if (normalizeCourseStatus(snapshot.statusData.status) !== "processing") return;
+      } catch (error) {
+        if (!isCurrentGeneration(generation) || isAbortError(error)) return;
       }
-    }, DEFAULT_POLL_MS);
+      if (isCurrentGeneration(generation)) {
+        pollTimerRef.current = setTimeout(poll, DEFAULT_POLL_MS);
+      }
+    };
+    pollTimerRef.current = setTimeout(poll, DEFAULT_POLL_MS);
+  }, [fetchCourseSnapshot, isCurrentGeneration]);
 
-    return () => clearInterval(interval);
-  }, [params.id, shouldPollCourseStatus]);
+  const loadCourse = useCallback(async (courseId: string, generation: number, showLoading: boolean) => {
+    if (showLoading) {
+      setLoading(true);
+      setPageError(null);
+    }
+    try {
+      const snapshot = await fetchCourseSnapshot(courseId, generation);
+      if (!snapshot || !isCurrentGeneration(generation)) return;
+      setCourse(snapshot.statusData);
+      setStudyPack(snapshot.packData);
+      if (normalizeCourseStatus(snapshot.statusData.status) === "processing") {
+        schedulePolling(courseId, generation);
+      }
+    } catch (error) {
+      if (isCurrentGeneration(generation) && !isAbortError(error)) {
+        setPageError(asError(error, "Không thể tải thông tin khóa học."));
+      }
+    } finally {
+      if (showLoading && isCurrentGeneration(generation)) setLoading(false);
+    }
+  }, [fetchCourseSnapshot, isCurrentGeneration, schedulePolling]);
 
-  const handleDocumentRetry = async () => {
+  const handleRefetch = useCallback(() => {
+    if (!params.id) return;
+    const generation = beginGeneration();
+    void loadCourse(params.id, generation, true);
+  }, [beginGeneration, loadCourse, params.id]);
+
+  useEffect(() => {
+    if (!params.id) return;
+    const generation = beginGeneration();
+    void loadCourse(params.id, generation, true);
+    return () => {
+      if (isCurrentGeneration(generation)) beginGeneration();
+    };
+  }, [beginGeneration, isCurrentGeneration, loadCourse, params.id]);
+
+  const handleDocumentRetry = useCallback(async () => {
     if (!course || retrying) return;
+    const generation = beginGeneration();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     setRetrying(true);
     setRetryError(null);
     try {
-      const retry = await apiRetryDocument(course.course_id);
-      setCourse((current) =>
-        current
-          ? {
-              ...current,
-              status: retry.status,
-              progress: retry.progress,
-              error: undefined,
-              error_code: undefined,
-              can_retry: false,
-              recommended_action: undefined,
-              job_id: retry.job_id,
-            }
-          : current
-      );
-      handleRefetch();
-    } catch (err) {
-      if (!isAbortError(err)) setRetryError(errorMessage(err));
+      await apiRetryDocument(course.course_id, { signal: controller.signal });
+      if (!isCurrentGeneration(generation)) return;
+      void loadCourse(course.course_id, generation, true);
+    } catch (error) {
+      if (isCurrentGeneration(generation) && !isAbortError(error)) {
+        setRetryError(asError(error, "Không thể thử lại tài liệu.").message);
+      }
     } finally {
-      setRetrying(false);
+      if (requestAbortRef.current === controller) requestAbortRef.current = null;
+      if (isCurrentGeneration(generation)) setRetrying(false);
     }
-  };
+  }, [beginGeneration, course, isCurrentGeneration, loadCourse, retrying]);
 
   if (loading) {
     return (
@@ -181,15 +203,22 @@ function DashboardContent() {
     );
   }
 
-  if (error) {
+  if (pageError) {
+    const isNetworkError = pageError instanceof ApiNetworkError;
+    const isMissingCourse = pageError instanceof ApiRequestError && pageError.status === 404;
+    const title = isNetworkError
+      ? "Không thể kết nối đến máy chủ"
+      : isMissingCourse
+        ? "Không tìm thấy khóa học"
+        : "Không thể tải khóa học";
     return (
       <div className={cn(CONTAINER_NARROW, "py-16 text-center")}>
         <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
         <h2 className="text-xl font-semibold text-foreground">
-          Không tìm thấy khóa học
+          {title}
         </h2>
         <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-          {error}
+          {pageError.message}
         </p>
         <div className="mt-6 flex items-center justify-center gap-3">
           <Button
@@ -201,7 +230,7 @@ function DashboardContent() {
           </Button>
           <Button variant="outline" onClick={handleRefetch}>
             <RefreshCw className="mr-2 h-4 w-4" />
-            Thử lại
+            {isNetworkError ? "Thử kết nối lại" : "Thử lại"}
           </Button>
         </div>
       </div>
@@ -233,7 +262,12 @@ function DashboardContent() {
   const failureMessage = isNetworkUnavailable
     ? NETWORK_UNAVAILABLE_MESSAGE
     : course.error || "Xử lý tài liệu thất bại.";
-  const canRetryDocument = Boolean(course.can_retry || isNetworkUnavailable);
+  const recommendedAction = normalizeDocumentRecommendedAction(course.recommended_action);
+  const canRetryDocument = Boolean(
+    isNetworkUnavailable ||
+      (course.can_retry &&
+        (recommendedAction === "restore_provider_quota" || recommendedAction === "retry_later"))
+  );
   const displayTitle =
     course.name ||
     course.filenames?.[0] ||
@@ -289,37 +323,53 @@ function DashboardContent() {
       </header>
 
       {status === "error" ? (
-        <Card className="border-error/30 bg-error/5 shadow-[var(--shadow-xs)]">
-          <CardHeader>
-            <AlertCircle className="mb-2 h-8 w-8 text-error" />
-            <CardTitle className="text-xl text-error">Không thể xử lý tài liệu</CardTitle>
-            <CardDescription>{failureMessage}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {course.recommended_action === "restore_provider_quota" ? (
-              <p className="text-sm text-muted-foreground">
-                Tệp đã tải lên vẫn được giữ nguyên. Quản trị viên cần khôi phục dung lượng AI trước khi bạn thử lại.
-              </p>
-            ) : canRetryDocument ? (
-              <p className="text-sm text-muted-foreground">
-                Tệp đã tải lên vẫn được giữ nguyên và có thể được lập chỉ mục lại.
-              </p>
-            ) : null}
-            {retryError && <p role="alert" className="text-sm text-error">{retryError}</p>}
-          </CardContent>
-          {canRetryDocument && (
-            <CardFooter className="justify-end">
-              <Button onClick={handleDocumentRetry} disabled={retrying}>
-                {retrying ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-                {retrying ? "Đang thử lại" : "Thử lập chỉ mục lại"}
-              </Button>
-            </CardFooter>
-          )}
-        </Card>
+        <ErrorState
+          className="my-0"
+          title="Không thể xử lý tài liệu"
+          description={
+            <>
+              <span>{failureMessage}</span>
+              {recommendedAction === "restore_provider_quota" && (
+                <span className="mt-2 block">
+                  Tệp đã tải lên vẫn được giữ nguyên. Quản trị viên cần khôi phục dung lượng AI trước khi bạn thử lại.
+                </span>
+              )}
+              {recommendedAction === "retry_later" && (
+                <span className="mt-2 block">
+                  Tệp đã tải lên vẫn được giữ nguyên và có thể được lập chỉ mục lại sau ít phút.
+                </span>
+              )}
+              {recommendedAction === "upload_clearer_pdf" && (
+                <span className="mt-2 block">
+                  Thử lại cùng tệp này sẽ không giúp. Hãy tải tệp rõ hơn hoặc thay tệp nguồn.
+                </span>
+              )}
+              {retryError && <span role="alert" className="mt-2 block text-error">{retryError}</span>}
+            </>
+          }
+          onAction={
+            recommendedAction === "upload_clearer_pdf"
+              ? () => router.push(`/courses/create?replace=${encodeURIComponent(course.course_id)}`)
+              : canRetryDocument
+                ? handleDocumentRetry
+                : undefined
+          }
+          actionLabel={
+            recommendedAction === "upload_clearer_pdf"
+              ? "Tải tệp thay thế"
+              : retrying
+                ? "Đang thử lại"
+                : "Thử lập chỉ mục lại"
+          }
+          actionDisabled={retrying}
+          actionIcon={
+            recommendedAction === "upload_clearer_pdf"
+              ? <FileUp className="h-4 w-4" />
+              : retrying
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4" />
+          }
+        />
       ) : (
       <Tabs defaultValue="book" className="w-full">
         <TabsList

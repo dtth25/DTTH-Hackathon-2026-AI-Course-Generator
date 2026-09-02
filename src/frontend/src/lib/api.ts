@@ -23,15 +23,47 @@ import type {
 /** Thrown by apiFetch on any non-2xx response. Carries the raw `detail` payload
  * (string or structured object, e.g. `{code, message}`) so callers can branch on
  * it instead of parsing `.message` back out. */
+export type ApiErrorCode =
+  | "UNKNOWN_ERROR"
+  | "FORBIDDEN"
+  | "SOURCE_FILE_MISSING"
+  | "DOCUMENT_RETRY_NOT_ALLOWED"
+  | "DOCUMENT_RETRY_UNAVAILABLE"
+  | "DOCUMENT_SCHEDULING_FAILED"
+  | "email_not_verified"
+  | "version_cap_reached";
+
+const SAFE_HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
+  FORBIDDEN: "Bạn không có quyền truy cập tài nguyên này.",
+  SOURCE_FILE_MISSING: "Không tìm thấy tệp nguồn đã tải lên.",
+  DOCUMENT_RETRY_NOT_ALLOWED: "Tài liệu chưa ở trạng thái có thể thử lại.",
+  DOCUMENT_RETRY_UNAVAILABLE: "Không thể bắt đầu thử lại tài liệu.",
+  DOCUMENT_SCHEDULING_FAILED: "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
+  email_not_verified: "Email chưa được xác thực. Vui lòng xác thực ngay.",
+};
+
+const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
+  "SOURCE_FILE_MISSING",
+  "DOCUMENT_RETRY_NOT_ALLOWED",
+  "DOCUMENT_RETRY_UNAVAILABLE",
+  "DOCUMENT_SCHEDULING_FAILED",
+  "email_not_verified",
+  "version_cap_reached",
+]);
+
+/** A typed HTTP failure. `detail` is retained only for programmatic branching;
+ * `.message` is always an allowlisted public message or a stable fallback. */
 export class ApiRequestError extends Error {
   status: number;
   detail: unknown;
+  code: ApiErrorCode;
 
-  constructor(message: string, status: number, detail?: unknown) {
+  constructor(message: string, status: number, detail?: unknown, code: ApiErrorCode = "UNKNOWN_ERROR") {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -55,6 +87,20 @@ function isAbortError(error: unknown): boolean {
     "name" in error &&
     (error as { name?: unknown }).name === "AbortError"
   );
+}
+
+function safeHttpErrorCode(detail: unknown, status: number): ApiErrorCode {
+  if (detail && typeof detail === "object" && "code" in detail) {
+    const code = (detail as { code?: unknown }).code;
+    if (typeof code === "string" && SAFE_HTTP_ERROR_CODES.has(code as ApiErrorCode)) {
+      return code as ApiErrorCode;
+    }
+  }
+  return status === 403 ? "FORBIDDEN" : "UNKNOWN_ERROR";
+}
+
+function safeHttpErrorMessage(code: ApiErrorCode): string {
+  return SAFE_HTTP_ERROR_MESSAGES[code] ?? "Đã xảy ra lỗi. Vui lòng thử lại.";
 }
 
 // Base URL for the FastAPI backend. Prefer the documented public env vars;
@@ -112,27 +158,16 @@ export async function apiFetch<T>(
     throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
   }
 
-  // Login's 403 carries a structured {code, message} detail (e.g. unverified email) that
-  // callers need to branch on — don't collapse it into the generic permission message below.
-  if (response.status === 403 && path !== "/api/auth/login") {
-    throw new Error("Bạn không có quyền truy cập tài nguyên này.");
-  }
-
   if (!response.ok) {
-    let message = "Đã xảy ra lỗi. Vui lòng thử lại.";
     let detail: unknown;
     try {
       const errorBody = await response.json();
       detail = errorBody.detail;
-      if (detail && typeof detail === "object" && "message" in detail) {
-        message = String((detail as { message: unknown }).message);
-      } else if (typeof detail === "string") {
-        message = detail;
-      }
     } catch {
-      // Use default message
+      // The stable fallback deliberately avoids rendering arbitrary HTTP payloads.
     }
-    throw new ApiRequestError(message, response.status, detail);
+    const code = safeHttpErrorCode(detail, response.status);
+    throw new ApiRequestError(safeHttpErrorMessage(code), response.status, detail, code);
   }
 
   if (response.status === 204) {
@@ -230,15 +265,16 @@ export async function apiGetCourses(): Promise<CoursesResponse> {
 }
 
 export async function apiGetCourseStatus(
-  courseId: string
+  courseId: string,
+  init?: RequestInit
 ): Promise<CourseStatusResponse> {
-  return apiFetch<CourseStatusResponse>(`/api/course/${courseId}/status`);
+  return apiFetch<CourseStatusResponse>(`/api/course/${encodeURIComponent(courseId)}/status`, init);
 }
 
-export function apiRetryDocument(courseId: string): Promise<DocumentRetryResponse> {
+export function apiRetryDocument(courseId: string, init?: RequestInit): Promise<DocumentRetryResponse> {
   return apiFetch<DocumentRetryResponse>(
     `/api/documents/${encodeURIComponent(courseId)}/retry`,
-    { method: "POST" }
+    { ...init, method: "POST" }
   );
 }
 
@@ -326,9 +362,10 @@ export async function apiUploadFiles(
 // ============================================================
 
 export async function apiGetStudyPack(
-  courseId: string
+  courseId: string,
+  init?: RequestInit
 ): Promise<StudyPackResponse> {
-  return apiFetch<StudyPackResponse>(`/api/course/${courseId}/study-pack`);
+  return apiFetch<StudyPackResponse>(`/api/course/${encodeURIComponent(courseId)}/study-pack`, init);
 }
 
 // ============================================================

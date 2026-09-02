@@ -58,6 +58,44 @@ describe("apiFetch network errors", () => {
     );
   });
 
+  it("never promotes an arbitrary backend detail into the public error message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Failed to fetch" }), { status: 500 })
+      )
+    );
+
+    await expect(apiGetCourseStatus("course-1")).rejects.toMatchObject({
+      name: "ApiRequestError",
+      status: 500,
+      detail: "Failed to fetch",
+      message: "Đã xảy ra lỗi. Vui lòng thử lại.",
+    });
+  });
+
+  it("uses the safe Vietnamese message mapped for an allowlisted retry code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: "DOCUMENT_RETRY_NOT_ALLOWED",
+              message: "arbitrary backend text must not be displayed",
+            },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } }
+        )
+      )
+    );
+
+    await expect(apiRetryDocument("course-1")).rejects.toMatchObject({
+      code: "DOCUMENT_RETRY_NOT_ALLOWED",
+      message: "Tài liệu chưa ở trạng thái có thể thử lại.",
+    });
+  });
+
   it("rethrows AbortError without converting it to a visible network failure", async () => {
     const abort = new DOMException("The operation was aborted.", "AbortError");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abort));

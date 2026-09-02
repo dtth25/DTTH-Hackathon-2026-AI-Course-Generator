@@ -81,7 +81,7 @@ export interface CourseStatusResponse {
   failure_stage?: string;
   error_code?: DocumentFailureCode | "NETWORK_UNAVAILABLE" | string;
   can_retry?: boolean;
-  recommended_action?: "restore_provider_quota" | "retry_later" | string;
+  recommended_action?: DocumentRecommendedAction | null;
   job_id?: string;
 }
 
@@ -95,6 +95,24 @@ export type DocumentFailureCode =
   | "OPENROUTER_TIMEOUT"
   | "DOCUMENT_TEXT_EXTRACTION_FAILED"
   | "OPENROUTER_REQUEST_FAILED";
+
+export const DOCUMENT_RECOMMENDED_ACTIONS = [
+  "restore_provider_quota",
+  "retry_later",
+  "upload_clearer_pdf",
+] as const;
+
+export type DocumentRecommendedAction =
+  (typeof DOCUMENT_RECOMMENDED_ACTIONS)[number];
+
+export function normalizeDocumentRecommendedAction(
+  value: unknown
+): DocumentRecommendedAction | null {
+  return typeof value === "string" &&
+    (DOCUMENT_RECOMMENDED_ACTIONS as readonly string[]).includes(value)
+    ? (value as DocumentRecommendedAction)
+    : null;
+}
 
 export interface DocumentRetryResponse {
   document_id: string;

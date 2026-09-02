@@ -117,7 +117,11 @@ async function expectLandingSemantics(page: Page, isDesktop: boolean): Promise<v
     await expect
       .poll(() =>
         image.evaluate(
-          (element) => element.complete && element.naturalWidth > 0 && element.naturalHeight > 0
+          (element) =>
+            element instanceof HTMLImageElement &&
+            element.complete &&
+            element.naturalWidth > 0 &&
+            element.naturalHeight > 0
         )
       )
       .toBe(true);
@@ -292,6 +296,11 @@ test("document retry recovers quota-paused indexing without upload navigation", 
   await page.route("**/api/course/retry-course/study-pack", (route) =>
     route.fulfill({ json: { ...DEMO_STUDY_PACK, course_id: "retry-course" } })
   );
+  for (const artifact of ["book", "slide", "quiz", "vid"]) {
+    await page.route(`**/api/course/retry-course/${artifact}*`, (route) =>
+      route.fulfill({ json: { status: "ready", data: null } })
+    );
+  }
   await page.route("**/api/documents/retry-course/retry", (route) => {
     retryRequests += 1;
     return route.fulfill({
@@ -331,7 +340,7 @@ test("document retry shows a stable network recovery control after a status abor
   await expect(
     page.getByText("Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.")
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thử kết nối lại" })).toBeVisible();
   await expect(page.getByText("Failed to fetch", { exact: false })).toHaveCount(0);
   await expect(page).toHaveURL(/\/course\/network-course$/u);
 });

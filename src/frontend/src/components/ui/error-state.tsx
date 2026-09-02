@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   Card,
   CardHeader,
@@ -13,9 +14,13 @@ import { cn } from "@/lib/utils";
 
 interface ErrorStateProps {
   title: string;
-  description: string;
+  description: ReactNode;
   onRetry?: () => void;
   retryLabel?: string;
+  onAction?: () => void;
+  actionLabel?: string;
+  actionDisabled?: boolean;
+  actionIcon?: ReactNode;
   className?: string;
 }
 
@@ -24,8 +29,14 @@ export function ErrorState({
   description,
   onRetry,
   retryLabel = "Thử lại",
+  onAction,
+  actionLabel,
+  actionDisabled = false,
+  actionIcon,
   className,
 }: ErrorStateProps) {
+  const action = onAction ?? onRetry;
+  const label = actionLabel ?? retryLabel;
   return (
     <Card className={cn("my-6 border-error/30 bg-error/5 p-8 text-center", className)}>
       <CardHeader>
@@ -33,10 +44,10 @@ export function ErrorState({
         <CardTitle className="text-xl text-error">{title}</CardTitle>
         <CardDescription className="mt-1 text-sm">{description}</CardDescription>
       </CardHeader>
-      {onRetry && (
+      {action && (
         <CardFooter className="justify-center pt-2">
-          <Button onClick={onRetry} variant="outline" className="gap-2">
-            <RefreshCw className="h-4 w-4" /> {retryLabel}
+          <Button onClick={action} disabled={actionDisabled} variant="outline" className="gap-2">
+            {actionIcon ?? <RefreshCw className="h-4 w-4" />} {label}
           </Button>
         </CardFooter>
       )}
