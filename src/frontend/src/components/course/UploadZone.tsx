@@ -117,7 +117,7 @@ export function UploadZone() {
             : "Kéo thả file hoặc nhấn để chọn"}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Hỗ trợ: PDF, DOCX, TXT — Tối đa 50MB mỗi file, tối đa {MAX_FILES} file
+          Hỗ trợ PDF, DOCX, TXT. Tối đa 50MB mỗi file, tối đa {MAX_FILES} file.
         </p>
       </div>
 

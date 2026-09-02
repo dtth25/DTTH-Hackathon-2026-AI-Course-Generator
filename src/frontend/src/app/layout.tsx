@@ -1,35 +1,47 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Be_Vietnam_Pro, Newsreader } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 
-const inter = Inter({
+const bodyFont = Be_Vietnam_Pro({
   subsets: ["latin", "vietnamese"],
-  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+const displayFont = Newsreader({
+  subsets: ["latin", "vietnamese"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: {
     default: "HackaGen",
-    template: "%s — HackaGen",
+    template: "%s | HackaGen",
   },
-  description:
-    "Biến tài liệu của bạn thành bộ học liệu hoàn chỉnh với AI — tài liệu, slide, bài kiểm tra và video.",
+  description: "Tạo Study Guide, slide, quiz và video từ tài liệu của bạn.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="vi" className={inter.variable} suppressHydrationWarning>
+    <html
+      lang="vi"
+      className={`${bodyFont.variable} ${displayFont.variable}`}
+      suppressHydrationWarning
+    >
       <body className="min-h-screen flex flex-col bg-background text-foreground font-sans antialiased">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <Header />

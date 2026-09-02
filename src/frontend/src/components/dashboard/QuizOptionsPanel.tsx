@@ -1,6 +1,6 @@
 "use client";
 
-import { HelpCircle, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { HelpCircle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +107,7 @@ export function QuizOptionsPanel({
         </div>
       ) : (
         <Button type="submit" size="lg" className="w-full gap-2 font-semibold">
-          {submitLabel === "Tạo trắc nghiệm" ? <Sparkles className="h-5 w-5" /> : <HelpCircle className="h-5 w-5" />}
+          <HelpCircle className="h-5 w-5" />
           {submitLabel}
         </Button>
       )}

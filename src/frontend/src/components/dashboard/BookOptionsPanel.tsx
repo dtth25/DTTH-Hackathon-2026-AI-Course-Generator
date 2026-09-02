@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { BookOpen, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -91,7 +91,7 @@ export function BookOptionsPanel({
         </div>
       ) : (
         <Button type="submit" size="lg" className="w-full gap-2 font-semibold">
-          {submitLabel === "Tạo sách ôn tập" ? <Sparkles className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
+          <BookOpen className="h-5 w-5" />
           {submitLabel}
         </Button>
       )}

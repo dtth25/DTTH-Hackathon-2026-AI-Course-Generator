@@ -29,7 +29,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "mx-auto flex flex-col items-center justify-center gap-6 py-10 text-center transition-all animate-in fade-in-50",
+        "mx-auto flex flex-col items-center justify-center gap-4 py-10 text-center transition-all animate-in fade-in-50",
         expandable && isExpanded ? "max-w-5xl" : "max-w-2xl",
         className
       )}
@@ -46,11 +46,9 @@ export function EmptyState({
           </Button>
         </div>
       )}
-      <div className="rounded-2xl bg-primary/10 p-6 text-primary">
-        <Icon className="h-12 w-12" />
-      </div>
+      <Icon className="h-9 w-9 text-primary" aria-hidden="true" />
       <div className="space-y-2">
-        <h3 className="flex flex-wrap items-center justify-center gap-2 text-2xl font-semibold text-foreground">
+        <h3 className="font-display flex flex-wrap items-center justify-center gap-2 text-2xl font-semibold text-foreground">
           {title}
           {badge && (
             <span className="rounded-full border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">

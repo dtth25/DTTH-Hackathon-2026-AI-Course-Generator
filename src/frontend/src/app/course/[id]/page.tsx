@@ -190,9 +190,12 @@ function DashboardContent() {
     `Khóa học ${course.course_id.slice(0, 8)}`;
 
   return (
-    <div className={cn(CONTAINER_NARROW, "py-8 sm:py-12")}>
+    <div
+      data-visual-state="course-workspace"
+      className={cn(CONTAINER_NARROW, "py-8 sm:py-12")}
+    >
       {/* Course Header */}
-      <div className="mb-8">
+      <header className="mb-8 border-b pb-6">
         <Button
           variant="ghost"
           size="sm"
@@ -203,18 +206,25 @@ function DashboardContent() {
           Khóa học của tôi
         </Button>
 
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
+            <h1 className="font-display text-3xl font-semibold text-foreground sm:text-4xl">
               {displayTitle}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               {course.filenames && course.filenames.length > 0 && (
                 <span className="flex items-center gap-1">
                   <FileText className="h-3.5 w-3.5" />
-                  {course.filenames.length} file
+                  {course.filenames.length} tệp nguồn
                 </span>
               )}
+              <Badge
+                variant="outline"
+                className={`gap-1 ${cfg.className}`}
+              >
+                {cfg.icon}
+                {cfg.label}
+              </Badge>
               {course.quality_score !== undefined && course.quality_score > 0 ? (
                 <QualityScoreBadge score={course.quality_score} />
               ) : studyPack?.study_pack?.grounding?.quality_score ? (
@@ -224,34 +234,34 @@ function DashboardContent() {
               ) : null}
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className={`shrink-0 gap-1 ${cfg.className}`}
-          >
-            {cfg.icon}
-            {cfg.label}
-          </Badge>
         </div>
-      </div>
+      </header>
 
       {/* Tabs */}
       <Tabs defaultValue="book" className="w-full">
-        <TabsList className="w-full justify-start flex-wrap h-auto gap-1 p-1 bg-muted/60">
-          <TabsTrigger value="book" className="gap-1.5">
+        <TabsList
+          variant="line"
+          aria-label="Loại học liệu"
+          className="h-auto w-full justify-start gap-1 overflow-x-auto border-y py-2"
+        >
+          <TabsTrigger value="book" className="flex-none gap-1.5">
             <BookOpen className="h-4 w-4" /> Study Guide
           </TabsTrigger>
-          <TabsTrigger value="slide" className="gap-1.5">
+          <TabsTrigger value="slide" className="flex-none gap-1.5">
             <Presentation className="h-4 w-4" /> Slide
           </TabsTrigger>
-          <TabsTrigger value="quiz" className="gap-1.5">
+          <TabsTrigger value="quiz" className="flex-none gap-1.5">
             <HelpCircle className="h-4 w-4" /> Quiz
           </TabsTrigger>
-          <TabsTrigger value="vid" className="gap-1.5">
+          <TabsTrigger value="vid" className="flex-none gap-1.5">
             <Video className="h-4 w-4" /> Video
           </TabsTrigger>
         </TabsList>
 
-        <div className="mt-6 rounded-xl border bg-card p-6 min-h-[400px]">
+        <section
+          aria-label="Học liệu của khóa học"
+          className="mt-6 min-h-[400px] border-t-[3px] border-[var(--accent-strong)] px-0 py-6 sm:px-4 sm:py-8"
+        >
           <TabsContent value="book" className="mt-0">
             <BookTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
@@ -264,7 +274,7 @@ function DashboardContent() {
           <TabsContent value="vid" className="mt-0">
             <VidTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
-        </div>
+        </section>
       </Tabs>
     </div>
   );

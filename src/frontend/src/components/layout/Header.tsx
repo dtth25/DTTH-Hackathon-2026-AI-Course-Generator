@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, X, BookOpen, LogOut, Plus, UserRound } from "lucide-react";
+import { Menu, X, LogOut, Plus, UserRound } from "lucide-react";
+import { BrandMark } from "@/components/brand/BrandMark";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { isAuthenticated, removeToken } from "@/lib/auth";
@@ -41,15 +42,14 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b bg-background">
       <div className={cn(CONTAINER_WIDE, "flex h-16 items-center justify-between")}>
         <Link
           href="/"
-          className="flex items-center gap-2 font-bold text-lg text-foreground hover:opacity-80 transition-opacity"
+          className="flex items-center gap-2 text-foreground transition-opacity hover:opacity-80"
         >
-          <BookOpen className="h-6 w-6 text-primary" />
-          <span className="hidden sm:inline">HackaGen</span>
-          <span className="sm:hidden">HackaGen</span>
+          <BrandMark className="text-primary" />
+          <span className="font-display text-lg font-semibold">HackaGen</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-2">
@@ -119,9 +119,12 @@ export function Header() {
         <div className="flex items-center gap-1 md:hidden">
           <ThemeToggle />
           <button
+            type="button"
             className="p-2 rounded-md hover:bg-accent"
             onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Toggle menu"
+            aria-label={mobileOpen ? "Đóng trình đơn" : "Mở trình đơn"}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-navigation"
           >
             {mobileOpen ? (
               <X className="h-5 w-5" />
@@ -133,7 +136,11 @@ export function Header() {
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t bg-background px-4 py-3 space-y-2">
+        <nav
+          id="mobile-navigation"
+          aria-label="Điều hướng di động"
+          className="md:hidden border-t bg-background px-4 py-3 space-y-2"
+        >
           {authed ? (
             <>
               <Link
@@ -182,7 +189,7 @@ export function Header() {
               </Link>
             </>
           )}
-        </div>
+        </nav>
       )}
     </header>
   );

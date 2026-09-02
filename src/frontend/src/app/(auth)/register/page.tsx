@@ -68,7 +68,7 @@ export default function RegisterPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground">Tạo tài khoản</h1>
         <p className="mt-2 text-muted-foreground">
-          Đăng ký để bắt đầu tạo khóa học với AI
+          Tạo tài khoản để mở không gian học đầu tiên.
         </p>
       </div>
 

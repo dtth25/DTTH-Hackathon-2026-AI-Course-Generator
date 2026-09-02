@@ -34,6 +34,7 @@ import {
 import { apiDeleteCourse, apiRenameCourse } from "@/lib/api";
 import type { CourseListItem } from "@/lib/types";
 import { normalizeCourseStatus } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface CourseCardProps {
   course: CourseListItem;
@@ -89,6 +90,7 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
     course.name || course.filenames?.[0] || `Khóa học ${course.course_id.slice(0, 6)}`;
   const exactTime = course.created_at ? formatExactTime(course.created_at) : "";
   const timeAgo = course.created_at ? formatTimeAgo(course.created_at) : "";
+  const fileCount = course.file_count ?? course.filenames?.length ?? 0;
 
   const openRename = () => {
     setRenameValue(displayName);
@@ -111,36 +113,38 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
   };
 
   return (
-    <Card className="flex flex-col transition-shadow hover:shadow-[var(--shadow-md)]">
+    <Card
+      data-course-document
+      className={cn(
+        "self-start border-t-[3px] shadow-none",
+        status === "ready"
+          ? "border-t-[var(--accent-strong)]"
+          : "border-t-border"
+      )}
+    >
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base font-semibold leading-tight line-clamp-2">
-            {displayName}
-          </CardTitle>
-          <Badge
-            variant={cfg.variant}
-            className={`shrink-0 gap-1 ${cfg.className}`}
-          >
-            {cfg.icon}
-            {cfg.label}
-          </Badge>
-        </div>
+        <CardTitle className="font-display line-clamp-2 text-lg font-semibold leading-tight">
+          {displayName}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 pb-3">
+        <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--accent-strong)]" />
+          {fileCount} tệp nguồn
+        </p>
         {course.filenames && course.filenames.length > 0 && (
           <div className="space-y-1">
-            {course.filenames.slice(0, 3).map((f) => (
+            {course.filenames.slice(0, 2).map((f) => (
               <p
                 key={f}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground"
+                className="truncate text-sm text-muted-foreground"
               >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{f}</span>
+                {f}
               </p>
             ))}
-            {course.filenames.length > 3 && (
+            {course.filenames.length > 2 && (
               <p className="text-xs text-muted-foreground">
-                +{course.filenames.length - 3} file khác
+                +{course.filenames.length - 2} tệp khác
               </p>
             )}
           </div>
@@ -151,11 +155,20 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
             <span className="line-clamp-2">{course.error}</span>
           </p>
         )}
-        {timeAgo && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Tạo lúc {exactTime} · {timeAgo}
-          </p>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
+          <Badge
+            variant={cfg.variant}
+            className={`gap-1 ${cfg.className}`}
+          >
+            {cfg.icon}
+            {cfg.label}
+          </Badge>
+          {timeAgo && (
+            <span title={exactTime}>
+              {exactTime} · {timeAgo}
+            </span>
+          )}
+        </div>
       </CardContent>
       <CardFooter className="gap-2 pt-0">
         {status === "processing" ? (
@@ -223,6 +236,8 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
               <Button
                 variant="ghost"
                 size="sm"
+                aria-label="Xóa khóa học"
+                title="Xóa khóa học"
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
               />
             }

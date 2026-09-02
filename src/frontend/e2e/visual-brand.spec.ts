@@ -1,0 +1,268 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+
+import { DEMO_COURSE_LIST } from "./fixtures/demo-data";
+import { installVisualDemoRoutes, primeVisualAuth } from "./fixtures/visual-app";
+
+const LANDING_VIEWPORTS = [
+  { name: "mobile", width: 390, height: 844 },
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "desktop", width: 1440, height: 1000 },
+] as const;
+
+const PRODUCT_VIEWPORTS = [
+  { name: "desktop", width: 1440, height: 1000 },
+  { name: "mobile", width: 390, height: 844 },
+] as const;
+
+type VisualTheme = "light" | "dark";
+
+const VISUAL_COPYRIGHT_YEAR = "2024";
+
+async function setVisualTheme(page: Page, theme: VisualTheme): Promise<void> {
+  await page.addInitScript((persistedTheme) => {
+    localStorage.setItem("theme", persistedTheme);
+  }, theme);
+}
+
+async function prepareAuthenticatedPage(
+  page: Page,
+  theme: VisualTheme = "light"
+): Promise<void> {
+  await setVisualTheme(page, theme);
+  await primeVisualAuth(page);
+  await installVisualDemoRoutes(page);
+}
+
+async function waitForVisualAssets(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all(
+      Array.from(document.images).map(async (image) => {
+        if (!image.complete) {
+          await new Promise<void>((resolve) => {
+            image.addEventListener("load", () => resolve(), { once: true });
+            image.addEventListener("error", () => resolve(), { once: true });
+          });
+        }
+        await image.decode().catch(() => undefined);
+      })
+    );
+  });
+}
+
+async function normalizeDynamicVisualContent(page: Page): Promise<void> {
+  const footerCopyright = page
+    .locator("footer p")
+    .filter({ hasText: /^©\s+\d{4}\s+HackaGen$/u });
+  await expect(footerCopyright).toHaveCount(1);
+  await footerCopyright.evaluate(
+    (element, fixedYear) => {
+      element.textContent = `© ${fixedYear} HackaGen`;
+    },
+    VISUAL_COPYRIGHT_YEAR
+  );
+}
+
+async function expectNoHighImpactA11yViolations(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page }).analyze();
+  const highImpactViolations = results.violations
+    .filter((item) => ["serious", "critical"].includes(item.impact ?? ""))
+    .map((item) => ({
+      id: item.id,
+      impact: item.impact,
+      targets: item.nodes.flatMap((node) => node.target.map(String)),
+    }));
+  expect(highImpactViolations).toEqual([]);
+}
+
+async function expectNoInventedQualityMetric(page: Page): Promise<void> {
+  await expect(page.getByText(/(?:Chất lượng|Cần rà soát|Bản nháp).*\/100/u)).toHaveCount(0);
+}
+
+async function expectVisualSnapshot(page: Page, name: string): Promise<void> {
+  await normalizeDynamicVisualContent(page);
+  await waitForVisualAssets(page);
+  await expect(page).toHaveScreenshot(`${name}.png`, {
+    fullPage: true,
+    animations: "disabled",
+    caret: "hide",
+  });
+  await expectNoHighImpactA11yViolations(page);
+}
+
+async function expectLandingSemantics(page: Page, isDesktop: boolean): Promise<void> {
+  const heading = page.getByRole("heading", { level: 1 });
+  await expect(heading).toBeVisible();
+
+  if (isDesktop) {
+    await expect
+      .poll(() =>
+        heading.evaluate((element) => ["left", "start"].includes(getComputedStyle(element).textAlign))
+      )
+      .toBe(true);
+  }
+
+  const evidence = page.locator("#evidence");
+  const finalAction = page.locator("#start");
+  const evidenceImages = evidence.locator("img");
+  const landingImages = page.locator("main img");
+  await evidence.scrollIntoViewIfNeeded();
+  await expect(evidenceImages).toHaveCount(2);
+  await expect(landingImages).toHaveCount(3);
+
+  for (const image of await landingImages.all()) {
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute("alt", /\S/u);
+    await expect
+      .poll(() =>
+        image.evaluate(
+          (element) => element.complete && element.naturalWidth > 0 && element.naturalHeight > 0
+        )
+      )
+      .toBe(true);
+  }
+
+  const evidenceBox = await evidence.boundingBox();
+  const finalActionBox = await finalAction.boundingBox();
+  expect(evidenceBox).not.toBeNull();
+  expect(finalActionBox).not.toBeNull();
+  expect(evidenceBox!.y + evidenceBox!.height).toBeLessThanOrEqual(finalActionBox!.y);
+
+  await expect(
+    page.locator(
+      'main [id*="testimonial" i], main [class*="testimonial" i], main [aria-label*="testimonial" i]'
+    )
+  ).toHaveCount(0);
+  await expect(page.locator('main [class*="gradient"], main [class*="blur"]')).toHaveCount(0);
+
+  const semanticOrder = await page.evaluate(() => {
+    const header = document.querySelector("header");
+    const title = document.querySelector("#landing-title");
+    const process = document.querySelector("#process");
+    const evidenceRegion = document.querySelector("#evidence");
+    const finalRegion = document.querySelector("#start");
+    const nodes = [header, title, process, evidenceRegion, finalRegion];
+    if (nodes.some((node) => node === null)) return false;
+
+    return nodes.slice(0, -1).every((node, index) =>
+      Boolean(node!.compareDocumentPosition(nodes[index + 1]!) & Node.DOCUMENT_POSITION_FOLLOWING)
+    );
+  });
+  expect(semanticOrder).toBe(true);
+
+  const visibleFocusables = page.locator(
+    'a:visible, button:visible, input:visible, select:visible, textarea:visible, [tabindex]:visible:not([tabindex="-1"])'
+  );
+  const focusRegions = await visibleFocusables.evaluateAll((elements) =>
+    elements.map((element) => {
+      if (element.closest("header")) return "header";
+      if (element.closest("#workspace")) return "intro";
+      if (element.closest("#start")) return "final";
+      return "other";
+    })
+  );
+  const firstIntro = focusRegions.indexOf("intro");
+  const firstFinal = focusRegions.indexOf("final");
+  expect(firstIntro).toBeGreaterThan(0);
+  expect(focusRegions.slice(0, firstIntro).every((region) => region === "header")).toBe(true);
+  expect(firstFinal).toBeGreaterThan(firstIntro);
+  expect(focusRegions.lastIndexOf("intro")).toBeLessThan(firstFinal);
+
+  await page.evaluate(() => scrollTo(0, 0));
+}
+
+for (const viewport of LANDING_VIEWPORTS) {
+  test(`landing ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await setVisualTheme(page, "light");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await expectLandingSemantics(page, viewport.name === "desktop");
+    await expectVisualSnapshot(page, `landing-${viewport.name}-light`);
+  });
+}
+
+for (const viewport of PRODUCT_VIEWPORTS) {
+  test(`populated courses ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await prepareAuthenticatedPage(page);
+    await page.route("**/api/courses/all", (route) =>
+      route.fulfill({
+        json: {
+          ...DEMO_COURSE_LIST,
+          courses: DEMO_COURSE_LIST.courses.map((course) => ({
+            ...course,
+            created_at: undefined,
+          })),
+        },
+      })
+    );
+    await page.goto("/courses");
+    await expect(page.locator('[data-visual-state="courses-populated"]')).toBeVisible();
+    await expectVisualSnapshot(page, `courses-populated-${viewport.name}-light`);
+  });
+
+  test(`course Book workspace ${viewport.name}`, async ({ page }) => {
+    const theme: VisualTheme = viewport.name === "desktop" ? "dark" : "light";
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await prepareAuthenticatedPage(page, theme);
+    await page.goto("/course/demo-course");
+    const workspace = page.locator('[data-visual-state="course-workspace"]');
+    await expect(workspace).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Nhập môn sinh thái đô thị" })
+    ).toBeVisible();
+    await expectNoInventedQualityMetric(page);
+    await expectVisualSnapshot(page, `course-book-${viewport.name}-${theme}`);
+  });
+
+  test(`queued video progress ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await prepareAuthenticatedPage(page);
+    await page.goto("/course/demo-course");
+    await expect(page.locator('[data-visual-state="course-workspace"]')).toBeVisible();
+    await page.getByRole("tab", { name: "Video" }).click();
+    await expect(page.getByText("Đang dựng video (64%)…")).toBeVisible();
+    await expectNoInventedQualityMetric(page);
+    await expectVisualSnapshot(page, `video-progress-${viewport.name}-light`);
+  });
+
+  test(`ingestion error ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await prepareAuthenticatedPage(page);
+    await page.route("**/api/courses/all", (route) =>
+      route.fulfill({
+        json: {
+          courses: [
+            {
+              course_id: "demo-course-error",
+              name: "Tài liệu cần kiểm tra lại",
+              status: "error",
+              filenames: ["tai-lieu-minh-hoa.pdf"],
+              file_count: 1,
+              error: "Không đọc được cấu trúc của tệp nguồn.",
+            },
+          ],
+          total: 1,
+        },
+      })
+    );
+    await page.goto("/courses");
+    await expect(page.getByText("Không đọc được cấu trúc của tệp nguồn.")).toBeVisible();
+    await expectVisualSnapshot(page, `ingestion-error-${viewport.name}-light`);
+  });
+}
+
+test("dark authentication form", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setVisualTheme(page, "dark");
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { level: 1, name: "Đăng nhập" })).toBeVisible();
+  await expectVisualSnapshot(page, "auth-login-desktop-dark");
+});

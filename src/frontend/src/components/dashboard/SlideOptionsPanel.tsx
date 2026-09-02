@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, Presentation, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -91,7 +91,7 @@ export function SlideOptionsPanel({
         </div>
       ) : (
         <Button type="submit" size="lg" className="gap-2 font-semibold">
-          <Sparkles className="h-5 w-5" /> {submitLabel}
+          <Presentation className="h-5 w-5" /> {submitLabel}
         </Button>
       )}
     </form>

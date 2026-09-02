@@ -269,11 +269,17 @@ uv run pytest tests
 
 Frontend:
 
-```bash
+```powershell
 cd src/frontend
+npm run audit:brand
+npm run capture:product
+npm run test:visual
+npm test -- --run
 npm run lint
 npm run build
 ```
+
+`npm run capture:product` chỉ cập nhật ảnh trong `src/frontend/public/product` sau khi fixture đã được kiểm tra để không chứa tên, email, tên tệp hoặc nội dung tài liệu thật. Mở và xem lại cả ba ảnh sau mỗi lần capture. Chỉ cập nhật visual baselines sau một thay đổi thiết kế có chủ đích, đã được duyệt; không dùng update snapshot để che một regression ngoài ý muốn.
 
 Manual smoke trước demo:
 

@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { Film, Loader2, MonitorPlay, RefreshCw, Smartphone, Sparkles, Video } from "lucide-react";
+import { Film, Loader2, MonitorPlay, RefreshCw, Smartphone, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -131,7 +131,7 @@ export function VidOptionsPanel({
         </div>
       ) : (
         <Button type="submit" size="lg" className="w-full gap-2 font-semibold">
-          {submitLabel === "Tạo video bài giảng" ? <Sparkles className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+          <Video className="h-5 w-5" />
           {submitLabel}
         </Button>
       )}

@@ -24,6 +24,26 @@ const course: CourseListItem = {
   created_at: "2026-07-01T10:00:00",
 };
 
+const readyCourse: CourseListItem = {
+  ...course,
+  filenames: ["de-cuong.pdf", "ghi-chu.txt"],
+  file_count: 2,
+};
+
+describe("CourseCard document treatment", () => {
+  it("renders a course as a document object without promotional hover lift", () => {
+    const { container } = render(<CourseCard course={readyCourse} />);
+
+    expect(container.firstChild).toHaveAttribute("data-course-document");
+    expect(container.innerHTML).not.toContain("-translate-y");
+    expect(container.innerHTML).not.toMatch(/hover:shadow-/);
+    expect(screen.getByText("2 tệp nguồn")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Xóa khóa học" })
+    ).toBeInTheDocument();
+  });
+});
+
 describe("CourseCard delete", () => {
   beforeEach(() => {
     vi.mocked(apiDeleteCourse).mockReset();
@@ -36,13 +56,9 @@ describe("CourseCard delete", () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(<CourseCard course={course} onDeleted={onDeleted} />);
 
-    // Trash button is the only icon-only button with no `title` (rename's has one, and
-    // every button's base classes contain the substring "destructive" via aria-invalid
-    // styles, so that alone isn't a reliable discriminator).
-    const buttons = screen.getAllByRole("button");
-    const trashButton = buttons.find((b) => !b.textContent?.trim() && !b.title);
-    expect(trashButton).toBeTruthy();
-    await user.click(trashButton!);
+    await user.click(
+      screen.getByRole("button", { name: "Xóa khóa học" })
+    );
 
     const confirmButton = await screen.findByRole("button", { name: "Xóa" });
     await user.click(confirmButton);
@@ -58,9 +74,9 @@ describe("CourseCard delete", () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(<CourseCard course={course} onDeleted={onDeleted} />);
 
-    const buttons = screen.getAllByRole("button");
-    const trashButton = buttons.find((b) => !b.textContent?.trim() && !b.title);
-    await user.click(trashButton!);
+    await user.click(
+      screen.getByRole("button", { name: "Xóa khóa học" })
+    );
 
     const confirmButton = await screen.findByRole("button", { name: "Xóa" });
     await user.click(confirmButton);

@@ -20,8 +20,9 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-# NOTE: no public/ dir exists in this repo today — if one is added later, also add:
-#   COPY --from=builder /app/public ./public
-# or static assets will 404 in production (dev server serves public/ automatically, standalone doesn't).
+# Next standalone output excludes public assets, so copy them explicitly into the
+# runtime image. Without this, landing screenshots return 404 in Docker even though
+# they work under `next dev`.
+COPY --from=builder /app/public ./public
 EXPOSE 3000
 CMD ["node", "server.js"]

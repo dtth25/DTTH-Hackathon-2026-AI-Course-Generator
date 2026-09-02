@@ -32,21 +32,20 @@ export function VersionSwitcher({ versions, activeVersion, viewedVersion, onSwit
   };
 
   return (
-    <div className="flex max-w-full items-center gap-1 border-b border-border/60" role="tablist" aria-label="Phiên bản học liệu">
+    <div className="flex max-w-full items-center gap-1 border-b border-border/60" role="group" aria-label="Phiên bản học liệu">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {versions.map((version) => {
         const selected = version.version_id === viewedVersion;
         return (
           <div key={version.version_id} className="relative flex shrink-0 items-center">
           {editingVersion === version.version_id ? (
-            <div className={cn("flex shrink-0 items-center gap-1 border border-transparent px-3 py-2 text-xs font-semibold", selected ? "-mb-px border-border/60 border-b-card bg-card text-foreground" : "text-muted-foreground")} role="tab" aria-selected={selected}>
+            <div className={cn("flex shrink-0 items-center gap-1 border border-transparent px-3 py-2 text-xs font-semibold", selected ? "-mb-px border-border/60 border-b-card bg-card text-foreground" : "text-muted-foreground")}>
               <input autoFocus value={editingLabel} maxLength={40} aria-label="Tên phiên bản" onChange={(event) => setEditingLabel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") saveRename(); if (event.key === "Escape") setEditingVersion(null); }} className="w-28 bg-transparent text-xs outline-none" />
             </div>
           ) : (
             <button
               type="button"
-              role="tab"
-              aria-selected={selected}
+              aria-pressed={selected}
               title={version.created_at ? `Tạo lúc ${new Date(version.created_at).toLocaleString("vi-VN")}` : version.label}
               onClick={() => onSwitch(version.version_id)}
               className={cn(

@@ -84,10 +84,19 @@ function CoursesContent() {
   }, [courses]);
 
   return (
-    <div className={cn(CONTAINER_WIDE, "py-8 sm:py-12")}>
+    <div
+      data-visual-state={
+        !loading && !error
+          ? courses.length === 0
+            ? "courses-empty"
+            : "courses-populated"
+          : undefined
+      }
+      className={cn(CONTAINER_WIDE, "py-8 sm:py-12")}
+    >
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
+          <h1 className="font-display text-3xl font-semibold text-foreground sm:text-4xl">
             Khóa học của tôi
           </h1>
           <p className="mt-1 text-muted-foreground">
@@ -101,9 +110,13 @@ function CoursesContent() {
       </div>
 
       {loading && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          role="status"
+          aria-label="Đang tải khóa học"
+          className="grid items-start gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {[1, 2, 3].map((i) => (
-            <div key={i} className="rounded-xl border p-6 space-y-3">
+            <div key={i} className="space-y-3 border-y border-t-[3px] p-6">
               <Skeleton className="h-5 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
               <Skeleton className="h-4 w-1/3" />
@@ -117,13 +130,13 @@ function CoursesContent() {
       )}
 
       {!loading && error && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <div className="max-w-xl border-t-[3px] border-destructive py-8">
+          <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
           <h3 className="text-lg font-semibold text-foreground">
-            Đã xảy ra lỗi
+            Không tải được danh sách khóa học
           </h3>
-          <p className="mt-2 text-muted-foreground max-w-md">{error}</p>
-          <Button variant="outline" className="mt-6" onClick={fetchCourses}>
+          <p className="mt-2 max-w-md text-muted-foreground">{error}</p>
+          <Button className="mt-6" onClick={fetchCourses}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Thử lại
           </Button>
@@ -131,15 +144,13 @@ function CoursesContent() {
       )}
 
       {!loading && !error && courses.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="rounded-2xl bg-muted p-6 mb-6">
-            <FolderOpen className="h-12 w-12 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-semibold text-foreground">
+        <div className="max-w-xl border-t-[3px] border-[var(--accent-strong)] py-10">
+          <FolderOpen className="mb-5 h-9 w-9 text-primary" />
+          <h3 className="font-display text-2xl font-semibold text-foreground">
             Chưa có khóa học nào
           </h3>
           <p className="mt-2 text-muted-foreground max-w-md">
-            Tải lên tài liệu để AI tạo bộ học liệu hoàn chỉnh cho bạn.
+            Tải tệp đầu tiên để mở một không gian học mới.
           </p>
           <Link
             href="/courses/create"
@@ -152,7 +163,7 @@ function CoursesContent() {
       )}
 
       {!loading && !error && courses.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid items-start gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((course) => (
             <CourseCard
               key={course.course_id}

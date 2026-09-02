@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { usePollingArtifact } from "@/hooks/usePollingArtifact";
 import {
   HelpCircle,
-  Sparkles,
   RefreshCw,
   CheckCircle2,
   XCircle,
@@ -324,7 +323,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
             </h2>
             <p className="text-sm text-muted-foreground">
               {passed
-                ? `Xuất sắc! Bạn đạt ${percent}% — đã nắm vững nội dung.`
+                ? `Bạn trả lời đúng ${percent}%. Xem lại phần giải thích trước khi làm lượt tiếp theo.`
                 : `Bạn đạt ${percent}%. Hãy xem lại phần giải thích và luyện lại nhé.`}
             </p>
           </div>
@@ -352,7 +351,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
               }}
               className="gap-1.5"
             >
-              <Sparkles className="h-4 w-4" /> Tạo bộ mới
+              <ListChecks className="h-4 w-4" /> Tạo bộ mới
             </Button>
             <a
               href={getDownloadQuizKeyUrl(courseId, viewedVersion)}
