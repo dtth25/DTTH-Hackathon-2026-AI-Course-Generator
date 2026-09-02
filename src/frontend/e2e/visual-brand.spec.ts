@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-import { DEMO_COURSE_LIST } from "./fixtures/demo-data";
+import { DEMO_COURSE_LIST, DEMO_STUDY_PACK } from "./fixtures/demo-data";
 import { installVisualDemoRoutes, primeVisualAuth } from "./fixtures/visual-app";
 
 const LANDING_VIEWPORTS = [
@@ -265,4 +265,73 @@ test("dark authentication form", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { level: 1, name: "Đăng nhập" })).toBeVisible();
   await expectVisualSnapshot(page, "auth-login-desktop-dark");
+});
+
+test("document retry recovers quota-paused indexing without upload navigation", async ({ page }) => {
+  await primeVisualAuth(page);
+  let recoveryStatusRequests = 0;
+  let retryRequests = 0;
+
+  await page.route("**/api/course/retry-course/status", (route) => {
+    const status =
+      retryRequests === 0
+        ? {
+            course_id: "retry-course",
+            name: "Tài liệu đã tải lên",
+            status: "paused_due_to_quota",
+            error: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
+            error_code: "OPENROUTER_KEY_LIMIT_EXCEEDED",
+            can_retry: true,
+            recommended_action: "restore_provider_quota",
+          }
+        : recoveryStatusRequests++ === 0
+          ? { course_id: "retry-course", status: "processing", progress: 0 }
+          : { course_id: "retry-course", status: "ready", progress: 100 };
+    return route.fulfill({ json: status });
+  });
+  await page.route("**/api/course/retry-course/study-pack", (route) =>
+    route.fulfill({ json: { ...DEMO_STUDY_PACK, course_id: "retry-course" } })
+  );
+  await page.route("**/api/documents/retry-course/retry", (route) => {
+    retryRequests += 1;
+    return route.fulfill({
+      status: 202,
+      json: {
+        document_id: "retry-course",
+        status: "processing",
+        stage: "extracting",
+        progress: 0,
+        message: "Đang thử lại xử lý tài liệu từ tệp đã tải lên.",
+        job_id: "retry-job",
+      },
+    });
+  });
+  await page.goto("/course/retry-course");
+  await expect(page.getByText("Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.")).toBeVisible();
+  await expect(page.getByText(/(?:quét|scan).*PDF|PDF.*(?:quét|scan|hỏng)/iu)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Thử lập chỉ mục lại" }).click();
+  await expect(page.getByText("Sẵn sàng")).toBeVisible({ timeout: 7_000 });
+  await expect(page.getByRole("tab", { name: "Study Guide" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Slide" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Quiz" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Video" })).toBeVisible();
+  expect(retryRequests).toBe(1);
+  await expect(page).toHaveURL(/\/course\/retry-course$/u);
+});
+
+test("document retry shows a stable network recovery control after a status abort", async ({ page }) => {
+  await primeVisualAuth(page);
+  await page.route("**/api/course/network-course/status", (route) => route.abort("failed"));
+  await page.route("**/api/course/network-course/study-pack", (route) =>
+    route.fulfill({ json: { ...DEMO_STUDY_PACK, course_id: "network-course" } })
+  );
+
+  await page.goto("/course/network-course");
+  await expect(
+    page.getByText("Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.")
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expect(page.getByText("Failed to fetch", { exact: false })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/course\/network-course$/u);
 });

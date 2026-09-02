@@ -17,6 +17,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Tabs,
   TabsContent,
   TabsList,
@@ -29,7 +37,12 @@ import { SlideTab } from "@/components/dashboard/SlideTab";
 import { QuizTab } from "@/components/dashboard/QuizTab";
 import { VidTab } from "@/components/dashboard/VidTab";
 import { QualityScoreBadge } from "@/components/ui/QualityScoreBadge";
-import { apiGetCourseStatus, apiGetStudyPack } from "@/lib/api";
+import {
+  apiGetCourseStatus,
+  apiGetStudyPack,
+  apiRetryDocument,
+  NETWORK_UNAVAILABLE_MESSAGE,
+} from "@/lib/api";
 import type { CourseStatusResponse, StudyPackResponse } from "@/lib/types";
 import { normalizeCourseStatus } from "@/lib/types";
 import { CONTAINER_NARROW } from "@/lib/layout";
@@ -51,6 +64,18 @@ function DashboardContent() {
   const [studyPack, setStudyPack] = useState<StudyPackResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const shouldPollCourseStatus = course?.status === "processing";
+
+  const isAbortError = (err: unknown) =>
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name?: unknown }).name === "AbortError";
+
+  const errorMessage = (err: unknown) =>
+    err instanceof Error ? err.message : "Không thể tải thông tin khóa học.";
 
   const handleRefetch = () => {
     if (!params.id) return;
@@ -64,13 +89,9 @@ function DashboardContent() {
         setCourse(statusData);
         setStudyPack(packData);
       })
-      .catch((err) =>
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Không thể tải thông tin khóa học."
-        )
-      )
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      })
       .finally(() => setLoading(false));
   };
 
@@ -89,12 +110,8 @@ function DashboardContent() {
         }
       })
       .catch((err) => {
-        if (active) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Không thể tải thông tin khóa học."
-          );
+        if (active && !isAbortError(err)) {
+          setError(errorMessage(err));
           setLoading(false);
         }
       });
@@ -104,9 +121,7 @@ function DashboardContent() {
   }, [params.id]);
 
   useEffect(() => {
-    if (!params.id || !course) return;
-    const isProcessing = course.status === "processing";
-    if (!isProcessing) return;
+    if (!params.id || !shouldPollCourseStatus) return;
 
     const interval = setInterval(async () => {
       try {
@@ -117,12 +132,43 @@ function DashboardContent() {
         setCourse(statusData);
         setStudyPack(packData);
       } catch (err) {
-        console.error("Polling error:", err);
+        if (!isAbortError(err)) {
+          // The next polling interval handles transient network failures without
+          // replacing a usable course workspace with an error screen.
+        }
       }
     }, DEFAULT_POLL_MS);
 
     return () => clearInterval(interval);
-  }, [course, params.id]);
+  }, [params.id, shouldPollCourseStatus]);
+
+  const handleDocumentRetry = async () => {
+    if (!course || retrying) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const retry = await apiRetryDocument(course.course_id);
+      setCourse((current) =>
+        current
+          ? {
+              ...current,
+              status: retry.status,
+              progress: retry.progress,
+              error: undefined,
+              error_code: undefined,
+              can_retry: false,
+              recommended_action: undefined,
+              job_id: retry.job_id,
+            }
+          : current
+      );
+      handleRefetch();
+    } catch (err) {
+      if (!isAbortError(err)) setRetryError(errorMessage(err));
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -183,6 +229,11 @@ function DashboardContent() {
     },
   };
   const cfg = statusConfig[status];
+  const isNetworkUnavailable = course.error_code === "NETWORK_UNAVAILABLE";
+  const failureMessage = isNetworkUnavailable
+    ? NETWORK_UNAVAILABLE_MESSAGE
+    : course.error || "Xử lý tài liệu thất bại.";
+  const canRetryDocument = Boolean(course.can_retry || isNetworkUnavailable);
   const displayTitle =
     course.name ||
     course.filenames?.[0] ||
@@ -237,7 +288,39 @@ function DashboardContent() {
         </div>
       </header>
 
-      {/* Tabs */}
+      {status === "error" ? (
+        <Card className="border-error/30 bg-error/5 shadow-[var(--shadow-xs)]">
+          <CardHeader>
+            <AlertCircle className="mb-2 h-8 w-8 text-error" />
+            <CardTitle className="text-xl text-error">Không thể xử lý tài liệu</CardTitle>
+            <CardDescription>{failureMessage}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {course.recommended_action === "restore_provider_quota" ? (
+              <p className="text-sm text-muted-foreground">
+                Tệp đã tải lên vẫn được giữ nguyên. Quản trị viên cần khôi phục dung lượng AI trước khi bạn thử lại.
+              </p>
+            ) : canRetryDocument ? (
+              <p className="text-sm text-muted-foreground">
+                Tệp đã tải lên vẫn được giữ nguyên và có thể được lập chỉ mục lại.
+              </p>
+            ) : null}
+            {retryError && <p role="alert" className="text-sm text-error">{retryError}</p>}
+          </CardContent>
+          {canRetryDocument && (
+            <CardFooter className="justify-end">
+              <Button onClick={handleDocumentRetry} disabled={retrying}>
+                {retrying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                {retrying ? "Đang thử lại" : "Thử lập chỉ mục lại"}
+              </Button>
+            </CardFooter>
+          )}
+        </Card>
+      ) : (
       <Tabs defaultValue="book" className="w-full">
         <TabsList
           variant="line"
@@ -276,6 +359,7 @@ function DashboardContent() {
           </TabsContent>
         </section>
       </Tabs>
+      )}
     </div>
   );
 }

@@ -16,6 +16,8 @@ import type {
   SlideArtifactStatus,
   QuizArtifactStatus,
   VidArtifactStatus,
+  DocumentRetryResponse,
+  JobResponse,
 } from "@/lib/types";
 
 /** Thrown by apiFetch on any non-2xx response. Carries the raw `detail` payload
@@ -31,6 +33,28 @@ export class ApiRequestError extends Error {
     this.status = status;
     this.detail = detail;
   }
+}
+
+export const NETWORK_UNAVAILABLE_MESSAGE =
+  "Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.";
+
+/** A stable, public error for browser/proxy/CORS failures before an HTTP response exists. */
+export class ApiNetworkError extends Error {
+  readonly code = "NETWORK_UNAVAILABLE" as const;
+
+  constructor() {
+    super(NETWORK_UNAVAILABLE_MESSAGE);
+    this.name = "ApiNetworkError";
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
 }
 
 // Base URL for the FastAPI backend. Prefer the documented public env vars;
@@ -51,7 +75,7 @@ const API_BASE =
 // Core Fetch Wrapper
 // ============================================================
 
-async function apiFetch<T>(
+export async function apiFetch<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
@@ -64,11 +88,18 @@ async function apiFetch<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers,
-    credentials: "include",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof TypeError) throw new ApiNetworkError();
+    throw error;
+  }
 
   const isAuthEndpoint =
     path === "/api/auth/login" || path === "/api/auth/register";
@@ -202,6 +233,17 @@ export async function apiGetCourseStatus(
   courseId: string
 ): Promise<CourseStatusResponse> {
   return apiFetch<CourseStatusResponse>(`/api/course/${courseId}/status`);
+}
+
+export function apiRetryDocument(courseId: string): Promise<DocumentRetryResponse> {
+  return apiFetch<DocumentRetryResponse>(
+    `/api/documents/${encodeURIComponent(courseId)}/retry`,
+    { method: "POST" }
+  );
+}
+
+export function apiGetJob(jobId: string): Promise<JobResponse> {
+  return apiFetch<JobResponse>(`/api/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function apiDeleteCourse(courseId: string): Promise<void> {

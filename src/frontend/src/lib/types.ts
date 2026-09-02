@@ -78,6 +78,46 @@ export interface CourseStatusResponse {
   has_quiz?: boolean;
   has_vid?: boolean;
   error?: string;
+  failure_stage?: string;
+  error_code?: DocumentFailureCode | "NETWORK_UNAVAILABLE" | string;
+  can_retry?: boolean;
+  recommended_action?: "restore_provider_quota" | "retry_later" | string;
+  job_id?: string;
+}
+
+export type DocumentFailureCode =
+  | "OPENROUTER_KEY_INVALID"
+  | "OPENROUTER_KEY_LIMIT_EXCEEDED"
+  | "OPENROUTER_CREDITS_EXHAUSTED"
+  | "OPENROUTER_ACCESS_DENIED"
+  | "OPENROUTER_RATE_LIMITED"
+  | "OPENROUTER_UNAVAILABLE"
+  | "OPENROUTER_TIMEOUT"
+  | "DOCUMENT_TEXT_EXTRACTION_FAILED"
+  | "OPENROUTER_REQUEST_FAILED";
+
+export interface DocumentRetryResponse {
+  document_id: string;
+  status: "processing";
+  stage: "extracting";
+  progress: number;
+  message: string;
+  job_id: string;
+}
+
+export interface JobResponse {
+  id: string;
+  document_id: string;
+  user_id?: string | null;
+  job_type: string;
+  status: string;
+  progress: number;
+  message: string;
+  error?: string | null;
+  error_code?: DocumentFailureCode | string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
 }
 
 // ============================================================
@@ -287,6 +327,6 @@ export type CourseStatus = "processing" | "ready" | "error";
 export function normalizeCourseStatus(status: string): CourseStatus {
   const s = status.toLowerCase();
   if (s === "ready" || s === "completed") return "ready";
-  if (s === "error" || s === "failed") return "error";
+  if (s === "error" || s === "failed" || s === "paused_due_to_quota") return "error";
   return "processing";
 }
