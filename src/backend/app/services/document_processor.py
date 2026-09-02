@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple
 from pydantic import BaseModel
 import fitz  # PyMuPDF
 import docx
+from sqlalchemy import select, update
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
 from app.services.job_service import mark_job_running
@@ -266,68 +267,110 @@ class DocumentProcessor:
         db_session_factory=None,
         **course_fields,
     ) -> bool:
-        """Commit terminal course and job states together, or return false if superseded."""
+        """Atomically publish a terminal state only for the still-live attempt.
+
+        The job claim occurs before the course update. Course deletion cancels active
+        jobs before marking the course deleted, so either deletion wins (this claim
+        updates zero rows) or this transaction wins and deletion follows it. This works
+        with SQLite's writer lock and databases that lock the updated job row.
+        """
         if db_session_factory is None:
             from app.services.database import SessionLocal as factory
         else:
             factory = db_session_factory
         now = datetime.utcnow()
+        course_values = {
+            "status": status,
+            "stage": stage,
+            "progress": progress,
+            "embedding_status": embedding_status,
+            "error_message": course_fields.get("error_message"),
+            "failure_stage": course_fields.get("failure_stage"),
+            "error_code": course_fields.get("error_code"),
+            "can_retry": course_fields.get("can_retry", False),
+            "recommended_action": course_fields.get("recommended_action"),
+            "technical_error": course_fields.get("technical_error"),
+        }
+        if course_fields.get("chunk_count", 0) > 0:
+            course_values["chunk_count"] = course_fields["chunk_count"]
+        if course_fields.get("quality_score", 0) > 0:
+            course_values["quality_score"] = course_fields["quality_score"]
+        if course_fields.get("name"):
+            course_values["name"] = course_fields["name"]
+        if course_fields.get("embedding_provider"):
+            course_values["embedding_provider"] = course_fields["embedding_provider"]
         with factory() as db:
-            course = (
-                db.query(Course)
-                .filter(
-                    Course.id == course_id,
-                    Course.is_deleted == False,  # noqa: E712
-                    Course.status == "processing",
-                )
-                .first()
-            )
-            if course is None:
-                return False
-            job = None
-            if job_id:
-                job = db.get(ProcessingJob, job_id)
-                latest_job = (
-                    db.query(ProcessingJob)
-                    .filter(
-                        ProcessingJob.course_id == course_id,
-                        ProcessingJob.job_type == "preprocess",
+            try:
+                if job_id:
+                    active_course_owner = (
+                        select(Course.user_id)
+                        .where(
+                            Course.id == course_id,
+                            Course.is_deleted == False,  # noqa: E712
+                            Course.status == "processing",
+                        )
+                        .scalar_subquery()
                     )
-                    .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
-                    .first()
+                    latest_job_id = (
+                        select(ProcessingJob.id)
+                        .where(
+                            ProcessingJob.course_id == course_id,
+                            ProcessingJob.job_type == "preprocess",
+                        )
+                        .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
+                        .limit(1)
+                        .scalar_subquery()
+                    )
+                    job_values = {
+                        "status": JobStatus.SUCCEEDED.value if job_succeeded else JobStatus.FAILED.value,
+                        "updated_at": now,
+                        "completed_at": now,
+                    }
+                    if job_succeeded:
+                        job_values.update(
+                            progress=100,
+                            message="Hoàn thành",
+                            error_code=None,
+                            error_message=None,
+                        )
+                    else:
+                        job_values.update(
+                            error_code=job_error_code,
+                            error_message=job_message,
+                            message=job_message or "Xử lý tài liệu thất bại.",
+                        )
+                    job_result = db.execute(
+                        update(ProcessingJob)
+                        .where(
+                            ProcessingJob.id == job_id,
+                            ProcessingJob.course_id == course_id,
+                            ProcessingJob.status == JobStatus.RUNNING.value,
+                            ProcessingJob.user_id == active_course_owner,
+                            ProcessingJob.id == latest_job_id,
+                        )
+                        .values(**job_values)
+                    )
+                    if job_result.rowcount != 1:
+                        db.rollback()
+                        return False
+                course_result = db.execute(
+                    update(Course)
+                    .where(
+                        Course.id == course_id,
+                        Course.is_deleted == False,  # noqa: E712
+                        Course.status == "processing",
+                    )
+                    .values(**course_values)
                 )
-                if (
-                    job is None
-                    or job.status != JobStatus.RUNNING.value
-                    or job.user_id != course.user_id
-                    or latest_job is None
-                    or latest_job.id != job.id
-                ):
+                if course_result.rowcount != 1:
+                    db.rollback()
                     return False
-            self._apply_course_state(
-                course,
-                status=status,
-                stage=stage,
-                progress=progress,
-                embedding_status=embedding_status,
-                **course_fields,
-            )
-            if job:
-                if job_succeeded:
-                    job.status = "succeeded"
-                    job.progress = 100
-                    job.message = "Hoàn thành"
-                    job.error_code = None
-                    job.error_message = None
-                else:
-                    job.status = "failed"
-                    job.error_code = job_error_code
-                    job.error_message = job_message
-                    job.message = job_message or "Xử lý tài liệu thất bại."
-                job.updated_at = now
-                job.completed_at = now
-            db.commit()
-            return True
+                db.commit()
+                return True
+            except Exception:
+                db.rollback()
+                logger.exception("Terminal processing-state persistence failed for course %s", course_id)
+                return False
 
     @staticmethod
     def _attempt_is_active(course_id: str, job_id: Optional[str], db_session_factory) -> bool:

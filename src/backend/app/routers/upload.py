@@ -20,6 +20,17 @@ from app.services.job_service import create_job
 router = APIRouter(prefix="/api", tags=["upload"])
 
 MAX_FILES_PER_UPLOAD = 5
+MAX_FILENAME_COMPONENT_BYTES = 255
+# Leave room for the 10-digit timestamp and separating underscore used on disk.
+MAX_ORIGINAL_FILENAME_BYTES = MAX_FILENAME_COMPONENT_BYTES - 11
+
+
+def _upload_failure() -> HTTPException:
+    """Return one safe error for filesystem/database setup failures."""
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail={"code": "DOCUMENT_UPLOAD_UNAVAILABLE", "message": "Không thể bắt đầu xử lý tài liệu."},
+    )
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
@@ -59,7 +70,17 @@ async def upload_files(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Tên file không hợp lệ.",
             )
-        filename = os.path.basename(f.filename)
+        filename = os.path.basename(f.filename).strip()
+        if filename in {"", ".", ".."}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tên file không hợp lệ.",
+            )
+        if len(os.fsencode(filename)) > MAX_ORIGINAL_FILENAME_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tên file quá dài.",
+            )
         ext = os.path.splitext(filename)[1].lower()
         if ext not in allowed_exts:
             raise HTTPException(
@@ -86,16 +107,23 @@ async def upload_files(
 
     # Save to local filesystem
     upload_dir = os.path.join(settings.UPLOAD_DIR, course_id)
-    os.makedirs(upload_dir, exist_ok=True)
-
-    for filename, content in file_contents:
-        timestamp_prefix = int(time.time())
-        safe_filename = f"{timestamp_prefix}_{filename}"
-        file_path = os.path.join(upload_dir, safe_filename)
-        with open(file_path, "wb") as out_file:
-            out_file.write(content)
-        saved_filenames.append(filename)
-        saved_file_paths.append(file_path)
+    try:
+        os.makedirs(upload_dir, exist_ok=False)
+        for filename, content in file_contents:
+            timestamp_prefix = int(time.time())
+            safe_filename = f"{timestamp_prefix}_{filename}"
+            # Validate the final component before opening it. This protects platforms
+            # with a 255-byte component limit even if the timestamp changes width.
+            if len(os.fsencode(safe_filename)) > MAX_FILENAME_COMPONENT_BYTES:
+                raise ValueError("Stored upload filename exceeds filesystem component limit.")
+            file_path = os.path.join(upload_dir, safe_filename)
+            with open(file_path, "wb") as out_file:
+                out_file.write(content)
+            saved_filenames.append(filename)
+            saved_file_paths.append(file_path)
+    except Exception as exc:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise _upload_failure() from exc
 
     # Create Course record in database
     db_course = Course(
@@ -125,10 +153,7 @@ async def upload_files(
     except Exception as exc:
         db.rollback()
         shutil.rmtree(upload_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "DOCUMENT_UPLOAD_UNAVAILABLE", "message": "Không thể bắt đầu xử lý tài liệu."},
-        ) from exc
+        raise _upload_failure() from exc
     try:
         _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
     except Exception as exc:
@@ -136,10 +161,7 @@ async def upload_files(
             mark_inline_scheduling_failure(db, course_id, job.id)
         except Exception:
             db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"code": "DOCUMENT_UPLOAD_UNAVAILABLE", "message": "Không thể bắt đầu xử lý tài liệu."},
-            ) from exc
+            raise _upload_failure() from exc
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={

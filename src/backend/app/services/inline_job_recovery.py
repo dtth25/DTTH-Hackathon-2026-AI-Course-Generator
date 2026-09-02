@@ -1,7 +1,8 @@
-"""Recovery policy for the current single-process BackgroundTasks execution mode.
+"""Recovery policy for explicitly opted-in, single-process BackgroundTasks mode.
 
-This module is intentionally isolated: a future durable queue (for example Celery) must
-not call this reconciliation because its queued/running tasks can survive a web restart.
+There is no cross-process lease in inline mode. Operators may opt in only when one web
+process owns all inline work. A multi-process deployment must keep recovery disabled
+until the planned durable queue/lease implementation replaces this helper.
 """
 
 from datetime import datetime
@@ -14,7 +15,11 @@ INLINE_INTERRUPTED_MESSAGE = "Tác vụ xử lý trước đó bị gián đoạ
 
 
 def reconcile_interrupted_inline_preprocess_jobs(db_session_factory=None) -> int:
-    """Fail stranded inline preprocessing jobs before this process starts serving."""
+    """Terminalize stranded inline jobs before this process starts serving.
+
+    Invalid jobs are failed alone so they cannot block a retry. Only a current,
+    owner-matched attempt may also transition its live processing course to failed.
+    """
     from app.core.config import settings
 
     if (
@@ -46,6 +51,12 @@ def reconcile_interrupted_inline_preprocess_jobs(db_session_factory=None) -> int
                 .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
                 .first()
             )
+            job.status = JobStatus.FAILED.value
+            job.error_code = INLINE_INTERRUPTED_CODE
+            job.error_message = INLINE_INTERRUPTED_MESSAGE
+            job.message = INLINE_INTERRUPTED_MESSAGE
+            job.completed_at = now
+            job.updated_at = now
             if (
                 course is None
                 or course.is_deleted
@@ -55,12 +66,6 @@ def reconcile_interrupted_inline_preprocess_jobs(db_session_factory=None) -> int
                 or latest_job.id != job.id
             ):
                 continue
-            job.status = JobStatus.FAILED.value
-            job.error_code = INLINE_INTERRUPTED_CODE
-            job.error_message = INLINE_INTERRUPTED_MESSAGE
-            job.message = INLINE_INTERRUPTED_MESSAGE
-            job.completed_at = now
-            job.updated_at = now
             course.status = "failed"
             course.stage = "failed"
             course.progress = 0
