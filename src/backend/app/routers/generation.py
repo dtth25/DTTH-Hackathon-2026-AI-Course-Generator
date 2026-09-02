@@ -21,6 +21,7 @@ from app.schemas.generation import (
 )
 from app.services.generator import Generator
 from app.services.llm import LLMService
+from app.services.public_errors import public_error
 from app.services.vector_store import get_vector_store
 from app.services.versioning import (
     GenerationInFlightError,
@@ -35,6 +36,21 @@ router_generate = APIRouter(prefix="/api", tags=["generation"])
 router_docs = APIRouter(tags=["generation"])
 
 _generator_instance = None
+
+ARTIFACT_FAILURE_CODES = {
+    "book": "BOOK_GENERATION_FAILED",
+    "slides": "SLIDE_GENERATION_FAILED",
+    "quiz": "QUIZ_GENERATION_FAILED",
+    "vid": "VIDEO_GENERATION_FAILED",
+}
+
+
+def public_artifact_error(info: Dict[str, Any], artifact: str) -> tuple[Optional[str], Optional[str]]:
+    """Return only a closed code and fixed copy for failed artifact envelopes."""
+    if info.get("status") != "error":
+        return None, None
+    code, message = public_error(info.get("error_code"), ARTIFACT_FAILURE_CODES[artifact])
+    return code, message
 
 
 def get_generator() -> Generator:
@@ -119,7 +135,13 @@ def prepare_version_or_raise(generator: Generator, course_id: str, artifact: str
     except VersionCapReachedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "version_cap_reached", "versions": exc.versions}) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "INVALID_GENERATION_REQUEST",
+                "message": "Yêu cầu tạo học liệu không hợp lệ.",
+            },
+        ) from exc
 
 
 def reserve_version_or_raise(generator: Generator, course_id: str, artifact: str, options: Dict[str, Any], **kwargs) -> str:
@@ -260,7 +282,13 @@ def rename_artifact_version(
     try:
         return get_generator().rename_artifact_version(course_id, artifact, version_id, payload.get("label", ""))
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "INVALID_ARTIFACT_VERSION_NAME",
+                "message": "Tên phiên bản học liệu không hợp lệ.",
+            },
+        ) from exc
 
 
 @router_single.delete("/{course_id}/artifacts/{artifact}/versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -277,7 +305,13 @@ def delete_artifact_version(
     except GenerationInFlightError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "generation_in_flight"}) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "ARTIFACT_VERSION_NOT_FOUND",
+                "message": "Không tìm thấy phiên bản học liệu.",
+            },
+        ) from exc
 
 
 @router_single.get("/{course_id}/book", response_model=Any)
@@ -298,6 +332,7 @@ def get_book(
     version_id, active_version, versions = version_fields(generator, course_id, "book", version)
     data = generator._load_artifact_json(course_id, "book.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "book", version_id)) if version_id else None
     info = generator.get_artifact_status(course_id, "book", version_id)
+    error_code, error_message = public_artifact_error(info, "book")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
@@ -306,7 +341,8 @@ def get_book(
             ch.pop("source_chunk_ids", None)
     return {
         "status": status_val,
-        "error": info.get("error"),
+        "error": error_message,
+        "error_code": error_code,
         "progress": info.get("progress"),
         "data": data,
         "version_id": version_id,
@@ -333,6 +369,7 @@ def get_slide(
     version_id, active_version, versions = version_fields(generator, course_id, "slides", version)
     data = generator._load_artifact_json(course_id, "slides.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "slides", version_id)) if version_id else None
     info = generator.get_artifact_status(course_id, "slides", version_id)
+    error_code, error_message = public_artifact_error(info, "slides")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
@@ -341,7 +378,8 @@ def get_slide(
             sl.pop("source_chunk_ids", None)
     return {
         "status": status_val,
-        "error": info.get("error"),
+        "error": error_message,
+        "error_code": error_code,
         "progress": info.get("progress"),
         "data": data,
         "version_id": version_id,
@@ -372,12 +410,14 @@ def get_quiz(
         for q in questions:
             q.pop("source_chunk_ids", None)
     info = generator.get_artifact_status(course_id, "quiz", version_id)
+    error_code, error_message = public_artifact_error(info, "quiz")
     status_val = info.get("status") or ("ready" if questions else "empty")
     if status_val == "ready" and not questions:
         status_val = "empty"
     return {
         "status": status_val,
-        "error": info.get("error"),
+        "error": error_message,
+        "error_code": error_code,
         "progress": info.get("progress"),
         "data": questions,
         "version_id": version_id,
@@ -404,6 +444,7 @@ def get_vid(
     version_id, active_version, versions = version_fields(generator, course_id, "vid", version)
     data = generator._load_artifact_json(course_id, "vid.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "vid", version_id)) if version_id else None
     info = generator.get_artifact_status(course_id, "vid", version_id)
+    error_code, error_message = public_artifact_error(info, "vid")
     status_val = info.get("status") or ("ready" if data else "empty")
     if status_val == "ready" and data is None:
         status_val = "empty"
@@ -412,7 +453,8 @@ def get_vid(
             sc.pop("source_chunk_ids", None)
     return {
         "status": status_val,
-        "error": info.get("error"),
+        "error": error_message,
+        "error_code": error_code,
         "progress": info.get("progress"),
         "data": data,
         "version_id": version_id,

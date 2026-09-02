@@ -14,6 +14,14 @@ from app.services.database import get_db
 security_bearer = HTTPBearer(auto_error=False)
 
 
+def _unauthenticated(message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={"code": "UNAUTHENTICATED", "message": message},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
@@ -28,43 +36,23 @@ async def get_current_user(
     )
 
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Vui lòng đăng nhập để truy cập tài nguyên này.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthenticated("Vui lòng đăng nhập để truy cập tài nguyên này.")
 
     # Check if token is blacklisted (logged out)
     if cache.exists(f"blacklist:{token}"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Phiên đăng nhập đã bị hủy. Vui lòng đăng nhập lại.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthenticated("Phiên đăng nhập đã bị hủy. Vui lòng đăng nhập lại.")
 
     payload = decode_access_token(token)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Phiên đăng nhập hết hạn hoặc không hợp lệ.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthenticated("Phiên đăng nhập hết hạn hoặc không hợp lệ.")
 
     user_id: Optional[str] = payload.get("sub")
     if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Payload token không hợp lệ.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthenticated("Payload token không hợp lệ.")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tài khoản không tồn tại.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthenticated("Tài khoản không tồn tại.")
 
     if not user.is_active:
         raise HTTPException(

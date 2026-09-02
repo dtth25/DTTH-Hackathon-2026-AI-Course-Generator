@@ -837,6 +837,8 @@ class Generator:
         artifact: str,
         status: str,
         error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        technical_error: Optional[str] = None,
         progress: Optional[int] = None,
         version_id: Optional[str] = None,
         db_session_factory=None,
@@ -862,6 +864,8 @@ class Generator:
             now = datetime.utcnow().isoformat()
             current["status"] = status
             current["error"] = error
+            current["error_code"] = error_code
+            current["technical_error"] = technical_error
             if progress is not None:
                 current["progress"] = progress
             if status == "processing" and "started_at" not in current:
@@ -1088,7 +1092,13 @@ class Generator:
             self._finish_version_write(transaction, False)
             logger.error(f"Book generation failed for course {course_id}: {e}", exc_info=True)
             self._set_artifact_status(
-                course_id, "book", "error", error=str(e)[:500], db_session_factory=db_session_factory
+                course_id,
+                "book",
+                "error",
+                error=(self._NO_CONTEXT_MSG if str(e) == self._NO_CONTEXT_MSG else "Không thể tạo sách ôn tập. Vui lòng thử lại."),
+                error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "BOOK_GENERATION_FAILED"),
+                technical_error=str(e)[:1000],
+                db_session_factory=db_session_factory,
             )
             return None
 
@@ -1127,7 +1137,13 @@ class Generator:
             self._finish_version_write(transaction, False)
             logger.error(f"Slides generation failed for course {course_id}: {e}", exc_info=True)
             self._set_artifact_status(
-                course_id, "slides", "error", error=str(e)[:500], db_session_factory=db_session_factory
+                course_id,
+                "slides",
+                "error",
+                error=(self._NO_CONTEXT_MSG if str(e) == self._NO_CONTEXT_MSG else "Không thể tạo bài trình chiếu. Vui lòng thử lại."),
+                error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "SLIDE_GENERATION_FAILED"),
+                technical_error=str(e)[:1000],
+                db_session_factory=db_session_factory,
             )
             return None
 
@@ -1165,7 +1181,13 @@ class Generator:
             self._finish_version_write(transaction, False)
             logger.error(f"Quiz generation failed for course {course_id}: {e}", exc_info=True)
             self._set_artifact_status(
-                course_id, "quiz", "error", error=str(e)[:500], db_session_factory=db_session_factory
+                course_id,
+                "quiz",
+                "error",
+                error=(self._NO_CONTEXT_MSG if str(e) == self._NO_CONTEXT_MSG else "Không thể tạo bài trắc nghiệm. Vui lòng thử lại."),
+                error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "QUIZ_GENERATION_FAILED"),
+                technical_error=str(e)[:1000],
+                db_session_factory=db_session_factory,
             )
             return None
 
@@ -1232,7 +1254,13 @@ class Generator:
             self._finish_version_write(transaction, False)
             logger.error(f"Vid generation failed for course {course_id}: {e}", exc_info=True)
             self._set_artifact_status(
-                course_id, "vid", "error", error=str(e)[:500], db_session_factory=db_session_factory
+                course_id,
+                "vid",
+                "error",
+                error=(self._NO_CONTEXT_MSG if str(e) == self._NO_CONTEXT_MSG else "Không thể tạo video. Vui lòng thử lại."),
+                error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "VIDEO_GENERATION_FAILED"),
+                technical_error=str(e)[:1000],
+                db_session_factory=db_session_factory,
             )
             return None
 

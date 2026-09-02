@@ -5,6 +5,9 @@ from app.services.provider_errors import (
 )
 from app.services.vector_store import OpenRouterEmbeddingFunction
 import httpx
+import pytest
+
+from app.services.public_errors import public_error
 
 
 class FakeStatusError(Exception):
@@ -141,3 +144,22 @@ def test_embedding_503_uses_all_three_attempts(monkeypatch):
     else:
         raise AssertionError("ProviderRequestError was not raised")
     assert embeddings.calls == 3
+
+
+@pytest.mark.parametrize(
+    ("internal", "public"),
+    [
+        ("OPENROUTER_KEY_INVALID", "AI_CONFIGURATION_ERROR"),
+        ("OPENROUTER_ACCESS_DENIED", "AI_ACCESS_DENIED"),
+        ("OPENROUTER_KEY_LIMIT_EXCEEDED", "AI_QUOTA_EXHAUSTED"),
+        ("OPENROUTER_CREDITS_EXHAUSTED", "AI_QUOTA_EXHAUSTED"),
+        ("OPENROUTER_RATE_LIMITED", "AI_RATE_LIMITED"),
+        ("OPENROUTER_UNAVAILABLE", "AI_UNAVAILABLE"),
+        ("OPENROUTER_TIMEOUT", "AI_TIMEOUT"),
+        ("OPENROUTER_REQUEST_FAILED", "AI_REQUEST_FAILED"),
+    ],
+)
+def test_public_boundary_translates_every_provider_code(internal, public):
+    code, message = public_error(internal, "DOCUMENT_PROCESSING_FAILED")
+    assert code == public
+    assert "openrouter" not in f"{code} {message}".lower()

@@ -87,38 +87,46 @@ export interface CourseStatusResponse {
 }
 
 export type DocumentFailureCode =
-  | "OPENROUTER_KEY_INVALID"
-  | "OPENROUTER_KEY_LIMIT_EXCEEDED"
-  | "OPENROUTER_CREDITS_EXHAUSTED"
-  | "OPENROUTER_ACCESS_DENIED"
-  | "OPENROUTER_RATE_LIMITED"
-  | "OPENROUTER_UNAVAILABLE"
-  | "OPENROUTER_TIMEOUT"
+  | "AI_CONFIGURATION_ERROR"
+  | "AI_ACCESS_DENIED"
+  | "AI_QUOTA_EXHAUSTED"
+  | "AI_RATE_LIMITED"
+  | "AI_UNAVAILABLE"
+  | "AI_TIMEOUT"
+  | "AI_REQUEST_FAILED"
   | "DOCUMENT_TEXT_EXTRACTION_FAILED"
-  | "OPENROUTER_REQUEST_FAILED"
   | "DOCUMENT_SCHEDULING_FAILED"
   | "DOCUMENT_PROCESSING_FAILED"
   | "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
   | "DOCUMENT_PROCESSING_CANCELLED"
-  | "INLINE_PROCESSING_INTERRUPTED";
+  | "INLINE_PROCESSING_INTERRUPTED"
+  | "ARTIFACT_SOURCE_UNAVAILABLE"
+  | "BOOK_GENERATION_FAILED"
+  | "SLIDE_GENERATION_FAILED"
+  | "QUIZ_GENERATION_FAILED"
+  | "VIDEO_GENERATION_FAILED";
 
 export type CourseErrorCode = DocumentFailureCode | "NETWORK_UNAVAILABLE";
 
 const COURSE_ERROR_CODES: readonly CourseErrorCode[] = [
-  "OPENROUTER_KEY_INVALID",
-  "OPENROUTER_KEY_LIMIT_EXCEEDED",
-  "OPENROUTER_CREDITS_EXHAUSTED",
-  "OPENROUTER_ACCESS_DENIED",
-  "OPENROUTER_RATE_LIMITED",
-  "OPENROUTER_UNAVAILABLE",
-  "OPENROUTER_TIMEOUT",
+  "AI_CONFIGURATION_ERROR",
+  "AI_ACCESS_DENIED",
+  "AI_QUOTA_EXHAUSTED",
+  "AI_RATE_LIMITED",
+  "AI_UNAVAILABLE",
+  "AI_TIMEOUT",
+  "AI_REQUEST_FAILED",
   "DOCUMENT_TEXT_EXTRACTION_FAILED",
-  "OPENROUTER_REQUEST_FAILED",
   "DOCUMENT_SCHEDULING_FAILED",
   "DOCUMENT_PROCESSING_FAILED",
   "DOCUMENT_PROCESSING_PERSISTENCE_FAILED",
   "DOCUMENT_PROCESSING_CANCELLED",
   "INLINE_PROCESSING_INTERRUPTED",
+  "ARTIFACT_SOURCE_UNAVAILABLE",
+  "BOOK_GENERATION_FAILED",
+  "SLIDE_GENERATION_FAILED",
+  "QUIZ_GENERATION_FAILED",
+  "VIDEO_GENERATION_FAILED",
   "NETWORK_UNAVAILABLE",
 ];
 
@@ -131,20 +139,24 @@ export function normalizeCourseErrorCode(value: unknown): CourseErrorCode | null
 export const PUBLIC_ERROR_FALLBACK = "Xử lý tài liệu thất bại.";
 
 const PUBLIC_ERROR_MESSAGES: Readonly<Record<CourseErrorCode, string>> = {
-  OPENROUTER_KEY_INVALID: "Dịch vụ AI chưa được cấu hình hợp lệ. Vui lòng liên hệ quản trị viên.",
-  OPENROUTER_KEY_LIMIT_EXCEEDED: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
-  OPENROUTER_CREDITS_EXHAUSTED: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
-  OPENROUTER_ACCESS_DENIED: "Dịch vụ AI không có quyền thực hiện yêu cầu này.",
-  OPENROUTER_RATE_LIMITED: "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau.",
-  OPENROUTER_UNAVAILABLE: "Dịch vụ AI tạm thời không khả dụng.",
-  OPENROUTER_TIMEOUT: "Kết nối dịch vụ AI quá thời gian chờ.",
+  AI_CONFIGURATION_ERROR: "Dịch vụ AI chưa được cấu hình hợp lệ. Vui lòng liên hệ quản trị viên.",
+  AI_ACCESS_DENIED: "Dịch vụ AI không có quyền thực hiện yêu cầu này.",
+  AI_QUOTA_EXHAUSTED: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
+  AI_RATE_LIMITED: "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau.",
+  AI_UNAVAILABLE: "Dịch vụ AI tạm thời không khả dụng.",
+  AI_TIMEOUT: "Kết nối dịch vụ AI quá thời gian chờ.",
+  AI_REQUEST_FAILED: "Không thể hoàn thành yêu cầu AI. Vui lòng thử lại.",
   DOCUMENT_TEXT_EXTRACTION_FAILED: "Không thể đọc văn bản trong tệp.",
-  OPENROUTER_REQUEST_FAILED: "Không thể hoàn thành yêu cầu AI. Vui lòng thử lại.",
   DOCUMENT_SCHEDULING_FAILED: "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
   DOCUMENT_PROCESSING_FAILED: "Xử lý tài liệu thất bại.",
   DOCUMENT_PROCESSING_PERSISTENCE_FAILED: "Không thể lưu kết quả xử lý tài liệu. Vui lòng thử lại.",
   DOCUMENT_PROCESSING_CANCELLED: "Tài liệu đã bị hủy trước khi xử lý hoàn tất.",
   INLINE_PROCESSING_INTERRUPTED: "Tác vụ xử lý trước đó bị gián đoạn. Vui lòng thử lại.",
+  ARTIFACT_SOURCE_UNAVAILABLE: "Không tìm thấy nội dung tài liệu đã lập chỉ mục để tạo học liệu.",
+  BOOK_GENERATION_FAILED: "Không thể tạo sách ôn tập. Vui lòng thử lại.",
+  SLIDE_GENERATION_FAILED: "Không thể tạo bài trình chiếu. Vui lòng thử lại.",
+  QUIZ_GENERATION_FAILED: "Không thể tạo bài trắc nghiệm. Vui lòng thử lại.",
+  VIDEO_GENERATION_FAILED: "Không thể tạo video. Vui lòng thử lại.",
   NETWORK_UNAVAILABLE: "Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.",
 };
 

@@ -11,6 +11,7 @@ from app.core.config import Settings, settings
 from app.models.course import Course
 from app.models.processing_job import ProcessingJob
 from app.models.user import User
+from app.schemas.course import CourseListItem, CourseStatusResponse
 from app.services.database import SessionLocal
 from app.services.job_service import (
     create_job,
@@ -146,6 +147,59 @@ def test_job_status_is_visible_only_to_its_owner(
 
     other_response = client.get(f"/api/jobs/{job_id}", headers=other_headers)
     assert other_response.status_code == 404
+
+
+def test_course_and_job_responses_translate_internal_provider_codes(
+    client, failed_course_with_file, owner_headers
+):
+    raw = "Failed to fetch OpenRouter: upstream secret diagnostic"
+    with SessionLocal() as db:
+        course = db.get(Course, failed_course_with_file.id)
+        course.status = "paused_due_to_quota"
+        course.error_code = "OPENROUTER_CREDITS_EXHAUSTED"
+        course.error_message = raw
+        course.technical_error = raw
+        job = ProcessingJob(
+            course_id=course.id,
+            user_id=course.user_id,
+            job_type="preprocess",
+            status="failed",
+            progress=25,
+            message=raw,
+            error_code="OPENROUTER_RATE_LIMITED",
+            error_message=raw,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+
+    responses = [
+        client.get("/api/courses/all", headers=owner_headers),
+        client.get(f"/api/course/{failed_course_with_file.id}/status", headers=owner_headers),
+        client.get(f"/api/jobs/{job_id}", headers=owner_headers),
+    ]
+    for response in responses:
+        assert response.status_code == 200
+        assert "openrouter" not in response.text.lower()
+        assert "failed to fetch" not in response.text.lower()
+
+    list_item = responses[0].json()["courses"][0]
+    assert list_item["error_code"] == "AI_QUOTA_EXHAUSTED"
+    assert responses[1].json()["error_code"] == "AI_QUOTA_EXHAUSTED"
+    job_body = responses[2].json()
+    assert job_body["error_code"] == "AI_RATE_LIMITED"
+    assert job_body["message"] == "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau."
+
+
+def test_course_response_schemas_keep_one_public_error_code_field():
+    item = CourseListItem(
+        course_id="course-1",
+        status="failed",
+        error_code="AI_UNAVAILABLE",
+    )
+    assert item.model_dump()["error_code"] == "AI_UNAVAILABLE"
+    assert list(CourseStatusResponse.model_fields).count("error_code") == 1
 
 
 def test_admin_retry_keeps_job_owned_by_course_owner(

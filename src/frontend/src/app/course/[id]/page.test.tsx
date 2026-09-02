@@ -115,7 +115,7 @@ describe("course workspace", () => {
       course_id: "course-1",
       status: "paused_due_to_quota",
       error: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
-      error_code: "OPENROUTER_KEY_LIMIT_EXCEEDED",
+      error_code: "AI_QUOTA_EXHAUSTED",
       can_retry: true,
       recommended_action: "restore_provider_quota",
     });
@@ -200,7 +200,7 @@ describe("course workspace", () => {
       course_id: "course-1",
       status: "error",
       error: "Không thể dùng khóa AI hiện tại.",
-      error_code: "OPENROUTER_ACCESS_DENIED",
+      error_code: "AI_ACCESS_DENIED",
       can_retry: false,
       recommended_action: "contact_admin",
     });
@@ -356,7 +356,7 @@ describe("course workspace", () => {
         course_id: "course-1",
         status: "paused_due_to_quota",
         error: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
-        error_code: "OPENROUTER_KEY_LIMIT_EXCEEDED",
+        error_code: "AI_QUOTA_EXHAUSTED",
         can_retry: true,
         recommended_action: "restore_provider_quota",
       })

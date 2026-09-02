@@ -15,6 +15,7 @@ from app.schemas.course import DocumentRetryResponse, JobResponse
 from app.services import database
 from app.services.document_processor import get_document_processor
 from app.services.job_service import create_job
+from app.services.public_errors import public_error
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
@@ -176,6 +177,11 @@ def get_processing_job(
     if not job or (job.user_id != current_user.id and current_user.role != "admin"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tác vụ không tồn tại.")
 
+    public_code, public_message = public_error(
+        job.error_code, "DOCUMENT_PROCESSING_FAILED"
+    )
+    failed = job.status == JobStatus.FAILED.value
+
     return {
         "id": job.id,
         "document_id": job.course_id,
@@ -183,9 +189,9 @@ def get_processing_job(
         "job_type": job.job_type,
         "status": job.status,
         "progress": job.progress,
-        "message": job.message,
-        "error": job.error_message,
-        "error_code": job.error_code,
+        "message": public_message if failed else job.message,
+        "error": public_message if failed else None,
+        "error_code": public_code if failed else None,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "completed_at": job.completed_at,

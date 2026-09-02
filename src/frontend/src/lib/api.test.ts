@@ -4,7 +4,9 @@ import {
   ApiRequestError,
   apiFetch,
   apiGetCourseStatus,
+  apiGetCurrentUser,
   apiGetJob,
+  apiDeleteAccount,
   apiLogin,
   apiRetryDocument,
   apiUploadFiles,
@@ -137,6 +139,12 @@ describe("apiFetch network errors", () => {
     );
     expect(normalizePublicError("UNKNOWN_BACKEND_ERROR", "Tạo học liệu thất bại.")).toBe(
       "Tạo học liệu thất bại."
+    );
+    expect(normalizePublicError("BOOK_GENERATION_FAILED")).toBe(
+      "Không thể tạo sách ôn tập. Vui lòng thử lại."
+    );
+    expect(normalizePublicError("VIDEO_GENERATION_FAILED")).toBe(
+      "Không thể tạo video. Vui lòng thử lại."
     );
   });
 });
@@ -276,7 +284,7 @@ describe("auth error mappings", () => {
       )
     );
 
-    await expect(apiGetCourseStatus("course-1")).rejects.toMatchObject({
+    await expect(apiGetCurrentUser()).rejects.toMatchObject({
       code: "UNAUTHENTICATED",
       message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
     });
@@ -284,22 +292,39 @@ describe("auth error mappings", () => {
     expect(document.body.textContent).not.toContain("Failed to fetch");
   });
 
-  it("preserves session for credential 401s and intentional wrong-password DELETE", async () => {
-    const fetchMock = vi.fn().mockImplementation(
-      () => Promise.resolve(new Response(JSON.stringify({ detail: "Failed to fetch" }), { status: 401 }))
+  it("preserves session only for a structured wrong-password account deletion", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: { code: "wrong_password", message: "untrusted" } }),
+        { status: 401 }
+      )
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiLogin({ email: "user@example.com", password: "wrong" })).rejects.toMatchObject({
+    await expect(apiDeleteAccount("wrong")).rejects.toMatchObject({
+      code: "wrong_password",
+      message: "Mật khẩu không chính xác.",
+    });
+    expect(removeToken).not.toHaveBeenCalled();
+  });
+
+  it("clears session when account deletion fails authentication dependency", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: { code: "UNAUTHENTICATED", message: "expired dependency diagnostic" },
+          }),
+          { status: 401 }
+        )
+      )
+    );
+
+    await expect(apiDeleteAccount("password123")).rejects.toMatchObject({
       code: "UNAUTHENTICATED",
       message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
     });
-    expect(removeToken).not.toHaveBeenCalled();
-
-    await expect(apiFetch("/api/auth/me", { method: "DELETE" })).rejects.toMatchObject({
-      code: "UNAUTHENTICATED",
-    });
-    expect(removeToken).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(removeToken).toHaveBeenCalledOnce();
   });
 });

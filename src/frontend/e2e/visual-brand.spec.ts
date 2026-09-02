@@ -284,7 +284,7 @@ test("document retry recovers quota-paused indexing without upload navigation", 
             name: "Tài liệu đã tải lên",
             status: "paused_due_to_quota",
             error: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
-            error_code: "OPENROUTER_KEY_LIMIT_EXCEEDED",
+            error_code: "AI_QUOTA_EXHAUSTED",
             can_retry: true,
             recommended_action: "restore_provider_quota",
           }

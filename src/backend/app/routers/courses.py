@@ -18,6 +18,7 @@ from app.schemas.course import (
     CourseResponse,
     CourseStatusResponse,
 )
+from app.services.public_errors import public_error
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 # Map /api/course per frontend expectations
@@ -54,6 +55,9 @@ def get_user_courses(
     items = []
     for c in courses:
         filenames = c.filenames if isinstance(c.filenames, list) else []
+        error_code, error_message = public_error(
+            c.error_code, "DOCUMENT_PROCESSING_FAILED"
+        )
         items.append(
             CourseListItem(
                 course_id=c.id,
@@ -62,8 +66,8 @@ def get_user_courses(
                 filenames=filenames,
                 file_count=len(filenames),
                 created_at=c.created_at,
-                error=c.error_message,
-                error_code=c.error_code,
+                error=error_message if c.status in {"failed", "paused_due_to_quota"} else None,
+                error_code=error_code if c.status in {"failed", "paused_due_to_quota"} else None,
             )
         )
     return {"courses": items, "total": len(items)}
@@ -165,10 +169,13 @@ def get_course_status(
         .order_by(ProcessingJob.created_at.desc())
         .first()
     )
+    public_code, public_message = public_error(
+        course.error_code, "DOCUMENT_PROCESSING_FAILED"
+    )
     if course.status == "ready":
         message = "Tài liệu đã sẵn sàng."
     elif course.status in {"failed", "paused_due_to_quota"}:
-        message = course.error_message or "Xử lý tài liệu thất bại."
+        message = public_message
     else:
         message = "Đang phân tích và xử lý tài liệu..."
 
@@ -184,9 +191,9 @@ def get_course_status(
         "message": message,
         "filenames": filenames,
         "file_count": len(filenames),
-        "error": course.error_message,
+        "error": public_message if course.status in {"failed", "paused_due_to_quota"} else None,
         "failure_stage": course.failure_stage,
-        "error_code": course.error_code,
+        "error_code": public_code if course.status in {"failed", "paused_due_to_quota"} else None,
         "can_retry": course.can_retry,
         "recommended_action": course.recommended_action,
         "job_id": latest_job.id if latest_job else None,

@@ -151,7 +151,10 @@ def test_auth_logout_blacklist(client):
         "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
     assert me_after_logout.status_code == 401
-    assert "Phiên đăng nhập đã bị hủy" in me_after_logout.json()["detail"]
+    assert me_after_logout.json()["detail"] == {
+        "code": "UNAUTHENTICATED",
+        "message": "Phiên đăng nhập đã bị hủy. Vui lòng đăng nhập lại.",
+    }
 
 
 def test_delete_account_wrong_password(client):

@@ -1,5 +1,6 @@
 """Automated tests for Generation Service and AI API completion (Checkpoint 8 / Prompt 5)."""
 
+import json
 import os
 from app.models.course import Course
 from app.services.database import SessionLocal
@@ -334,7 +335,9 @@ def test_book_generator_error_propagation():
     assert not os.path.exists(os.path.join(art_dir, "book.pdf"))
     status_info = gen.get_artifact_status(course_id, "book")
     assert status_info["status"] == "error"
-    assert "boom" in status_info["error"]
+    assert status_info["error"] == "Không thể tạo sách ôn tập. Vui lòng thử lại."
+    assert status_info["error_code"] == "BOOK_GENERATION_FAILED"
+    assert "boom" in status_info["technical_error"]
 
     # Case 2: outline succeeds (fallback), but every chapter call fails -> still a hard error.
     original_chapter = llm.generate_book_chapter
@@ -349,7 +352,9 @@ def test_book_generator_error_propagation():
     assert not os.path.exists(os.path.join(art_dir, "book.pdf"))
     status_info2 = gen.get_artifact_status(course_id, "book")
     assert status_info2["status"] == "error"
-    assert "boom" in status_info2["error"]
+    assert status_info2["error"] == "Không thể tạo sách ôn tập. Vui lòng thử lại."
+    assert status_info2["error_code"] == "BOOK_GENERATION_FAILED"
+    assert "boom" in status_info2["technical_error"]
 
     vs.delete_course(course_id)
 
@@ -434,6 +439,77 @@ def test_book_api_error_status_envelope(client, monkeypatch):
     assert res_book.status_code == 200
     body = res_book.json()
     assert body["status"] == "error"
-    assert "api-boom" in body["error"]
+    assert body["error"] == "Không thể tạo sách ôn tập. Vui lòng thử lại."
+    assert body["error_code"] == "BOOK_GENERATION_FAILED"
+    assert "api-boom" not in res_book.text
+    assert "OPENROUTER" not in res_book.text.upper()
     assert body["data"] is None
+
+
+def test_all_artifact_status_apis_sanitize_legacy_raw_diagnostics(client):
+    """Successful status envelopes must never publish persisted exception text."""
+    email = "artifact-safe-status@example.com"
+    client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password123", "full_name": "Safe Status"},
+    )
+    verified = client.post(
+        "/api/auth/verify-email", json={"email": email, "code": "000000"}
+    )
+    headers = {"Authorization": f"Bearer {verified.json()['access_token']}"}
+    user_id = client.get("/api/auth/me", headers=headers).json()["id"]
+
+    raw_errors = {
+        "book": "Failed to fetch OpenRouter upstream",
+        "slides": "Failed to fetch provider response",
+        "quiz": "OpenRouter request body leaked",
+        "vid": "ffmpeg stderr: /srv/private/input.mp4",
+    }
+    with SessionLocal() as db:
+        course = Course(
+            user_id=user_id,
+            filenames=["source.txt"],
+            status="ready",
+            stage="completed",
+            progress=100,
+            embedding_status="completed",
+            metadata_json=json.dumps(
+                {
+                    "study_pack": {
+                        "artifacts": {
+                            artifact: {
+                                "status": "error",
+                                "error": raw_error,
+                                "error_code": "OPENROUTER_REQUEST_FAILED",
+                                "technical_error": raw_error,
+                            }
+                            for artifact, raw_error in raw_errors.items()
+                        }
+                    }
+                }
+            ),
+        )
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        course_id = course.id
+
+    for endpoint in ("book", "slide", "quiz", "vid"):
+        response = client.get(f"/api/course/{course_id}/{endpoint}", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error_code"] == "AI_REQUEST_FAILED"
+        assert body["error"] == "Không thể hoàn thành yêu cầu AI. Vui lòng thử lại."
+        assert "failed to fetch" not in response.text.lower()
+        assert "ffmpeg" not in response.text.lower()
+        assert "openrouter" not in response.text.lower()
+
+    renamed = client.patch(
+        f"/api/courses/{course_id}", json={"name": "Tên an toàn"}, headers=headers
+    )
+    assert renamed.status_code == 200
+    assert "metadata_json" not in renamed.json()
+    assert "technical_error" not in renamed.text
+    assert "openrouter" not in renamed.text.lower()
 

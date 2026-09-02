@@ -59,6 +59,8 @@ const SAFE_HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
 };
 
 const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
+  "UNAUTHENTICATED",
+  "FORBIDDEN",
   "SOURCE_FILE_MISSING",
   "DOCUMENT_RETRY_NOT_ALLOWED",
   "DOCUMENT_RETRY_UNAVAILABLE",
@@ -170,12 +172,12 @@ const PRESERVE_SESSION_ON_401 = new Set([
   "POST /api/auth/resend-verification",
   "POST /api/auth/forgot-password",
   "POST /api/auth/reset-password",
-  "DELETE /api/auth/me",
 ]);
 
-function preservesSessionOn401(path: string, method?: string): boolean {
+function preservesSessionOn401(path: string, method: string | undefined, code: ApiErrorCode): boolean {
   const endpoint = `${(method || "GET").toUpperCase()} ${path.split("?", 1)[0]}`;
-  return PRESERVE_SESSION_ON_401.has(endpoint);
+  return PRESERVE_SESSION_ON_401.has(endpoint) ||
+    (endpoint === "DELETE /api/auth/me" && code === "wrong_password");
 }
 
 // ============================================================
@@ -208,16 +210,15 @@ export async function apiFetch<T>(
     throw error;
   }
 
-  if (response.status === 401 && !preservesSessionOn401(path, init?.method)) {
-    removeToken();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
-    throw apiRequestErrorFromHttpResponse(response.status, await response.text());
-  }
-
   if (!response.ok) {
-    throw apiRequestErrorFromHttpResponse(response.status, await response.text());
+    const requestError = apiRequestErrorFromHttpResponse(response.status, await response.text());
+    if (response.status === 401 && !preservesSessionOn401(path, init?.method, requestError.code)) {
+      removeToken();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
+    throw requestError;
   }
 
   if (response.status === 204) {

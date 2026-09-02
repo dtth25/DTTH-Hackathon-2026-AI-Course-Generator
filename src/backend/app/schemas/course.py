@@ -22,7 +22,6 @@ class CourseResponse(BaseModel):
     embedding_status: str = "pending"
     quality_score: int = 0
     created_at: Optional[datetime] = None
-    metadata_json: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,6 +34,7 @@ class CourseListItem(BaseModel):
     file_count: int = 0
     created_at: Optional[datetime] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
 
 
 class CourseListResponse(BaseModel):
@@ -57,7 +57,6 @@ class CourseStatusResponse(BaseModel):
     error: Optional[str] = None
     error_code: Optional[str] = None
     failure_stage: Optional[str] = None
-    error_code: Optional[str] = None
     can_retry: bool = False
     recommended_action: Optional[str] = None
     job_id: Optional[str] = None
