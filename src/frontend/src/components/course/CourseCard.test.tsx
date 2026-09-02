@@ -42,6 +42,22 @@ describe("CourseCard document treatment", () => {
       screen.getByRole("button", { name: "Xóa khóa học" })
     ).toBeInTheDocument();
   });
+
+  it("sanitizes a raw failed-course envelope", () => {
+    render(
+      <CourseCard
+        course={{
+          ...course,
+          status: "error",
+          error: "Failed to fetch",
+          error_code: "UNKNOWN_BACKEND_ERROR" as never,
+        }}
+      />
+    );
+
+    expect(screen.getByText("Xử lý tài liệu thất bại.")).toBeVisible();
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
+  });
 });
 
 describe("CourseCard delete", () => {

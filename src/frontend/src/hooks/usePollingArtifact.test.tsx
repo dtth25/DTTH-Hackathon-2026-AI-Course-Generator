@@ -3,6 +3,28 @@ import { describe, expect, it, vi } from "vitest";
 import { usePollingArtifact } from "./usePollingArtifact";
 
 describe("usePollingArtifact", () => {
+  it("sanitizes a raw successful error envelope", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: "error",
+      error: "Failed to fetch",
+      error_code: "UNKNOWN_BACKEND_ERROR",
+    });
+
+    const { result } = renderHook(() =>
+      usePollingArtifact({
+        courseId: "course-1",
+        fetchFn,
+        isReady: () => false,
+        timeoutMs: 60_000,
+        timeoutMessage: "Timed out",
+        defaultErrorMessage: "Tạo học liệu thất bại.",
+      })
+    );
+
+    await waitFor(() => expect(result.current.error).toBe("Tạo học liệu thất bại."));
+    expect(result.current.error).not.toContain("Failed to fetch");
+  });
+
   it("keeps polling the generated version after the user switches views", async () => {
     const fetchFn = vi.fn(async (_courseId: string, version?: string | null) => {
       if (version === "new") {

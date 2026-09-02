@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiNetworkError,
   ApiRequestError,
+  apiFetch,
   apiGetCourseStatus,
   apiGetJob,
   apiLogin,
@@ -9,6 +10,8 @@ import {
   apiUploadFiles,
   apiVerifyEmail,
 } from "./api";
+import { removeToken } from "@/lib/auth";
+import { normalizePublicError } from "@/lib/types";
 
 vi.mock("@/lib/auth", () => ({
   getAuthHeaders: () => ({}),
@@ -69,7 +72,7 @@ describe("apiFetch network errors", () => {
       )
     );
 
-    await expect(apiGetCourseStatus("course-1")).rejects.toMatchObject({
+    await expect(apiFetch("/api/auth/me")).rejects.toMatchObject({
       name: "ApiRequestError",
       status: 500,
       detail: "Failed to fetch",
@@ -125,6 +128,15 @@ describe("apiFetch network errors", () => {
       2,
       expect.stringMatching(/\/api\/jobs\/job%2Fid%20%3F$/u),
       expect.any(Object)
+    );
+  });
+
+  it("normalizes closed status codes and falls back for unknown envelopes", () => {
+    expect(normalizePublicError("INLINE_PROCESSING_INTERRUPTED")).toBe(
+      "Tác vụ xử lý trước đó bị gián đoạn. Vui lòng thử lại."
+    );
+    expect(normalizePublicError("UNKNOWN_BACKEND_ERROR", "Tạo học liệu thất bại.")).toBe(
+      "Tạo học liệu thất bại."
     );
   });
 });
@@ -211,6 +223,7 @@ describe("apiUploadFiles progress transport", () => {
 });
 
 describe("auth error mappings", () => {
+  beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.unstubAllGlobals());
 
   it("renders known auth codes safely and never exposes server-provided text", async () => {
@@ -240,9 +253,8 @@ describe("auth error mappings", () => {
         new Response(
           JSON.stringify({
             detail: {
-              code: "otp_invalid",
+              code: "EMAIL_VERIFICATION_FAILED",
               message: "untrusted server error",
-              remaining_attempts: 2,
             },
           }),
           { status: 400, headers: { "Content-Type": "application/json" } }
@@ -251,8 +263,43 @@ describe("auth error mappings", () => {
     );
 
     await expect(apiLogin({ email: "user@example.com", password: "wrong" })).rejects.toMatchObject({
-      code: "otp_invalid",
-      message: "Mã xác thực không đúng. Còn 2 lần thử.",
+      code: "EMAIL_VERIFICATION_FAILED",
+      message: "Không thể xác thực email. Vui lòng kiểm tra email và mã rồi thử lại.",
     });
+  });
+
+  it("clears and redirects on a protected GET /api/auth/me 401", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Failed to fetch" }), { status: 401 })
+      )
+    );
+
+    await expect(apiGetCourseStatus("course-1")).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+      message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+    });
+    expect(removeToken).toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("Failed to fetch");
+  });
+
+  it("preserves session for credential 401s and intentional wrong-password DELETE", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      () => Promise.resolve(new Response(JSON.stringify({ detail: "Failed to fetch" }), { status: 401 }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiLogin({ email: "user@example.com", password: "wrong" })).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+      message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+    });
+    expect(removeToken).not.toHaveBeenCalled();
+
+    await expect(apiFetch("/api/auth/me", { method: "DELETE" })).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+    });
+    expect(removeToken).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

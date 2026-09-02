@@ -33,7 +33,7 @@ import { CreateVersionButton } from "@/components/dashboard/CreateVersionButton"
 import { VersionSwitcher } from "@/components/dashboard/VersionSwitcher";
 import { ApiRequestError, apiDeleteArtifactVersion, apiGetBook, apiGenerateBook, apiRenameArtifactVersion, getDownloadBookUrl } from "@/lib/api";
 import { usePollingArtifact } from "@/hooks/usePollingArtifact";
-import type { BookOutput } from "@/lib/types";
+import { normalizePublicError, type BookOutput } from "@/lib/types";
 
 interface BookTabProps {
   courseId: string;
@@ -90,7 +90,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
         setBook(res.data);
         setActiveIdx(-1);
       } else if (res.status === "error") {
-        setError(res.error || "Tạo sách ôn tập thất bại.");
+        setError(normalizePublicError(res.error_code, "Tạo sách ôn tập thất bại."));
       } else {
         setBook(null);
       }

@@ -55,6 +55,7 @@ class CourseStatusResponse(BaseModel):
     filenames: List[str] = []
     file_count: int = 0
     error: Optional[str] = None
+    error_code: Optional[str] = None
     failure_stage: Optional[str] = None
     error_code: Optional[str] = None
     can_retry: bool = False

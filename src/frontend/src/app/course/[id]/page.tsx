@@ -37,12 +37,12 @@ import {
   apiRetryDocument,
   ApiNetworkError,
   ApiRequestError,
-  NETWORK_UNAVAILABLE_MESSAGE,
 } from "@/lib/api";
 import type { CourseStatusResponse, StudyPackResponse } from "@/lib/types";
 import {
   normalizeCourseStatus,
   normalizeCourseErrorCode,
+  normalizePublicError,
   normalizeDocumentRecommendedAction,
 } from "@/lib/types";
 import { CONTAINER_NARROW } from "@/lib/layout";
@@ -261,12 +261,7 @@ function DashboardContent() {
   const cfg = statusConfig[status];
   const errorCode = normalizeCourseErrorCode(course.error_code);
   const isNetworkUnavailable = errorCode === "NETWORK_UNAVAILABLE";
-  const hasUnknownErrorCode = course.error_code != null && errorCode === null;
-  const failureMessage = isNetworkUnavailable
-    ? NETWORK_UNAVAILABLE_MESSAGE
-    : hasUnknownErrorCode
-      ? "Xử lý tài liệu thất bại."
-      : course.error || "Xử lý tài liệu thất bại.";
+  const failureMessage = normalizePublicError(course.error_code);
   const recommendedAction = normalizeDocumentRecommendedAction(course.recommended_action);
   const canRetryDocument = Boolean(
     isNetworkUnavailable ||

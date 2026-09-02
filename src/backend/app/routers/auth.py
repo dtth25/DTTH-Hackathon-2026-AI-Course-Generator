@@ -37,6 +37,11 @@ from app.services.otp_service import OtpVerificationError
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+EMAIL_VERIFICATION_FAILURE_CODE = "EMAIL_VERIFICATION_FAILED"
+EMAIL_VERIFICATION_FAILURE_MESSAGE = "Không thể xác thực email. Vui lòng kiểm tra email và mã rồi thử lại."
+PASSWORD_RESET_VERIFICATION_FAILURE_CODE = "PASSWORD_RESET_VERIFICATION_FAILED"
+PASSWORD_RESET_VERIFICATION_FAILURE_MESSAGE = "Không thể xác thực yêu cầu đặt lại mật khẩu. Vui lòng kiểm tra email và mã rồi thử lại."
+
 
 def _auth_error(status_code: int, code: str, message: str, **extra: Any) -> HTTPException:
     """Keep frontend-visible auth failures stable without exposing exception text."""
@@ -97,15 +102,30 @@ def verify_email(
     """Confirm a verification code and log the user in on success."""
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user:
-        raise _auth_error(status.HTTP_400_BAD_REQUEST, "invalid_verification_identity", "Email hoặc mã không đúng.")
+        logger.info("Email verification failed: unknown identity")
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            EMAIL_VERIFICATION_FAILURE_CODE,
+            EMAIL_VERIFICATION_FAILURE_MESSAGE,
+        )
 
     if user.is_verified:
-        raise _auth_error(status.HTTP_400_BAD_REQUEST, "email_already_verified", "Tài khoản đã được xác thực trước đó.")
+        logger.info("Email verification failed: already verified user_id=%s", user.id)
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            EMAIL_VERIFICATION_FAILURE_CODE,
+            EMAIL_VERIFICATION_FAILURE_MESSAGE,
+        )
 
     try:
         otp_service.verify_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL, payload.code)
     except OtpVerificationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail())
+        logger.info("Email verification failed: reason=%s user_id=%s", e.code, user.id)
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            EMAIL_VERIFICATION_FAILURE_CODE,
+            EMAIL_VERIFICATION_FAILURE_MESSAGE,
+        )
 
     user.is_verified = True
     db.commit()
@@ -162,12 +182,22 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     """Verify the reset code and set a new password. Does not auto-login."""
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if not user:
-        raise _auth_error(status.HTTP_400_BAD_REQUEST, "invalid_reset_identity", "Email hoặc mã không đúng.")
+        logger.info("Password reset verification failed: unknown identity")
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            PASSWORD_RESET_VERIFICATION_FAILURE_CODE,
+            PASSWORD_RESET_VERIFICATION_FAILURE_MESSAGE,
+        )
 
     try:
         otp_service.verify_otp(db, user, otp_service.PURPOSE_RESET_PASSWORD, payload.code)
     except OtpVerificationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail())
+        logger.info("Password reset verification failed: reason=%s user_id=%s", e.code, user.id)
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            PASSWORD_RESET_VERIFICATION_FAILURE_CODE,
+            PASSWORD_RESET_VERIFICATION_FAILURE_MESSAGE,
+        )
 
     user.hashed_password = get_password_hash(payload.new_password)
     db.commit()

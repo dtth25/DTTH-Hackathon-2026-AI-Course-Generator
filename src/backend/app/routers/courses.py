@@ -63,6 +63,7 @@ def get_user_courses(
                 file_count=len(filenames),
                 created_at=c.created_at,
                 error=c.error_message,
+                error_code=c.error_code,
             )
         )
     return {"courses": items, "total": len(items)}

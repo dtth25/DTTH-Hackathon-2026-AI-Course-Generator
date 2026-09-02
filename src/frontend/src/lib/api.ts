@@ -36,14 +36,9 @@ export type ApiErrorCode =
   | "invalid_credentials"
   | "account_disabled"
   | "email_not_verified"
-  | "email_already_verified"
-  | "otp_missing"
-  | "otp_expired"
-  | "otp_locked"
-  | "otp_invalid"
-  | "invalid_verification_identity"
-  | "invalid_reset_identity"
   | "wrong_password"
+  | "EMAIL_VERIFICATION_FAILED"
+  | "PASSWORD_RESET_VERIFICATION_FAILED"
   | "version_cap_reached";
 
 const SAFE_HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
@@ -58,14 +53,9 @@ const SAFE_HTTP_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   verification_email_send_failed: "Không gửi được email xác thực. Vui lòng thử lại sau.",
   invalid_credentials: "Email hoặc mật khẩu không chính xác.",
   account_disabled: "Tài khoản của bạn đã bị vô hiệu hóa.",
-  email_already_verified: "Tài khoản đã được xác thực trước đó.",
-  otp_missing: "Không tìm thấy mã xác thực đang hiệu lực. Vui lòng gửi lại mã.",
-  otp_expired: "Mã xác thực đã hết hạn. Vui lòng gửi lại mã.",
-  otp_locked: "Mã đã bị khóa do nhập sai quá nhiều lần. Vui lòng gửi lại mã.",
-  otp_invalid: "Mã xác thực không đúng.",
-  invalid_verification_identity: "Email hoặc mã không đúng.",
-  invalid_reset_identity: "Email hoặc mã không đúng.",
   wrong_password: "Mật khẩu không chính xác.",
+  EMAIL_VERIFICATION_FAILED: "Không thể xác thực email. Vui lòng kiểm tra email và mã rồi thử lại.",
+  PASSWORD_RESET_VERIFICATION_FAILED: "Không thể xác thực yêu cầu đặt lại mật khẩu. Vui lòng kiểm tra email và mã rồi thử lại.",
 };
 
 const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
@@ -78,14 +68,9 @@ const SAFE_HTTP_ERROR_CODES = new Set<ApiErrorCode>([
   "invalid_credentials",
   "account_disabled",
   "email_not_verified",
-  "email_already_verified",
-  "otp_missing",
-  "otp_expired",
-  "otp_locked",
-  "otp_invalid",
-  "invalid_verification_identity",
-  "invalid_reset_identity",
   "wrong_password",
+  "EMAIL_VERIFICATION_FAILED",
+  "PASSWORD_RESET_VERIFICATION_FAILED",
   "version_cap_reached",
 ]);
 
@@ -138,13 +123,7 @@ function safeHttpErrorCode(detail: unknown, status: number): ApiErrorCode {
   return status === 403 ? "FORBIDDEN" : "UNKNOWN_ERROR";
 }
 
-function safeHttpErrorMessage(code: ApiErrorCode, detail: unknown): string {
-  if (code === "otp_invalid" && detail && typeof detail === "object") {
-    const attempts = (detail as { remaining_attempts?: unknown }).remaining_attempts;
-    if (typeof attempts === "number" && Number.isInteger(attempts) && attempts >= 0 && attempts <= 5) {
-      return `Mã xác thực không đúng. Còn ${attempts} lần thử.`;
-    }
-  }
+function safeHttpErrorMessage(code: ApiErrorCode): string {
   return SAFE_HTTP_ERROR_MESSAGES[code] ?? "Đã xảy ra lỗi. Vui lòng thử lại.";
 }
 
@@ -164,7 +143,7 @@ function parseHttpErrorDetail(responseText: string): unknown {
 function apiRequestErrorFromHttpResponse(status: number, responseText: string): ApiRequestError {
   const detail = parseHttpErrorDetail(responseText);
   const code = safeHttpErrorCode(detail, status);
-  return new ApiRequestError(safeHttpErrorMessage(code, detail), status, detail, code);
+  return new ApiRequestError(safeHttpErrorMessage(code), status, detail, code);
 }
 
 // Base URL for the FastAPI backend. Prefer the documented public env vars;
@@ -180,6 +159,24 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
+
+// A 401 from these public credential flows means the submitted credentials/code
+// were rejected, not that an existing session is stale. Every other protected
+// endpoint (including GET /api/auth/me) must clear the session and redirect.
+const PRESERVE_SESSION_ON_401 = new Set([
+  "POST /api/auth/login",
+  "POST /api/auth/register",
+  "POST /api/auth/verify-email",
+  "POST /api/auth/resend-verification",
+  "POST /api/auth/forgot-password",
+  "POST /api/auth/reset-password",
+  "DELETE /api/auth/me",
+]);
+
+function preservesSessionOn401(path: string, method?: string): boolean {
+  const endpoint = `${(method || "GET").toUpperCase()} ${path.split("?", 1)[0]}`;
+  return PRESERVE_SESSION_ON_401.has(endpoint);
+}
 
 // ============================================================
 // Core Fetch Wrapper
@@ -211,9 +208,7 @@ export async function apiFetch<T>(
     throw error;
   }
 
-  const isAuthEndpoint = path.startsWith("/api/auth/");
-
-  if (response.status === 401 && !isAuthEndpoint) {
+  if (response.status === 401 && !preservesSessionOn401(path, init?.method)) {
     removeToken();
     if (typeof window !== "undefined") {
       window.location.href = "/login";

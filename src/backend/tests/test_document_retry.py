@@ -538,7 +538,11 @@ def test_terminal_commit_then_raise_acknowledges_durable_failure(monkeypatch):
 
 
 def test_startup_reconciliation_fails_interrupted_inline_preprocess_job(monkeypatch):
-    from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
+    from app.services.inline_job_recovery import (
+        INLINE_INTERRUPTED_CODE,
+        INLINE_INTERRUPTED_MESSAGE,
+        reconcile_interrupted_inline_preprocess_jobs,
+    )
 
     monkeypatch.setattr(settings, "INLINE_PROCESSING_RECOVERY_ENABLED", True)
     course, user_id = _processor_course()
@@ -550,7 +554,11 @@ def test_startup_reconciliation_fails_interrupted_inline_preprocess_job(monkeypa
         persisted_job = db.get(ProcessingJob, job.id)
         assert persisted_course.status == "failed"
         assert persisted_course.can_retry is True
+        assert persisted_course.error_code == INLINE_INTERRUPTED_CODE
+        assert persisted_course.recommended_action == "retry_later"
         assert persisted_job.status == "failed"
+        assert persisted_job.error_code == INLINE_INTERRUPTED_CODE
+        assert persisted_job.error_message == INLINE_INTERRUPTED_MESSAGE
 
 
 def test_upload_rolls_back_course_when_preprocess_job_creation_fails(

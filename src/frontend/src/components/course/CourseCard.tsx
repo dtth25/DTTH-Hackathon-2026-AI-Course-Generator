@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiDeleteCourse, apiRenameCourse } from "@/lib/api";
 import type { CourseListItem } from "@/lib/types";
-import { normalizeCourseStatus } from "@/lib/types";
+import { normalizeCourseStatus, normalizePublicError } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface CourseCardProps {
@@ -72,6 +72,7 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
   };
 
   const cfg = statusConfig[status];
+  const publicError = normalizePublicError(course.error_code);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -149,10 +150,10 @@ export function CourseCard({ course, onDeleted, onRenamed }: CourseCardProps) {
             )}
           </div>
         )}
-        {status === "error" && course.error && (
+        {status === "error" && (
           <p className="mt-2 flex items-start gap-1.5 text-xs text-destructive">
             <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
-            <span className="line-clamp-2">{course.error}</span>
+            <span className="line-clamp-2">{publicError}</span>
           </p>
         )}
         <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs text-muted-foreground">

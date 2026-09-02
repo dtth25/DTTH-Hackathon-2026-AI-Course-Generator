@@ -223,7 +223,8 @@ describe("course workspace", () => {
 
     render(<CourseDashboardPage />);
 
-    expect(await screen.findByText("Cần kiểm tra lại tài liệu.")).toBeVisible();
+    expect(await screen.findByText("Xử lý tài liệu thất bại.")).toBeVisible();
+    expect(screen.queryByText("Cần kiểm tra lại tài liệu.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Thử lập chỉ mục lại" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Tải tệp thay thế" })).not.toBeInTheDocument();
   });
@@ -240,6 +241,37 @@ describe("course workspace", () => {
 
     expect(await screen.findByText("Xử lý tài liệu thất bại.")).toBeVisible();
     expect(screen.queryByText("untrusted provider payload")).not.toBeInTheDocument();
+  });
+
+  it("never renders a raw successful status envelope error", async () => {
+    vi.mocked(apiGetCourseStatus).mockResolvedValue({
+      course_id: "course-1",
+      status: "error",
+      error: "Failed to fetch",
+      error_code: "UNKNOWN_BACKEND_ERROR" as never,
+    });
+
+    render(<CourseDashboardPage />);
+
+    expect(await screen.findByText("Xử lý tài liệu thất bại.")).toBeVisible();
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
+  });
+
+  it("uses fixed recovery copy for interrupted inline processing", async () => {
+    vi.mocked(apiGetCourseStatus).mockResolvedValue({
+      course_id: "course-1",
+      status: "error",
+      error: "internal traceback: Failed to fetch",
+      error_code: "INLINE_PROCESSING_INTERRUPTED",
+      can_retry: true,
+      recommended_action: "retry_later",
+    });
+
+    render(<CourseDashboardPage />);
+
+    expect(await screen.findByText("Tác vụ xử lý trước đó bị gián đoạn. Vui lòng thử lại.")).toBeVisible();
+    expect(screen.queryByText(/internal traceback|Failed to fetch/u)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thử lập chỉ mục lại" })).toBeEnabled();
   });
 
   it("does not overlap slow polls and stops after ready", async () => {

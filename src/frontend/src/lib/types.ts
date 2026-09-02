@@ -56,6 +56,7 @@ export interface CourseListItem {
   filenames?: string[];
   file_count?: number;
   error?: string;
+  error_code?: CourseErrorCode | null;
 }
 
 export interface CoursesResponse {
@@ -98,7 +99,8 @@ export type DocumentFailureCode =
   | "DOCUMENT_SCHEDULING_FAILED"
   | "DOCUMENT_PROCESSING_FAILED"
   | "DOCUMENT_PROCESSING_PERSISTENCE_FAILED"
-  | "DOCUMENT_PROCESSING_CANCELLED";
+  | "DOCUMENT_PROCESSING_CANCELLED"
+  | "INLINE_PROCESSING_INTERRUPTED";
 
 export type CourseErrorCode = DocumentFailureCode | "NETWORK_UNAVAILABLE";
 
@@ -116,6 +118,7 @@ const COURSE_ERROR_CODES: readonly CourseErrorCode[] = [
   "DOCUMENT_PROCESSING_FAILED",
   "DOCUMENT_PROCESSING_PERSISTENCE_FAILED",
   "DOCUMENT_PROCESSING_CANCELLED",
+  "INLINE_PROCESSING_INTERRUPTED",
   "NETWORK_UNAVAILABLE",
 ];
 
@@ -123,6 +126,36 @@ export function normalizeCourseErrorCode(value: unknown): CourseErrorCode | null
   return typeof value === "string" && (COURSE_ERROR_CODES as readonly string[]).includes(value)
     ? (value as CourseErrorCode)
     : null;
+}
+
+export const PUBLIC_ERROR_FALLBACK = "Xử lý tài liệu thất bại.";
+
+const PUBLIC_ERROR_MESSAGES: Readonly<Record<CourseErrorCode, string>> = {
+  OPENROUTER_KEY_INVALID: "Dịch vụ AI chưa được cấu hình hợp lệ. Vui lòng liên hệ quản trị viên.",
+  OPENROUTER_KEY_LIMIT_EXCEEDED: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
+  OPENROUTER_CREDITS_EXHAUSTED: "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
+  OPENROUTER_ACCESS_DENIED: "Dịch vụ AI không có quyền thực hiện yêu cầu này.",
+  OPENROUTER_RATE_LIMITED: "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau.",
+  OPENROUTER_UNAVAILABLE: "Dịch vụ AI tạm thời không khả dụng.",
+  OPENROUTER_TIMEOUT: "Kết nối dịch vụ AI quá thời gian chờ.",
+  DOCUMENT_TEXT_EXTRACTION_FAILED: "Không thể đọc văn bản trong tệp.",
+  OPENROUTER_REQUEST_FAILED: "Không thể hoàn thành yêu cầu AI. Vui lòng thử lại.",
+  DOCUMENT_SCHEDULING_FAILED: "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
+  DOCUMENT_PROCESSING_FAILED: "Xử lý tài liệu thất bại.",
+  DOCUMENT_PROCESSING_PERSISTENCE_FAILED: "Không thể lưu kết quả xử lý tài liệu. Vui lòng thử lại.",
+  DOCUMENT_PROCESSING_CANCELLED: "Tài liệu đã bị hủy trước khi xử lý hoàn tất.",
+  INLINE_PROCESSING_INTERRUPTED: "Tác vụ xử lý trước đó bị gián đoạn. Vui lòng thử lại.",
+  NETWORK_UNAVAILABLE: "Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend và thử lại.",
+};
+
+/** Convert an untrusted successful API status envelope into fixed product copy. */
+export function normalizePublicError(
+  value: unknown,
+  fallback: string = PUBLIC_ERROR_FALLBACK
+): string {
+  return normalizeCourseErrorCode(value)
+    ? PUBLIC_ERROR_MESSAGES[value as CourseErrorCode]
+    : fallback;
 }
 
 export const DOCUMENT_RECOMMENDED_ACTIONS = [
@@ -205,6 +238,7 @@ export interface ArtifactVersion {
   options: Record<string, unknown>;
   status: "empty" | "processing" | "ready" | "error";
   error?: string | null;
+  error_code?: CourseErrorCode | null;
   progress?: number | null;
   created_at?: string | null;
 }
@@ -242,6 +276,7 @@ export interface BookOutput {
 export interface BookArtifactStatus extends VersionedArtifactStatus {
   status: "empty" | "processing" | "ready" | "error";
   error?: string | null;
+  error_code?: CourseErrorCode | null;
   progress?: number | null;
   data: BookOutput | null;
 }
@@ -267,6 +302,7 @@ export interface SlidesOutput {
 export interface SlideArtifactStatus extends VersionedArtifactStatus {
   status: "empty" | "processing" | "ready" | "error";
   error?: string | null;
+  error_code?: CourseErrorCode | null;
   progress?: number | null;
   data: SlidesOutput | null;
 }
@@ -298,6 +334,7 @@ export interface QuizOutput {
 export interface QuizArtifactStatus extends VersionedArtifactStatus {
   status: "empty" | "processing" | "ready" | "error";
   error?: string | null;
+  error_code?: CourseErrorCode | null;
   progress?: number | null;
   data: QuizQuestion[] | null;
 }
@@ -319,6 +356,7 @@ export interface VidOutput {
 export interface VidArtifactStatus extends VersionedArtifactStatus {
   status: "empty" | "processing" | "ready" | "error";
   error?: string | null;
+  error_code?: CourseErrorCode | null;
   progress?: number | null;
   data: VidOutput | null;
 }

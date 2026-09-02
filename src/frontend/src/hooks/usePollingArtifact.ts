@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ArtifactVersion } from "@/lib/types";
+import { normalizePublicError } from "@/lib/types";
 
 /** Shared poll cadence — was a `3000` literal duplicated independently across 6 call
  * sites (the 4 tabs below, plus the simpler list/status pollers in courses/page.tsx and
@@ -15,6 +16,7 @@ export interface ArtifactStatusLike<T> {
   data?: T | null;
   progress?: number | null;
   error?: string | null;
+  error_code?: unknown;
   version_id?: string | null;
   active_version?: string | null;
   versions?: ArtifactVersion[];
@@ -114,7 +116,7 @@ export function usePollingArtifact<T>({
           }
           if (res.status === "error") {
             if (!viewedVersionRef.current || viewedVersionRef.current === pollingVersion) {
-              setError(res.error || defaultErrorMessage);
+              setError(normalizePublicError(res.error_code, defaultErrorMessage));
             }
             setGenerating(false);
             pollingVersionRef.current = null;
@@ -164,7 +166,7 @@ export function usePollingArtifact<T>({
           setProgress(res.progress ?? 5);
           startPolling(Date.now(), res.version_id ?? viewedVersion);
         } else if (res.status === "error") {
-          setError(res.error || defaultErrorMessage);
+          setError(normalizePublicError(res.error_code, defaultErrorMessage));
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : defaultErrorMessage))

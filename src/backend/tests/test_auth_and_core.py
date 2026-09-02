@@ -45,8 +45,10 @@ def test_auth_verify_email_wrong_then_right_code(client):
         "/api/auth/verify-email", json={"email": "verifyuser@example.com", "code": "999999"}
     )
     assert wrong.status_code == 400
-    assert wrong.json()["detail"]["code"] == "otp_invalid"
-    assert wrong.json()["detail"]["remaining_attempts"] >= 0
+    assert wrong.json()["detail"] == {
+        "code": "EMAIL_VERIFICATION_FAILED",
+        "message": "Không thể xác thực email. Vui lòng kiểm tra email và mã rồi thử lại.",
+    }
 
     right = client.post(
         "/api/auth/verify-email", json={"email": "verifyuser@example.com", "code": "000000"}
@@ -204,17 +206,17 @@ def test_auth_errors_use_stable_structured_codes(client, monkeypatch):
     repeat = client.post(
         "/api/auth/verify-email", json={"email": "verified@example.com", "code": "000000"}
     )
-    assert repeat.json()["detail"]["code"] == "email_already_verified"
+    assert repeat.json()["detail"]["code"] == "EMAIL_VERIFICATION_FAILED"
 
     invalid_verify = client.post(
         "/api/auth/verify-email", json={"email": "missing@example.com", "code": "000000"}
     )
-    assert invalid_verify.json()["detail"]["code"] == "invalid_verification_identity"
+    assert invalid_verify.json()["detail"]["code"] == "EMAIL_VERIFICATION_FAILED"
     invalid_reset = client.post(
         "/api/auth/reset-password",
         json={"email": "missing@example.com", "code": "000000", "new_password": "password456"},
     )
-    assert invalid_reset.json()["detail"]["code"] == "invalid_reset_identity"
+    assert invalid_reset.json()["detail"]["code"] == "PASSWORD_RESET_VERIFICATION_FAILED"
 
     def email_failure(*_args, **_kwargs):
         raise RuntimeError("untrusted mail provider detail")
@@ -248,21 +250,57 @@ def test_auth_otp_failure_codes_are_structured(client):
         db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).delete()
         db.commit()
         missing = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
-        assert missing.json()["detail"]["code"] == "otp_missing"
+        assert missing.json()["detail"] == {
+            "code": "EMAIL_VERIFICATION_FAILED",
+            "message": "Không thể xác thực email. Vui lòng kiểm tra email và mã rồi thử lại.",
+        }
 
         otp_service.create_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL)
         otp = db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).one()
         otp.expires_at = datetime.utcnow() - timedelta(seconds=1)
         db.commit()
         expired = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
-        assert expired.json()["detail"]["code"] == "otp_expired"
+        assert expired.json()["detail"] == missing.json()["detail"]
 
         otp_service.create_otp(db, user, otp_service.PURPOSE_VERIFY_EMAIL)
         otp = db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user.id).one()
         otp.attempts = settings.EMAIL_OTP_MAX_ATTEMPTS
         db.commit()
         locked = client.post("/api/auth/verify-email", json={"email": email, "code": "000000"})
-        assert locked.json()["detail"]["code"] == "otp_locked"
+        assert locked.json()["detail"] == missing.json()["detail"]
+
+        reset_email = "otp-reset-errors@example.com"
+        assert client.post(
+            "/api/auth/register", json={"email": reset_email, "password": "password123"}
+        ).status_code == 201
+        reset_user = db.query(User).filter(User.email == reset_email).one()
+        db.query(EmailOtpCode).filter(EmailOtpCode.user_id == reset_user.id).delete()
+        db.commit()
+        reset_missing = client.post(
+            "/api/auth/reset-password",
+            json={"email": reset_email, "code": "000000", "new_password": "password456"},
+        )
+        reset_detail = reset_missing.json()["detail"]
+        assert reset_detail == {
+            "code": "PASSWORD_RESET_VERIFICATION_FAILED",
+            "message": "Không thể xác thực yêu cầu đặt lại mật khẩu. Vui lòng kiểm tra email và mã rồi thử lại.",
+        }
+
+        otp_service.create_otp(db, reset_user, otp_service.PURPOSE_RESET_PASSWORD)
+        reset_otp = db.query(EmailOtpCode).filter(EmailOtpCode.user_id == reset_user.id).one()
+        reset_otp.attempts = settings.EMAIL_OTP_MAX_ATTEMPTS
+        db.commit()
+        reset_locked = client.post(
+            "/api/auth/reset-password",
+            json={"email": reset_email, "code": "000000", "new_password": "password456"},
+        )
+        assert reset_locked.json()["detail"] == reset_detail
+
+        unknown_reset = client.post(
+            "/api/auth/reset-password",
+            json={"email": "unknown-reset@example.com", "code": "000000", "new_password": "password456"},
+        )
+        assert unknown_reset.json()["detail"] == reset_detail
     finally:
         db.close()
 
