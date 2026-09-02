@@ -1,6 +1,7 @@
 """Upload router for receiving and validating course documents."""
 
 import os
+import shutil
 import time
 import uuid
 from typing import List, Optional
@@ -108,16 +109,26 @@ async def upload_files(
         embedding_status="pending",
         quality_score=0,
     )
-    db.add(db_course)
-    db.commit()
-    db.refresh(db_course)
-
-    job = create_job(
-        db,
-        course_id=course_id,
-        user_id=current_user.id,
-        job_type="preprocess",
-    )
+    try:
+        db.add(db_course)
+        # Keep the course and its job in one transaction, but flush so create_job's
+        # ownership lookup can validate the newly pending course.
+        db.flush()
+        job = create_job(
+            db,
+            course_id=course_id,
+            user_id=current_user.id,
+            job_type="preprocess",
+            commit=False,
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "DOCUMENT_UPLOAD_UNAVAILABLE", "message": "Không thể bắt đầu xử lý tài liệu."},
+        ) from exc
     try:
         _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
     except Exception as exc:

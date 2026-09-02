@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import fitz  # PyMuPDF
 import docx
 from app.models.course import Course
-from app.models.processing_job import ProcessingJob
+from app.models.processing_job import JobStatus, ProcessingJob
 from app.services.job_service import mark_job_running
 from app.services.provider_errors import (
     ProviderErrorCode,
@@ -265,8 +265,8 @@ class DocumentProcessor:
         job_message: Optional[str] = None,
         db_session_factory=None,
         **course_fields,
-    ) -> None:
-        """Commit terminal course and job states together, or publish neither."""
+    ) -> bool:
+        """Commit terminal course and job states together, or return false if superseded."""
         if db_session_factory is None:
             from app.services.database import SessionLocal as factory
         else:
@@ -275,11 +275,35 @@ class DocumentProcessor:
         with factory() as db:
             course = (
                 db.query(Course)
-                .filter(Course.id == course_id, Course.is_deleted == False)  # noqa: E712
+                .filter(
+                    Course.id == course_id,
+                    Course.is_deleted == False,  # noqa: E712
+                    Course.status == "processing",
+                )
                 .first()
             )
             if course is None:
-                raise RuntimeError(f"Course {course_id} was not found while finalizing processing.")
+                return False
+            job = None
+            if job_id:
+                job = db.get(ProcessingJob, job_id)
+                latest_job = (
+                    db.query(ProcessingJob)
+                    .filter(
+                        ProcessingJob.course_id == course_id,
+                        ProcessingJob.job_type == "preprocess",
+                    )
+                    .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
+                    .first()
+                )
+                if (
+                    job is None
+                    or job.status != JobStatus.RUNNING.value
+                    or job.user_id != course.user_id
+                    or latest_job is None
+                    or latest_job.id != job.id
+                ):
+                    return False
             self._apply_course_state(
                 course,
                 status=status,
@@ -288,10 +312,7 @@ class DocumentProcessor:
                 embedding_status=embedding_status,
                 **course_fields,
             )
-            if job_id:
-                job = db.get(ProcessingJob, job_id)
-                if job is None or job.status != "running":
-                    raise RuntimeError(f"Processing job {job_id} was not running during terminal update.")
+            if job:
                 if job_succeeded:
                     job.status = "succeeded"
                     job.progress = 100
@@ -306,6 +327,68 @@ class DocumentProcessor:
                 job.updated_at = now
                 job.completed_at = now
             db.commit()
+            return True
+
+    @staticmethod
+    def _attempt_is_active(course_id: str, job_id: Optional[str], db_session_factory) -> bool:
+        """Ensure this worker still owns the live, non-deleted preprocessing attempt."""
+        with db_session_factory() as db:
+            course = (
+                db.query(Course)
+                .filter(
+                    Course.id == course_id,
+                    Course.is_deleted == False,  # noqa: E712
+                    Course.status == "processing",
+                )
+                .first()
+            )
+            if course is None:
+                return False
+            if not job_id:
+                return True
+            job = db.get(ProcessingJob, job_id)
+            latest_job = (
+                db.query(ProcessingJob)
+                .filter(
+                    ProcessingJob.course_id == course_id,
+                    ProcessingJob.job_type == "preprocess",
+                )
+                .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
+                .first()
+            )
+            return bool(
+                job
+                and job.status == JobStatus.RUNNING.value
+                and job.user_id == course.user_id
+                and latest_job
+                and latest_job.id == job_id
+            )
+
+    @staticmethod
+    def _course_is_deleted(course_id: str, db_session_factory) -> bool:
+        with db_session_factory() as db:
+            course = db.get(Course, course_id)
+            return course is None or course.is_deleted
+
+    def _resolve_inactive_attempt(
+        self, course_id: str, job_id: Optional[str], db_session_factory, vectors_written: bool
+    ) -> ProcessingResult:
+        """Avoid resurrecting deleted/stale work and clean vectors created by a delete race."""
+        if vectors_written and self._course_is_deleted(course_id, db_session_factory):
+            self.vector_store.delete_course(course_id)
+        if job_id:
+            with db_session_factory() as db:
+                job = db.get(ProcessingJob, job_id)
+                if job is not None and job.status == JobStatus.RUNNING.value:
+                    now = datetime.utcnow()
+                    job.status = JobStatus.FAILED.value
+                    job.error_code = "DOCUMENT_PROCESSING_CANCELLED"
+                    job.error_message = "Tài liệu không còn khả dụng để xử lý."
+                    job.message = job.error_message
+                    job.completed_at = now
+                    job.updated_at = now
+                    db.commit()
+        return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0)
 
     def _generate_course_title(self, all_documents: List[Document]) -> Optional[str]:
         """Best-effort AI-generated short course title from a sample of extracted text.
@@ -713,6 +796,9 @@ class DocumentProcessor:
                 if not mark_job_running(db, job_id, "Đang phân tích tài liệu"):
                     return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0)
 
+        if not self._attempt_is_active(course_id, job_id, db_session_factory):
+            return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
+
         try:
             self._update_course_db(
                 course_id, status="processing", stage="extracting", progress=20,
@@ -727,7 +813,7 @@ class DocumentProcessor:
                     raise ValueError("No valid text could be extracted from uploaded files.")
             except Exception as exc:
                 user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
-                self._persist_terminal_state(
+                if not self._persist_terminal_state(
                     course_id, status="failed", stage="failed", progress=0, embedding_status="failed",
                     job_id=job_id, job_succeeded=False,
                     job_error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", job_message=user_message,
@@ -735,21 +821,27 @@ class DocumentProcessor:
                     error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", can_retry=True,
                     recommended_action="upload_clearer_pdf", technical_error=str(exc)[:1000],
                     db_session_factory=db_session_factory,
-                )
+                ):
+                    return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
                 logger.error("Document extraction failed for course %s: %s", course_id, exc)
                 return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 
             self._update_course_db(course_id, status="processing", stage="chunking", progress=50, db_session_factory=db_session_factory)
             self._update_course_db(course_id, status="processing", stage="embedding", progress=75, db_session_factory=db_session_factory)
+            if not self._attempt_is_active(course_id, job_id, db_session_factory):
+                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
             embedding_provider = "openrouter"
             self.vector_store.add_documents(all_documents, course_id=course_id, provider=embedding_provider)
+            if not self._attempt_is_active(course_id, job_id, db_session_factory):
+                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
             quality_score = min(100, max(50, len(all_documents) * 5 + 60))
             course_title = self._generate_course_title(all_documents) or self._filename_fallback_title(file_paths[0])
-            self._persist_terminal_state(
+            if not self._persist_terminal_state(
                 course_id, status="ready", stage="completed", progress=100, embedding_status="completed",
                 job_id=job_id, job_succeeded=True, chunk_count=len(all_documents), quality_score=quality_score,
                 name=course_title, embedding_provider=embedding_provider, db_session_factory=db_session_factory,
-            )
+            ):
+                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
             logger.info("Successfully processed course %s: %s chunks created.", course_id, len(all_documents))
             return ProcessingResult(course_id=course_id, status="ready", chunk_count=len(all_documents), quality_score=quality_score)
 
@@ -758,24 +850,26 @@ class DocumentProcessor:
             failure_status = "paused_due_to_quota" if failure.code in {
                 ProviderErrorCode.KEY_LIMIT_EXCEEDED, ProviderErrorCode.CREDITS_EXHAUSTED,
             } else "failed"
-            self._persist_terminal_state(
+            if not self._persist_terminal_state(
                 course_id, status=failure_status, stage="failed", progress=0, embedding_status="failed",
                 job_id=job_id, job_succeeded=False, job_error_code=str(failure.code), job_message=failure.user_message,
                 error_message=failure.user_message, failure_stage="embedding_failed", error_code=str(failure.code),
                 can_retry=failure.can_retry, recommended_action=failure.recommended_action,
                 technical_error=failure.technical_message, db_session_factory=db_session_factory,
-            )
+            ):
+                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
             logger.error("Provider failure processing course %s: %s", course_id, failure.code)
             return ProcessingResult(course_id=course_id, status=failure_status, chunk_count=0, quality_score=0, error=failure.user_message)
         except Exception as exc:
             user_message = "Không thể hoàn tất xử lý tài liệu. Vui lòng thử lại sau."
-            self._persist_terminal_state(
+            if not self._persist_terminal_state(
                 course_id, status="failed", stage="failed", progress=0, embedding_status="failed",
                 job_id=job_id, job_succeeded=False, job_error_code="DOCUMENT_PROCESSING_FAILED", job_message=user_message,
                 error_message=user_message, failure_stage="embedding_failed", error_code="DOCUMENT_PROCESSING_FAILED",
                 can_retry=True, recommended_action="retry_later", technical_error=str(exc)[:1000],
                 db_session_factory=db_session_factory,
-            )
+            ):
+                return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
             logger.error("Document processing failed for course %s: %s", course_id, exc)
             return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 

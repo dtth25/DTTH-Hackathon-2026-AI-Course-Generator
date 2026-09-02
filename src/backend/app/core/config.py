@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     OPENROUTER_EMBEDDING_MODEL: str = Field(default="openai/text-embedding-3-small", description="OpenRouter embedding model slug")
     OPENROUTER_PREFLIGHT_TTL_SECONDS: int = Field(default=30, ge=5, le=300)
     OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0, le=20.0)
+    # Inline BackgroundTasks have no cross-process lease. Reconciliation is therefore
+    # safe only for the local, single-process execution mode; queue workers must disable it.
+    PROCESSING_EXECUTION_MODE: str = Field(default="inline")
+    INLINE_PROCESSING_RECOVERY_ENABLED: bool = Field(default=True)
 
     # Document chunking tuning
     DOCUMENT_CHUNK_SIZE: int = Field(default=1800, description="Target chunk size in characters")

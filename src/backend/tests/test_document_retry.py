@@ -351,6 +351,7 @@ def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch)
     course, user_id = _processor_course()
     with SessionLocal() as db:
         job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+        job_id = job.id
     processor = DocumentProcessor(vector_store=VectorStoreStub())
     monkeypatch.setattr(
         processor,
@@ -366,7 +367,7 @@ def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch)
         original_apply(course_model, **kwargs)
 
     monkeypatch.setattr(processor, "_apply_course_state", fail_ready_state)
-    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job_id)
 
     assert result.status == "failed"
     with SessionLocal() as db:
@@ -389,6 +390,190 @@ def test_startup_reconciliation_fails_interrupted_inline_preprocess_job():
         assert persisted_course.status == "failed"
         assert persisted_course.can_retry is True
         assert persisted_job.status == "failed"
+
+
+def test_upload_rolls_back_course_when_preprocess_job_creation_fails(
+    client, owner_headers, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.routers.upload.create_job",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("forced job flush failure")),
+    )
+    response = client.post(
+        "/api/upload",
+        headers=owner_headers,
+        files=[("files", ("atomic.txt", b"grounded content", "text/plain"))],
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "DOCUMENT_UPLOAD_UNAVAILABLE"
+    with SessionLocal() as db:
+        assert db.query(Course).count() == 0
+        assert db.query(ProcessingJob).count() == 0
+
+
+def test_deleted_course_is_revalidated_before_vector_write(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from app.services.vector_store import Document
+
+    class VectorStoreStub:
+        add_calls = 0
+
+        def add_documents(self, *args, **kwargs):
+            self.add_calls += 1
+
+        def delete_course(self, *args, **kwargs):
+            pytest.fail("No vectors should exist to clean up")
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+        job_id = job.id
+        persisted_course = db.get(Course, course.id)
+        persisted_course.is_deleted = True
+        persisted_course.status = "deleted"
+        db.commit()
+    vector_store = VectorStoreStub()
+    processor = DocumentProcessor(vector_store=vector_store)
+    monkeypatch.setattr(
+        processor,
+        "extract_and_chunk_file",
+        lambda *args: [Document(content="grounded content", metadata={"page": 1})],
+    )
+
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job_id)
+
+    assert result.status == "failed"
+    assert vector_store.add_calls == 0
+
+
+def test_delete_after_vector_write_cleans_vectors_without_resurrecting_course(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from app.services.vector_store import Document
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+
+    class VectorStoreStub:
+        deleted_courses = []
+
+        def add_documents(self, *args, **kwargs):
+            with SessionLocal() as db:
+                persisted_course = db.get(Course, course.id)
+                persisted_course.is_deleted = True
+                persisted_course.status = "deleted"
+                persisted_job = db.get(ProcessingJob, job.id)
+                persisted_job.status = "failed"
+                db.commit()
+
+        def delete_course(self, course_id):
+            self.deleted_courses.append(course_id)
+
+    vector_store = VectorStoreStub()
+    processor = DocumentProcessor(vector_store=vector_store)
+    monkeypatch.setattr(
+        processor,
+        "extract_and_chunk_file",
+        lambda *args: [Document(content="grounded content", metadata={"page": 1})],
+    )
+    monkeypatch.setattr(processor, "_generate_course_title", lambda *args: None)
+
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+
+    assert result.status == "failed"
+    assert vector_store.deleted_courses == [course.id]
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).status == "deleted"
+        assert db.get(Course, course.id).is_deleted is True
+
+
+def test_inline_reconciliation_leaves_disabled_ready_stale_and_mismatched_jobs_untouched(monkeypatch):
+    from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        ready_course = db.get(Course, course.id)
+        ready_course.status = "ready"
+        ready_job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    monkeypatch.setattr(settings, "PROCESSING_EXECUTION_MODE", "distributed", raising=False)
+    assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 0
+    with SessionLocal() as db:
+        assert db.get(ProcessingJob, ready_job.id).status == "queued"
+        assert db.get(Course, course.id).status == "ready"
+
+    monkeypatch.setattr(settings, "PROCESSING_EXECUTION_MODE", "inline", raising=False)
+    with SessionLocal() as db:
+        mismatched = User(email="mismatched-job@example.com", hashed_password="not-used")
+        db.add(mismatched)
+        db.flush()
+        stale_course = Course(user_id=user_id, filenames=["source.txt"], status="processing")
+        db.add(stale_course)
+        db.commit()
+        stale_course_id = stale_course.id
+        stale_job = ProcessingJob(
+            course_id=stale_course_id,
+            user_id=mismatched.id,
+            job_type="preprocess",
+            status="running",
+        )
+        db.add(stale_job)
+        db.commit()
+        stale_job_id = stale_job.id
+    assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 0
+    with SessionLocal() as db:
+        assert db.get(ProcessingJob, stale_job_id).status == "running"
+        assert db.get(Course, stale_course_id).status == "processing"
+
+    with SessionLocal() as db:
+        stale_attempt_course = Course(user_id=user_id, filenames=["source.txt"], status="processing")
+        db.add(stale_attempt_course)
+        db.commit()
+        old_job = ProcessingJob(
+            course_id=stale_attempt_course.id,
+            user_id=user_id,
+            job_type="preprocess",
+            status="running",
+        )
+        db.add(old_job)
+        db.commit()
+        newer_terminal_job = ProcessingJob(
+            course_id=stale_attempt_course.id,
+            user_id=user_id,
+            job_type="preprocess",
+            status="succeeded",
+        )
+        db.add(newer_terminal_job)
+        db.commit()
+        old_job_id = old_job.id
+        stale_attempt_course_id = stale_attempt_course.id
+    assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 0
+    with SessionLocal() as db:
+        assert db.get(ProcessingJob, old_job_id).status == "running"
+        assert db.get(Course, stale_attempt_course_id).status == "processing"
+
+
+def test_delete_cancels_active_preprocess_job(client, failed_course_with_file, owner_headers):
+    with SessionLocal() as db:
+        course = db.get(Course, failed_course_with_file.id)
+        course.status = "processing"
+        job = create_job(
+            db,
+            course_id=course.id,
+            user_id=course.user_id,
+            job_type="preprocess",
+        )
+        job_id = job.id
+
+    response = client.delete(
+        f"/api/courses/{failed_course_with_file.id}", headers=owner_headers
+    )
+
+    assert response.status_code == 200
+    with SessionLocal() as db:
+        assert db.get(Course, failed_course_with_file.id).is_deleted is True
+        assert db.get(ProcessingJob, job_id).status == "failed"
+        assert db.get(ProcessingJob, job_id).error_code == "DOCUMENT_PROCESSING_CANCELLED"
 
 
 def test_processing_job_lifecycle():

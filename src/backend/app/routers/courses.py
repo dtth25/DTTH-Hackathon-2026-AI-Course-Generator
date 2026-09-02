@@ -1,5 +1,7 @@
 """Courses router for CRUD operations and status tracking."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -117,7 +119,23 @@ def delete_course(
     """Soft delete a course and remove its local uploaded files."""
     course = get_valid_course(course_id, current_user, db)
 
-    # Soft delete in database
+    now = datetime.utcnow()
+    db.query(ProcessingJob).filter(
+        ProcessingJob.course_id == course.id,
+        ProcessingJob.job_type == "preprocess",
+        ProcessingJob.status.in_(["queued", "running"]),
+    ).update(
+        {
+            ProcessingJob.status: "failed",
+            ProcessingJob.error_code: "DOCUMENT_PROCESSING_CANCELLED",
+            ProcessingJob.error_message: "Tài liệu đã bị xóa trước khi xử lý hoàn tất.",
+            ProcessingJob.message: "Tài liệu đã bị xóa trước khi xử lý hoàn tất.",
+            ProcessingJob.completed_at: now,
+            ProcessingJob.updated_at: now,
+        },
+        synchronize_session=False,
+    )
+    # Soft delete and cancel active preprocessing in the same transaction.
     course.is_deleted = True
     course.status = "deleted"
     db.commit()
