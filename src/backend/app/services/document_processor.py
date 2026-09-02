@@ -102,6 +102,10 @@ class TerminalPersistenceOutcome(StrEnum):
     ERROR = "error"
 
 
+class _TerminalCommitAcknowledgementUncertain(Exception):
+    """The database may have committed even though the driver raised from commit()."""
+
+
 def _provider_failure_from_health(error_code: Optional[str]) -> ProviderFailure:
     """Convert the redacted health result into the same typed provider failure used by calls."""
     try:
@@ -344,8 +348,66 @@ class DocumentProcessor:
         if course_result.rowcount != 1:
             db.rollback()
             return TerminalPersistenceOutcome.LOST_CLAIM
-        db.commit()
+        try:
+            db.commit()
+        except Exception as exc:
+            raise _TerminalCommitAcknowledgementUncertain from exc
         return TerminalPersistenceOutcome.PERSISTED
+
+    @staticmethod
+    def _terminal_state_is_durable(
+        factory,
+        *,
+        course_id: str,
+        job_id: Optional[str],
+        course_values: dict,
+        job_values: dict,
+    ) -> bool:
+        """Read a fresh session after an uncertain commit acknowledgement.
+
+        This is intentionally narrow: it accepts only the exact course terminal state
+        and, when present, the current owner-matched job terminal state requested by
+        this worker. It never exposes database exception details to a client.
+        """
+        try:
+            with factory() as db:
+                course = db.get(Course, course_id)
+                if (
+                    course is None
+                    or course.is_deleted
+                    or course.status != course_values["status"]
+                    or course.stage != course_values["stage"]
+                    or course.embedding_status != course_values["embedding_status"]
+                    or course.error_code != course_values.get("error_code")
+                ):
+                    return False
+                if not job_id:
+                    return True
+                job = db.get(ProcessingJob, job_id)
+                latest_job = (
+                    db.query(ProcessingJob)
+                    .filter(
+                        ProcessingJob.course_id == course_id,
+                        ProcessingJob.job_type == "preprocess",
+                    )
+                    .order_by(ProcessingJob.created_at.desc(), ProcessingJob.id.desc())
+                    .first()
+                )
+                return bool(
+                    job
+                    and latest_job
+                    and latest_job.id == job_id
+                    and job.course_id == course_id
+                    and job.user_id == course.user_id
+                    and job.status == job_values["status"]
+                    and job.error_code == job_values.get("error_code")
+                )
+        except Exception:
+            logger.warning(
+                "Could not verify uncertain terminal commit acknowledgement for course %s",
+                course_id,
+            )
+            return False
 
     def _persist_terminal_state(
         self,
@@ -408,6 +470,23 @@ class DocumentProcessor:
                     job_values=job_values,
                     course_values=course_values,
                 )
+            except _TerminalCommitAcknowledgementUncertain:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                if self._terminal_state_is_durable(
+                    factory,
+                    course_id=course_id,
+                    job_id=job_id,
+                    course_values=course_values,
+                    job_values=job_values,
+                ):
+                    return TerminalPersistenceOutcome.PERSISTED
+                logger.warning(
+                    "Terminal commit acknowledgement was uncertain for course %s", course_id
+                )
+                return TerminalPersistenceOutcome.ERROR
             except Exception:
                 db.rollback()
                 logger.exception("Terminal processing-state persistence failed for course %s", course_id)

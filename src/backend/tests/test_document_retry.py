@@ -445,6 +445,98 @@ def test_terminal_commit_failure_falls_back_atomically(monkeypatch):
         assert db.get(ProcessingJob, job.id).status == "failed"
 
 
+def test_terminal_commit_then_raise_acknowledges_durable_success(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from app.services.vector_store import Document
+    from sqlalchemy.orm import Session
+
+    class VectorStoreStub:
+        deleted_courses = []
+
+        def add_documents(self, *args, **kwargs):
+            return None
+
+        def delete_course(self, course_id):
+            self.deleted_courses.append(course_id)
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    processor = DocumentProcessor(vector_store=VectorStoreStub())
+    monkeypatch.setattr(
+        processor,
+        "extract_and_chunk_file",
+        lambda *args: [Document(content="enough grounded content", metadata={"page": 1})],
+    )
+    raise_after_commit = False
+
+    def arm_uncertain_commit(*args, **kwargs):
+        nonlocal raise_after_commit
+        raise_after_commit = True
+        return None
+
+    monkeypatch.setattr(processor, "_generate_course_title", arm_uncertain_commit)
+    original_commit = Session.commit
+
+    def commit_then_raise(session):
+        nonlocal raise_after_commit
+        if raise_after_commit:
+            raise_after_commit = False
+            original_commit(session)
+            raise RuntimeError("simulated acknowledgement loss after commit")
+        return original_commit(session)
+
+    monkeypatch.setattr(Session, "commit", commit_then_raise)
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+
+    assert result.status == "ready"
+    assert processor.vector_store.deleted_courses == []
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).status == "ready"
+        assert db.get(ProcessingJob, job.id).status == "succeeded"
+
+
+def test_terminal_commit_then_raise_acknowledges_durable_failure(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from sqlalchemy.orm import Session
+
+    class VectorStoreStub:
+        def delete_course(self, *args, **kwargs):
+            return None
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    processor = DocumentProcessor(vector_store=VectorStoreStub())
+    raise_after_commit = False
+
+    def fail_extraction_and_arm_commit(*args, **kwargs):
+        nonlocal raise_after_commit
+        raise_after_commit = True
+        raise ValueError("bad source")
+
+    monkeypatch.setattr(processor, "extract_and_chunk_file", fail_extraction_and_arm_commit)
+    original_commit = Session.commit
+
+    def commit_then_raise(session):
+        nonlocal raise_after_commit
+        if raise_after_commit:
+            raise_after_commit = False
+            original_commit(session)
+            raise RuntimeError("simulated acknowledgement loss after commit")
+        return original_commit(session)
+
+    monkeypatch.setattr(Session, "commit", commit_then_raise)
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+
+    assert result.status == "failed"
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).status == "failed"
+        assert db.get(Course, course.id).error_code == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+        assert db.get(ProcessingJob, job.id).status == "failed"
+        assert db.get(ProcessingJob, job.id).error_code == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+
+
 def test_startup_reconciliation_fails_interrupted_inline_preprocess_job(monkeypatch):
     from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
 
