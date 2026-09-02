@@ -105,7 +105,7 @@ def stub_document_provider_preflight(monkeypatch):
 
     monkeypatch.setattr(
         "app.services.document_processor.get_openrouter_health",
-        lambda: ProviderHealth(
+        lambda **_: ProviderHealth(
             available=True,
             error_code=None,
             checked_at=datetime.now(UTC),

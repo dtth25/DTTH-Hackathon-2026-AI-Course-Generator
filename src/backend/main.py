@@ -12,6 +12,7 @@ from app.models.course import Course
 from app.routers import admin, auth, courses, documents, generation, upload
 from app.services.admin_seed import seed_default_admin
 from app.services.database import SessionLocal
+from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
 from app.services.vector_store import get_vector_store
 
 START_TIME = time.time()
@@ -20,6 +21,7 @@ START_TIME = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     seed_default_admin()
+    reconcile_interrupted_inline_preprocess_jobs()
     yield
 
 

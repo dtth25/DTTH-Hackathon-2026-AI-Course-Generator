@@ -10,16 +10,23 @@ from app.models.processing_job import JobStatus, ProcessingJob
 
 
 def create_job(
-    db: Session, *, course_id: str, user_id: str, job_type: str
+    db: Session, *, course_id: str, user_id: str, job_type: str, commit: bool = True
 ) -> ProcessingJob:
-    """Persist and return a queued job for the specified course operation."""
+    """Create a queued job while retaining ownership validation.
+
+    ``commit=False`` lets controllers atomically pair a course-state transition and
+    job creation in one transaction.
+    """
     course = db.get(Course, course_id)
     if course is None or course.user_id != user_id:
         raise ValueError("Course does not belong to the specified user.")
 
     job = ProcessingJob(course_id=course_id, user_id=user_id, job_type=job_type)
     db.add(job)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(job)
     return job
 

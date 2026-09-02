@@ -12,7 +12,7 @@ from app.core.deps import get_current_user, get_db
 from app.models.course import Course
 from app.models.user import User
 from app.routers.courses import _enforce_course_limit
-from app.routers.documents import _schedule_processing
+from app.routers.documents import _schedule_processing, mark_inline_scheduling_failure
 from app.schemas.course import UploadResponse
 from app.services.job_service import create_job
 
@@ -118,7 +118,24 @@ async def upload_files(
         user_id=current_user.id,
         job_type="preprocess",
     )
-    _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
+    try:
+        _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
+    except Exception as exc:
+        try:
+            mark_inline_scheduling_failure(db, course_id, job.id)
+        except Exception:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"code": "DOCUMENT_UPLOAD_UNAVAILABLE", "message": "Không thể bắt đầu xử lý tài liệu."},
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "DOCUMENT_SCHEDULING_FAILED",
+                "message": "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
+            },
+        ) from exc
 
     return {
         "course_id": course_id,

@@ -1,6 +1,8 @@
 """Persistence tests for document processing jobs and saved-document retries."""
 
+import os
 from pathlib import Path
+from datetime import UTC, datetime
 
 import pytest
 
@@ -15,6 +17,8 @@ from app.services.job_service import (
     mark_job_running,
     mark_job_succeeded,
 )
+from app.services.provider_errors import ProviderErrorCode
+from app.services.provider_health import ProviderHealth
 
 
 def _auth_headers(client, email: str) -> dict[str, str]:
@@ -141,6 +145,250 @@ def test_job_status_is_visible_only_to_its_owner(
 
     other_response = client.get(f"/api/jobs/{job_id}", headers=other_headers)
     assert other_response.status_code == 404
+
+
+def test_admin_retry_keeps_job_owned_by_course_owner(
+    client, failed_course_with_file, owner_headers, monkeypatch
+):
+    admin_headers = _auth_headers(client, "retry-admin@example.com")
+    admin_id = client.get("/api/auth/me", headers=admin_headers).json()["id"]
+    with SessionLocal() as db:
+        admin = db.get(User, admin_id)
+        admin.role = "admin"
+        db.commit()
+
+    monkeypatch.setattr("app.routers.documents._schedule_processing", lambda *args: None)
+    response = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=admin_headers
+    )
+    assert response.status_code == 202
+    with SessionLocal() as db:
+        job = db.get(ProcessingJob, response.json()["job_id"])
+        course = db.get(Course, failed_course_with_file.id)
+        assert job.user_id == course.user_id
+        assert course.status == "processing"
+
+
+def test_scheduling_failure_marks_course_and_job_retryable(
+    client, failed_course_with_file, owner_headers, monkeypatch
+):
+    def scheduling_failure(*args):
+        raise RuntimeError("background registration failed")
+
+    monkeypatch.setattr("app.routers.documents._schedule_processing", scheduling_failure)
+    response = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=owner_headers
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "DOCUMENT_SCHEDULING_FAILED"
+    with SessionLocal() as db:
+        course = db.get(Course, failed_course_with_file.id)
+        job = (
+            db.query(ProcessingJob)
+            .filter_by(course_id=failed_course_with_file.id)
+            .one()
+        )
+        assert course.status == "failed"
+        assert course.can_retry is True
+        assert job.status == "failed"
+
+
+def test_retry_compare_and_swap_schedules_exactly_one_preprocess_job(
+    client, failed_course_with_file, owner_headers, monkeypatch
+):
+    scheduled = []
+    monkeypatch.setattr(
+        "app.routers.documents._schedule_processing", lambda *args: scheduled.append(args)
+    )
+
+    first = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=owner_headers
+    )
+    second = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=owner_headers
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert len(scheduled) == 1
+    with SessionLocal() as db:
+        active_jobs = (
+            db.query(ProcessingJob)
+            .filter(
+                ProcessingJob.course_id == failed_course_with_file.id,
+                ProcessingJob.status.in_(["queued", "running"]),
+            )
+            .count()
+        )
+        assert active_jobs == 1
+
+
+def _health(*, available: bool, code: str | None = None) -> ProviderHealth:
+    return ProviderHealth(
+        available=available,
+        error_code=code,
+        checked_at=datetime.now(UTC),
+        limit=None,
+        limit_remaining=None,
+        limit_reset=None,
+        content_model_available=available,
+        embedding_model_available=available,
+    )
+
+
+def _processor_course() -> tuple[Course, str]:
+    db = SessionLocal()
+    try:
+        user = User(email="processor-owner@example.com", hashed_password="not-used")
+        db.add(user)
+        db.flush()
+        course = Course(user_id=user.id, filenames=["source.txt"])
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        return course, user.id
+    finally:
+        db.close()
+
+
+def test_preflight_retries_transient_failure_without_sleep(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+
+    course, _ = _processor_course()
+    calls = []
+    states = iter(
+        [
+            _health(available=False, code=ProviderErrorCode.RATE_LIMITED),
+            _health(available=False, code=ProviderErrorCode.TIMEOUT),
+            _health(available=True),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.services.document_processor.get_openrouter_health",
+        lambda **_: (calls.append(True), next(states))[1],
+    )
+    sleeps = []
+    monkeypatch.setattr("app.services.document_processor.time.sleep", sleeps.append)
+    processor = DocumentProcessor(vector_store=None)
+    monkeypatch.setattr(processor, "extract_and_chunk_file", lambda *args: [])
+
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal)
+
+    assert len(calls) == 3
+    assert sleeps == [0.25, 0.5]
+    assert result.status == "failed"
+    with SessionLocal() as db:
+        persisted = db.get(Course, course.id)
+        assert persisted.error_code == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+
+
+def test_quota_preflight_runs_once_and_returns_paused_status(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+
+    course, _ = _processor_course()
+    calls = []
+    monkeypatch.setattr(
+        "app.services.document_processor.get_openrouter_health",
+        lambda **_: (calls.append(True), _health(available=False, code=ProviderErrorCode.KEY_LIMIT_EXCEEDED))[1],
+    )
+    monkeypatch.setattr("app.services.document_processor.time.sleep", lambda _: pytest.fail("no retry"))
+
+    result = DocumentProcessor(vector_store=None).process_course(course.id, ["source.txt"], SessionLocal)
+
+    assert len(calls) == 1
+    assert result.status == "paused_due_to_quota"
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).status == "paused_due_to_quota"
+
+
+def test_empty_extraction_is_an_extraction_failure(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+
+    course, _ = _processor_course()
+    processor = DocumentProcessor(vector_store=None)
+    monkeypatch.setattr(processor, "extract_and_chunk_file", lambda *args: [])
+
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal)
+
+    assert result.status == "failed"
+    with SessionLocal() as db:
+        persisted = db.get(Course, course.id)
+        assert persisted.failure_stage == "extraction_failed"
+        assert persisted.error_code == "DOCUMENT_TEXT_EXTRACTION_FAILED"
+        assert persisted.recommended_action == "upload_clearer_pdf"
+
+
+def test_saved_file_discovery_rejects_symlinked_source(tmp_path, monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+
+    upload_root = tmp_path / "uploads"
+    course_dir = upload_root / "course-1"
+    course_dir.mkdir(parents=True)
+    safe_file = course_dir / "safe.txt"
+    safe_file.write_text("safe", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+    linked_file = course_dir / "linked.txt"
+    try:
+        os.symlink(outside, linked_file)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation unavailable: {exc}")
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(upload_root))
+
+    files = DocumentProcessor(vector_store=None).list_saved_course_files("course-1")
+
+    assert files == [str(safe_file.resolve())]
+
+
+def test_ready_course_persistence_failure_never_marks_job_succeeded(monkeypatch):
+    from app.services.document_processor import DocumentProcessor
+    from app.services.vector_store import Document
+
+    class VectorStoreStub:
+        def add_documents(self, *args, **kwargs):
+            return None
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    processor = DocumentProcessor(vector_store=VectorStoreStub())
+    monkeypatch.setattr(
+        processor,
+        "extract_and_chunk_file",
+        lambda *args: [Document(content="enough grounded content", metadata={"page": 1})],
+    )
+    monkeypatch.setattr(processor, "_generate_course_title", lambda *args: None)
+    original_apply = processor._apply_course_state
+
+    def fail_ready_state(course_model, **kwargs):
+        if kwargs["status"] == "ready":
+            raise RuntimeError("simulated course persistence failure")
+        original_apply(course_model, **kwargs)
+
+    monkeypatch.setattr(processor, "_apply_course_state", fail_ready_state)
+    result = processor.process_course(course.id, ["source.txt"], SessionLocal, job.id)
+
+    assert result.status == "failed"
+    with SessionLocal() as db:
+        persisted_course = db.get(Course, course.id)
+        persisted_job = db.get(ProcessingJob, job.id)
+        assert persisted_course.status == "failed"
+        assert persisted_job.status == "failed"
+
+
+def test_startup_reconciliation_fails_interrupted_inline_preprocess_job():
+    from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
+
+    course, user_id = _processor_course()
+    with SessionLocal() as db:
+        job = create_job(db, course_id=course.id, user_id=user_id, job_type="preprocess")
+    assert reconcile_interrupted_inline_preprocess_jobs(SessionLocal) == 1
+    with SessionLocal() as db:
+        persisted_course = db.get(Course, course.id)
+        persisted_job = db.get(ProcessingJob, job.id)
+        assert persisted_course.status == "failed"
+        assert persisted_course.can_retry is True
+        assert persisted_job.status == "failed"
 
 
 def test_processing_job_lifecycle():
