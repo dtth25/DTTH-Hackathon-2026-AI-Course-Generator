@@ -96,6 +96,28 @@ def stub_email_delivery(monkeypatch):
     monkeypatch.setattr(email_service, "send_password_reset_code", lambda *a, **k: None)
 
 
+@pytest.fixture(autouse=True)
+def stub_document_provider_preflight(monkeypatch):
+    """Keep document/vector tests local; dedicated provider-health tests cover the preflight."""
+    from datetime import UTC, datetime
+
+    from app.services.provider_health import ProviderHealth
+
+    monkeypatch.setattr(
+        "app.services.document_processor.get_openrouter_health",
+        lambda: ProviderHealth(
+            available=True,
+            error_code=None,
+            checked_at=datetime.now(UTC),
+            limit=None,
+            limit_remaining=None,
+            limit_reset=None,
+            content_model_available=True,
+            embedding_model_available=True,
+        ),
+    )
+
+
 
 @pytest.fixture
 def client():

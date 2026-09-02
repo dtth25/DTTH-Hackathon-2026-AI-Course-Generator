@@ -9,6 +9,13 @@ from pydantic import BaseModel
 import fitz  # PyMuPDF
 import docx
 from app.models.course import Course
+from app.services.job_service import mark_job_failed, mark_job_running, mark_job_succeeded
+from app.services.provider_errors import (
+    ProviderErrorCode,
+    ProviderFailure,
+    ProviderRequestError,
+)
+from app.services.provider_health import get_openrouter_health
 from app.services.vector_store import Document, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -102,6 +109,11 @@ class DocumentProcessor:
         name: Optional[str] = None,
         error_message: Optional[str] = None,
         embedding_provider: Optional[str] = None,
+        failure_stage: Optional[str] = None,
+        error_code: Optional[str] = None,
+        can_retry: bool = False,
+        recommended_action: Optional[str] = None,
+        technical_error: Optional[str] = None,
         db_session_factory=None,
     ):
         """Helper to update course status in database."""
@@ -129,9 +141,14 @@ class DocumentProcessor:
                     if embedding_provider:
                         course.embedding_provider = embedding_provider
                     course.embedding_status = embedding_status
-                    # Clears any stale error from a prior attempt on success, persists the
-                    # real reason on failure — always set explicitly, not just on failure.
+                    # These values are set explicitly for both success and failure so a
+                    # saved-file retry cannot leave stale failure metadata visible.
                     course.error_message = error_message
+                    course.failure_stage = failure_stage
+                    course.error_code = error_code
+                    course.can_retry = can_retry
+                    course.recommended_action = recommended_action
+                    course.technical_error = technical_error
                     db.commit()
         except Exception as e:
             logger.error(f"Failed to update course {course_id} in DB: {e}")
@@ -175,6 +192,19 @@ class DocumentProcessor:
         if os.path.exists(upload_dir):
             shutil.rmtree(upload_dir, ignore_errors=True)
         self.vector_store.delete_course(course_id)
+
+    def list_saved_course_files(self, course_id: str) -> List[str]:
+        """Return the saved source files for a course in deterministic order."""
+        from app.core.config import settings
+
+        course_dir = os.path.join(settings.UPLOAD_DIR, course_id)
+        if not os.path.isdir(course_dir):
+            return []
+        return [
+            os.path.join(course_dir, entry)
+            for entry in sorted(os.listdir(course_dir))
+            if os.path.isfile(os.path.join(course_dir, entry))
+        ]
 
     def extract_text_from_file(self, file_path: str) -> List[dict]:
         """Extract text from PDF/DOCX/TXT file. Returns list of dicts with content and page number."""
@@ -491,7 +521,11 @@ class DocumentProcessor:
         return filtered_chunks or doc_chunks
 
     def process_course(
-        self, course_id: str, file_paths: List[str], db_session_factory=None
+        self,
+        course_id: str,
+        file_paths: List[str],
+        db_session_factory=None,
+        job_id: Optional[str] = None,
     ) -> ProcessingResult:
         """
         1. Extract text từ files (PDF/DOCX/TXT)
@@ -501,6 +535,13 @@ class DocumentProcessor:
         5. Store in Chroma
         """
         logger.info(f"Starting document processing pipeline for course {course_id}")
+        if db_session_factory is None:
+            from app.services.database import SessionLocal as db_session_factory
+
+        if job_id:
+            with db_session_factory() as db:
+                mark_job_running(db, job_id, "Đang phân tích tài liệu")
+
         self._update_course_db(
             course_id,
             status="processing",
@@ -509,11 +550,87 @@ class DocumentProcessor:
             db_session_factory=db_session_factory,
         )
 
-        all_documents: List[Document] = []
         try:
+            health = get_openrouter_health()
+            if not health.available:
+                error_code = health.error_code or ProviderErrorCode.REQUEST_FAILED
+                code = ProviderErrorCode(error_code)
+                if code in {
+                    ProviderErrorCode.KEY_LIMIT_EXCEEDED,
+                    ProviderErrorCode.CREDITS_EXHAUSTED,
+                }:
+                    user_message = "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng."
+                    recommended_action = "restore_provider_quota"
+                elif code == ProviderErrorCode.KEY_INVALID:
+                    user_message = "Dịch vụ AI chưa được cấu hình hợp lệ."
+                    recommended_action = "contact_admin"
+                elif code == ProviderErrorCode.ACCESS_DENIED:
+                    user_message = "Dịch vụ AI không có quyền thực hiện yêu cầu này."
+                    recommended_action = "contact_admin"
+                elif code == ProviderErrorCode.RATE_LIMITED:
+                    user_message = "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau."
+                    recommended_action = "retry_later"
+                elif code == ProviderErrorCode.TIMEOUT:
+                    user_message = "Kết nối dịch vụ AI quá thời gian chờ."
+                    recommended_action = "retry_later"
+                else:
+                    user_message = "Dịch vụ AI tạm thời không khả dụng."
+                    recommended_action = "retry_later"
+                raise ProviderRequestError(
+                    ProviderFailure(
+                        code=code,
+                        user_message=user_message,
+                        can_retry=True,
+                        automatic_retry=code
+                        in {
+                            ProviderErrorCode.RATE_LIMITED,
+                            ProviderErrorCode.UNAVAILABLE,
+                            ProviderErrorCode.TIMEOUT,
+                        },
+                        recommended_action=recommended_action,
+                        http_status=None,
+                        technical_message=f"OpenRouter preflight unavailable: {code}",
+                    )
+                )
+
+            all_documents: List[Document] = []
             # 1. Extract, 2. Clean, 3. Chunk
-            for path in file_paths:
-                all_documents.extend(self.extract_and_chunk_file(path, course_id))
+            try:
+                for path in file_paths:
+                    all_documents.extend(self.extract_and_chunk_file(path, course_id))
+            except Exception as exc:
+                technical_message = str(exc)
+                user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
+                self._update_course_db(
+                    course_id,
+                    status="failed",
+                    stage="failed",
+                    progress=0,
+                    embedding_status="failed",
+                    error_message=user_message,
+                    failure_stage="extraction_failed",
+                    error_code="DOCUMENT_TEXT_EXTRACTION_FAILED",
+                    can_retry=True,
+                    recommended_action="upload_clearer_pdf",
+                    technical_error=technical_message[:1000],
+                    db_session_factory=db_session_factory,
+                )
+                if job_id:
+                    with db_session_factory() as db:
+                        mark_job_failed(
+                            db,
+                            job_id,
+                            error_code="DOCUMENT_TEXT_EXTRACTION_FAILED",
+                            message=user_message,
+                        )
+                logger.error("Document extraction failed for course %s: %s", course_id, technical_message)
+                return ProcessingResult(
+                    course_id=course_id,
+                    status="failed",
+                    chunk_count=0,
+                    quality_score=0,
+                    error=user_message,
+                )
 
             self._update_course_db(
                 course_id,
@@ -563,6 +680,9 @@ class DocumentProcessor:
                 embedding_provider=embedding_provider,
                 db_session_factory=db_session_factory,
             )
+            if job_id:
+                with db_session_factory() as db:
+                    mark_job_succeeded(db, job_id)
 
             logger.info(
                 f"Successfully processed course {course_id}: {len(all_documents)} chunks created."
@@ -574,26 +694,81 @@ class DocumentProcessor:
                 quality_score=quality_score,
             )
 
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(
-                f"Document processing failed for course {course_id}: {error_msg}"
+        except ProviderRequestError as exc:
+            failure = exc.failure
+            failure_status = (
+                "paused_due_to_quota"
+                if failure.code
+                in {
+                    ProviderErrorCode.KEY_LIMIT_EXCEEDED,
+                    ProviderErrorCode.CREDITS_EXHAUSTED,
+                }
+                else "failed"
             )
+            self._update_course_db(
+                course_id,
+                status=failure_status,
+                stage="failed",
+                progress=0,
+                embedding_status="failed",
+                error_message=failure.user_message,
+                failure_stage="embedding_failed",
+                error_code=str(failure.code),
+                can_retry=failure.can_retry,
+                recommended_action=failure.recommended_action,
+                technical_error=failure.technical_message,
+                db_session_factory=db_session_factory,
+            )
+            if job_id:
+                with db_session_factory() as db:
+                    mark_job_failed(
+                        db,
+                        job_id,
+                        error_code=str(failure.code),
+                        message=failure.user_message,
+                    )
+            logger.error("Provider failure processing course %s: %s", course_id, failure.code)
+            return ProcessingResult(
+                course_id=course_id,
+                status="failed",
+                chunk_count=0,
+                quality_score=0,
+                error=failure.user_message,
+            )
+        except Exception as exc:
+            # Non-provider errors after extraction are still actionable but do not expose
+            # their implementation details to course or job API clients.
+            technical_message = str(exc)
+            user_message = "Không thể hoàn tất xử lý tài liệu. Vui lòng thử lại sau."
             self._update_course_db(
                 course_id,
                 status="failed",
                 stage="failed",
                 progress=0,
                 embedding_status="failed",
-                error_message=error_msg[:500],
+                error_message=user_message,
+                failure_stage="embedding_failed",
+                error_code="DOCUMENT_PROCESSING_FAILED",
+                can_retry=True,
+                recommended_action="retry_later",
+                technical_error=technical_message[:1000],
                 db_session_factory=db_session_factory,
             )
+            if job_id:
+                with db_session_factory() as db:
+                    mark_job_failed(
+                        db,
+                        job_id,
+                        error_code="DOCUMENT_PROCESSING_FAILED",
+                        message=user_message,
+                    )
+            logger.error("Document processing failed for course %s: %s", course_id, technical_message)
             return ProcessingResult(
                 course_id=course_id,
                 status="failed",
                 chunk_count=0,
                 quality_score=0,
-                error=error_msg,
+                error=user_message,
             )
 
 

@@ -1,7 +1,10 @@
-"""Persistence tests for document processing jobs."""
+"""Persistence tests for document processing jobs and saved-document retries."""
+
+from pathlib import Path
 
 import pytest
 
+from app.core.config import settings
 from app.models.course import Course
 from app.models.processing_job import ProcessingJob
 from app.models.user import User
@@ -26,6 +29,118 @@ def _auth_headers(client, email: str) -> dict[str, str]:
     )
     assert verified.status_code == 200
     return {"Authorization": f"Bearer {verified.json()['access_token']}"}
+
+
+@pytest.fixture
+def owner_headers(client):
+    return _auth_headers(client, "retry-owner@example.com")
+
+
+@pytest.fixture
+def other_headers(client):
+    return _auth_headers(client, "retry-other@example.com")
+
+
+def _course_for(client, headers, *, status: str, with_file: bool) -> Course:
+    user_id = client.get("/api/auth/me", headers=headers).json()["id"]
+    with SessionLocal() as db:
+        course = Course(
+            user_id=user_id,
+            filenames=["source.txt"],
+            status=status,
+            stage="failed" if status == "failed" else "ready",
+            error_message="Dịch vụ AI đang tạm dừng vì hạn mức sử dụng."
+            if status == "failed"
+            else None,
+        )
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        db.expunge(course)
+    if with_file:
+        course_dir = Path(settings.UPLOAD_DIR) / course.id
+        course_dir.mkdir(parents=True, exist_ok=True)
+        (course_dir / "source.txt").write_text(
+            "Grounded retry fixture", encoding="utf-8"
+        )
+    return course
+
+
+@pytest.fixture
+def failed_course_with_file(client, owner_headers):
+    return _course_for(client, owner_headers, status="failed", with_file=True)
+
+
+@pytest.fixture
+def failed_course_without_file(client, owner_headers):
+    return _course_for(client, owner_headers, status="failed", with_file=False)
+
+
+@pytest.fixture
+def ready_course(client, owner_headers):
+    return _course_for(client, owner_headers, status="ready", with_file=True)
+
+
+def test_owner_can_retry_failed_course_from_saved_file(
+    client, failed_course_with_file, owner_headers, monkeypatch
+):
+    scheduled = []
+    monkeypatch.setattr(
+        "app.routers.documents._schedule_processing",
+        lambda *args: scheduled.append(args),
+    )
+    response = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=owner_headers
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["document_id"] == failed_course_with_file.id
+    assert body["status"] == "processing"
+    assert body["job_id"]
+    assert len(scheduled) == 1
+
+
+def test_other_user_cannot_retry_course(client, failed_course_with_file, other_headers):
+    response = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=other_headers
+    )
+    assert response.status_code == 404
+
+
+def test_processing_or_ready_course_rejects_retry(client, ready_course, owner_headers):
+    response = client.post(
+        f"/api/documents/{ready_course.id}/retry", headers=owner_headers
+    )
+    assert response.status_code == 409
+
+
+def test_retry_requires_saved_source_file(
+    client, failed_course_without_file, owner_headers
+):
+    response = client.post(
+        f"/api/documents/{failed_course_without_file.id}/retry", headers=owner_headers
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "SOURCE_FILE_MISSING"
+
+
+def test_job_status_is_visible_only_to_its_owner(
+    client, failed_course_with_file, owner_headers, other_headers, monkeypatch
+):
+    monkeypatch.setattr("app.routers.documents._schedule_processing", lambda *args: None)
+    retry = client.post(
+        f"/api/documents/{failed_course_with_file.id}/retry", headers=owner_headers
+    )
+    assert retry.status_code == 202
+    job_id = retry.json()["job_id"]
+
+    owner_response = client.get(f"/api/jobs/{job_id}", headers=owner_headers)
+    assert owner_response.status_code == 200
+    assert owner_response.json()["document_id"] == failed_course_with_file.id
+    assert "technical_error" not in owner_response.json()
+
+    other_response = client.get(f"/api/jobs/{job_id}", headers=other_headers)
+    assert other_response.status_code == 404
 
 
 def test_processing_job_lifecycle():

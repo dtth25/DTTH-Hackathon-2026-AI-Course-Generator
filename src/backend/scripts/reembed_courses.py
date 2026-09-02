@@ -34,13 +34,7 @@ def _reembed_course(processor: DocumentProcessor, course: Course) -> int:
     routers/upload.py), while Course.filenames only stores the clean original name —
     so we glob the course's upload directory instead of reconstructing the on-disk name.
     """
-    course_dir = os.path.join(settings.UPLOAD_DIR, course.id)
-    file_paths = []
-    if os.path.isdir(course_dir):
-        for entry in sorted(os.listdir(course_dir)):
-            full_path = os.path.join(course_dir, entry)
-            if os.path.isfile(full_path):
-                file_paths.append(full_path)
+    file_paths = processor.list_saved_course_files(course.id)
     if not file_paths:
         logger.warning(f"Course {course.id} ({course.name}): no source files found on disk, skipping.")
         return 0

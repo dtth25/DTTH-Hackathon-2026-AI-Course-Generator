@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
 from app.models.course import Course
+from app.models.processing_job import ProcessingJob
 from app.models.user import User
 from app.routers.generation import get_valid_course
 from app.schemas.course import (
@@ -139,9 +140,15 @@ def get_course_status(
     course = get_valid_course(course_id, current_user, db)
 
     filenames = course.filenames if isinstance(course.filenames, list) else []
+    latest_job = (
+        db.query(ProcessingJob)
+        .filter(ProcessingJob.course_id == course.id)
+        .order_by(ProcessingJob.created_at.desc())
+        .first()
+    )
     if course.status == "ready":
         message = "Tài liệu đã sẵn sàng."
-    elif course.status == "failed":
+    elif course.status in {"failed", "paused_due_to_quota"}:
         message = course.error_message or "Xử lý tài liệu thất bại."
     else:
         message = "Đang phân tích và xử lý tài liệu..."
@@ -159,6 +166,11 @@ def get_course_status(
         "filenames": filenames,
         "file_count": len(filenames),
         "error": course.error_message,
+        "failure_stage": course.failure_stage,
+        "error_code": course.error_code,
+        "can_retry": course.can_retry,
+        "recommended_action": course.recommended_action,
+        "job_id": latest_job.id if latest_job else None,
         "document_quality_report": {
             "score": course.quality_score,
             "summary": "Tài liệu rõ ràng, cấu trúc tốt." if course.quality_score >= 70 else "Chất lượng tài liệu trung bình, có thể ảnh hưởng đến nội dung sinh ra.",

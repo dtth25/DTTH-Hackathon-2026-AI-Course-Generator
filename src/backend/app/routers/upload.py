@@ -12,8 +12,9 @@ from app.core.deps import get_current_user, get_db
 from app.models.course import Course
 from app.models.user import User
 from app.routers.courses import _enforce_course_limit
+from app.routers.documents import _schedule_processing
 from app.schemas.course import UploadResponse
-from app.services.document_processor import get_document_processor
+from app.services.job_service import create_job
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -111,9 +112,13 @@ async def upload_files(
     db.commit()
     db.refresh(db_course)
 
-    # Trigger background document processing pipeline
-    processor = get_document_processor()
-    background_tasks.add_task(processor.process_course, course_id, saved_file_paths)
+    job = create_job(
+        db,
+        course_id=course_id,
+        user_id=current_user.id,
+        job_type="preprocess",
+    )
+    _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
 
     return {
         "course_id": course_id,
@@ -122,5 +127,6 @@ async def upload_files(
         "file_count": len(saved_filenames),
         "status": "processing",
         "message": f"Đã nhận {len(saved_filenames)} file và đang phân tích...",
+        "job_id": job.id,
     }
 
