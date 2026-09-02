@@ -125,6 +125,8 @@ class Settings(BaseSettings):
     EMBEDDING_CACHE_DIR: str = Field(default="cache/chunk_embeddings", description="Directory for content-hash embedding cache")
 
     OPENROUTER_EMBEDDING_MODEL: str = Field(default="openai/text-embedding-3-small", description="OpenRouter embedding model slug")
+    OPENROUTER_PREFLIGHT_TTL_SECONDS: int = Field(default=30, ge=5, le=300)
+    OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0, le=20.0)
 
     # Document chunking tuning
     DOCUMENT_CHUNK_SIZE: int = Field(default=1800, description="Target chunk size in characters")
