@@ -198,16 +198,29 @@ export interface DocumentRetryResponse {
   job_id: string;
 }
 
-export interface JobResponse {
+export type JobType = "preprocess" | "book" | "slides" | "quiz" | "video";
+
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "retry_scheduled"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+/** Owner-safe job envelope returned by the existing backend jobs endpoint.
+ * `document_id` is the established backend name for the course/document id.
+ * Internal queue, worker, payload, and provider fields are intentionally absent. */
+export interface JobStatusResponse {
   id: string;
   document_id: string;
-  user_id?: string | null;
-  job_type: string;
-  status: string;
+  job_type: JobType;
+  status: JobStatus;
+  queue_position?: number | null;
   progress: number;
   message: string;
   error?: string | null;
-  error_code?: CourseErrorCode | null;
+  error_code?: string | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
@@ -238,6 +251,7 @@ export interface GenerateRequest {
 
 export interface GenerateResponse {
   course_id: string;
+  job_id?: string | null;
   status?: string;
   message?: string;
   estimated_time?: string;

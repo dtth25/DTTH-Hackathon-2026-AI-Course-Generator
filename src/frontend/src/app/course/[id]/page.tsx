@@ -30,6 +30,7 @@ import { BookTab } from "@/components/dashboard/BookTab";
 import { SlideTab } from "@/components/dashboard/SlideTab";
 import { QuizTab } from "@/components/dashboard/QuizTab";
 import { VidTab } from "@/components/dashboard/VidTab";
+import { JobProgress } from "@/components/dashboard/JobProgress";
 import { QualityScoreBadge } from "@/components/ui/QualityScoreBadge";
 import {
   apiGetCourseStatus,
@@ -79,6 +80,7 @@ function DashboardContent() {
   const [pageError, setPageError] = useState<Error | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [preprocessJobId, setPreprocessJobId] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
@@ -124,7 +126,13 @@ function DashboardContent() {
         if (!snapshot || !isCurrentGeneration(generation)) return;
         setCourse(snapshot.statusData);
         setStudyPack(snapshot.packData);
+        setPreprocessJobId(
+          normalizeCourseStatus(snapshot.statusData.status) === "processing"
+            ? snapshot.statusData.job_id ?? null
+            : null
+        );
         if (normalizeCourseStatus(snapshot.statusData.status) !== "processing") return;
+        if (snapshot.statusData.job_id) return;
       } catch (error) {
         if (!isCurrentGeneration(generation) || isAbortError(error)) return;
       }
@@ -145,7 +153,9 @@ function DashboardContent() {
       if (!snapshot || !isCurrentGeneration(generation)) return;
       setCourse(snapshot.statusData);
       setStudyPack(snapshot.packData);
-      if (normalizeCourseStatus(snapshot.statusData.status) === "processing") {
+      const processing = normalizeCourseStatus(snapshot.statusData.status) === "processing";
+      setPreprocessJobId(processing ? snapshot.statusData.job_id ?? null : null);
+      if (processing && !snapshot.statusData.job_id) {
         schedulePolling(courseId, generation);
       }
     } catch (error) {
@@ -180,9 +190,15 @@ function DashboardContent() {
     setRetrying(true);
     setRetryError(null);
     try {
-      await apiRetryDocument(course.course_id, { signal: controller.signal });
+      const retry = await apiRetryDocument(course.course_id, { signal: controller.signal });
       if (!isCurrentGeneration(generation)) return;
-      void loadCourse(course.course_id, generation, true);
+      setPreprocessJobId(retry.job_id);
+      setCourse((current) => current ? {
+        ...current,
+        status: retry.status,
+        progress: retry.progress,
+        job_id: retry.job_id,
+      } : current);
     } catch (error) {
       if (isCurrentGeneration(generation) && !isAbortError(error)) {
         setRetryError(asError(error, "Không thể thử lại tài liệu.").message);
@@ -191,7 +207,7 @@ function DashboardContent() {
       if (requestAbortRef.current === controller) requestAbortRef.current = null;
       if (isCurrentGeneration(generation)) setRetrying(false);
     }
-  }, [beginGeneration, course, isCurrentGeneration, loadCourse, retrying]);
+  }, [beginGeneration, course, isCurrentGeneration, retrying]);
 
   if (loading) {
     return (
@@ -322,6 +338,16 @@ function DashboardContent() {
         </div>
       </header>
 
+      {status === "processing" && preprocessJobId && (
+        <JobProgress
+          key={preprocessJobId}
+          className="mb-6"
+          jobId={preprocessJobId}
+          onSucceeded={handleRefetch}
+          onTerminal={handleRefetch}
+        />
+      )}
+
       {status === "error" ? (
         <ErrorState
           className="my-0"
@@ -400,16 +426,16 @@ function DashboardContent() {
           aria-label="Học liệu của khóa học"
           className="mt-6 min-h-[400px] border-t-[3px] border-[var(--accent-strong)] px-0 py-6 sm:px-4 sm:py-8"
         >
-          <TabsContent value="book" className="mt-0">
+          <TabsContent value="book" keepMounted className="mt-0">
             <BookTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
-          <TabsContent value="slide" className="mt-0">
+          <TabsContent value="slide" keepMounted className="mt-0">
             <SlideTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
-          <TabsContent value="quiz" className="mt-0">
+          <TabsContent value="quiz" keepMounted className="mt-0">
             <QuizTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
-          <TabsContent value="vid" className="mt-0">
+          <TabsContent value="vid" keepMounted className="mt-0">
             <VidTab courseId={course.course_id} documentProcessing={status === "processing"} />
           </TabsContent>
         </section>

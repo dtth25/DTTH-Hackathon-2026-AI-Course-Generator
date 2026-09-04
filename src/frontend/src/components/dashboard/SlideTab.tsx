@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { SlideOptionsPanel } from "@/components/dashboard/SlideOptionsPanel";
 import { CreateVersionButton } from "@/components/dashboard/CreateVersionButton";
 import { VersionSwitcher } from "@/components/dashboard/VersionSwitcher";
+import { JobProgress } from "@/components/dashboard/JobProgress";
 import {
   ApiRequestError,
   apiDeleteArtifactVersion,
@@ -70,7 +71,11 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
     setGenerating,
     progress,
     setProgress,
-    startPolling,
+    activeJob,
+    startJob,
+    finishJob,
+    dismissJob,
+    resumeArtifactPolling,
     versions,
     activeVersion,
     viewedVersion,
@@ -123,7 +128,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
     setProgress(5);
     try {
       const res = await apiGenerateSlide(courseId, { mode, focus_prompt: focusPrompt });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo slide thất bại.");
       setGenerating(false);
@@ -158,7 +163,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
         focus_prompt: focusPrompt,
         ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}),
       });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409 && (err.detail as { code?: string })?.code === "version_cap_reached") {
         toast.error("Tối đa 3 phiên bản. Hãy xóa một phiên bản để tạo bản mới.");
@@ -205,6 +210,18 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
       </DialogContent>
     </Dialog>
   );
+  const jobProgress = activeJob ? (
+    <JobProgress
+      key={activeJob.jobId}
+      jobId={activeJob.jobId}
+      onSucceeded={resumeArtifactPolling}
+      onTerminal={finishJob}
+      onRetry={() => {
+        dismissJob();
+        setRegenDialogOpen(true);
+      }}
+    />
+  ) : null;
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -264,15 +281,17 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
         description="Hệ thống sẽ phân tích tài liệu của bạn và tạo bộ slide trình chiếu chuẩn 16:9 (khoảng 15 trang) bám sát nội dung."
         badge=""
       >
-        <SlideOptionsPanel
-          value={optionValue}
-          onChange={updateOptions}
-          onSubmit={handleGenerate}
-          busy={generating}
-          progress={progress}
-          submitLabel="Tạo slide bài giảng"
-          documentProcessing={documentProcessing}
-        />
+        {jobProgress ?? (
+          <SlideOptionsPanel
+            value={optionValue}
+            onChange={updateOptions}
+            onSubmit={handleGenerate}
+            busy={generating}
+            progress={progress}
+            submitLabel="Tạo slide bài giảng"
+            documentProcessing={documentProcessing}
+          />
+        )}
       </EmptyState>
     );
   }
@@ -282,10 +301,12 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
   // PRESENTER FULLSCREEN MODE — minimal chrome: image, prev/next, page count, exit.
   if (isPresenterMode) {
     return (
-      <div
-        ref={stageRef}
-        className="fixed inset-0 z-50 bg-stage text-stage-foreground flex flex-col items-center justify-center select-none overflow-hidden animate-in fade-in duration-200"
-      >
+      <>
+        <div className="hidden">{jobProgress}</div>
+        <div
+          ref={stageRef}
+          className="fixed inset-0 z-50 bg-stage text-stage-foreground flex flex-col items-center justify-center select-none overflow-hidden animate-in fade-in duration-200"
+        >
         <button
           onClick={() => {
             if (document.fullscreenElement) document.exitFullscreen();
@@ -324,7 +345,8 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -402,6 +424,8 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
           )}
         </div>
       </div>
+
+      {jobProgress}
 
       <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 

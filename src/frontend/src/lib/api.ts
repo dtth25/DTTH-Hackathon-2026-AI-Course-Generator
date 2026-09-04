@@ -17,7 +17,7 @@ import type {
   QuizArtifactStatus,
   VidArtifactStatus,
   DocumentRetryResponse,
-  JobResponse,
+  JobStatusResponse,
 } from "@/lib/types";
 
 /** Thrown by apiFetch on any non-2xx response. Carries the raw `detail` payload
@@ -370,8 +370,15 @@ export function apiRetryDocument(courseId: string, init?: RequestInit): Promise<
   );
 }
 
-export function apiGetJob(jobId: string): Promise<JobResponse> {
-  return apiFetch<JobResponse>(`/api/jobs/${encodeURIComponent(jobId)}`);
+export function apiGetJob(jobId: string, init?: RequestInit): Promise<JobStatusResponse> {
+  return apiFetch<JobStatusResponse>(`/api/jobs/${encodeURIComponent(jobId)}`, init);
+}
+
+export function apiCancelJob(jobId: string, init?: RequestInit): Promise<JobStatusResponse> {
+  return apiFetch<JobStatusResponse>(`/api/jobs/${encodeURIComponent(jobId)}`, {
+    ...init,
+    method: "DELETE",
+  });
 }
 
 export async function apiDeleteCourse(courseId: string): Promise<void> {

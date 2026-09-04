@@ -227,12 +227,127 @@ for (const viewport of PRODUCT_VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await prepareAuthenticatedPage(page);
+    let terminalGetCount = 0;
+    let firstJobRequestAt: number | null = null;
+    await page.route("**/api/course/demo-course/vid*", (route) =>
+      route.fulfill({ json: { status: "ready", progress: 100, data: null, versions: [] } })
+    );
+    await page.route("**/api/generate-vid", (route) =>
+      route.fulfill({
+        status: 202,
+        json: { course_id: "demo-course", version_id: "vid-v2", job_id: "queued-video-job" },
+      })
+    );
+    await page.route("**/api/jobs/queued-video-job", (route) => {
+      terminalGetCount += 1;
+      firstJobRequestAt ??= Date.now();
+      const stillQueued = Date.now() - firstJobRequestAt < 1_000;
+      return route.fulfill({
+        json: {
+          id: "queued-video-job",
+          document_id: "demo-course",
+          job_type: "video",
+          status: stillQueued ? "queued" : "cancelled",
+          queue_position: stillQueued ? 2 : null,
+          progress: 0,
+          message: "private worker payload",
+          created_at: "2026-09-05T00:00:00Z",
+          updated_at: "2026-09-05T00:00:00Z",
+        },
+      });
+    });
     await page.goto("/course/demo-course");
     await expect(page.locator('[data-visual-state="course-workspace"]')).toBeVisible();
     await page.getByRole("tab", { name: "Video" }).click();
-    await expect(page.getByText("Đang dựng video (64%)…")).toBeVisible();
+    await page.getByRole("button", { name: "Tạo video bài giảng" }).click();
+    await expect(page.getByText("Đang chờ", { exact: true })).toBeVisible();
+    await expect(page.getByText("Hàng chờ dựng video · vị trí 2")).toBeVisible();
+    await expect(page.getByText(/private worker payload/iu)).toHaveCount(0);
+    await expect(page.getByText("Đã hủy")).toBeVisible({ timeout: 5_000 });
+    const requestsAtTerminal = terminalGetCount;
+    await page.waitForTimeout(3_200);
+    expect(terminalGetCount).toBe(requestsAtTerminal);
     await expectNoInventedQualityMetric(page);
-    await expectVisualSnapshot(page, `video-progress-${viewport.name}-light`);
+  });
+
+  test(`retry-scheduled video countdown ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await prepareAuthenticatedPage(page);
+    await page.route("**/api/course/demo-course/vid*", (route) =>
+      route.fulfill({ json: { status: "ready", progress: 100, data: null, versions: [] } })
+    );
+    await page.route("**/api/generate-vid", (route) =>
+      route.fulfill({ json: { course_id: "demo-course", version_id: "vid-v2", job_id: "retry-video-job" } })
+    );
+    await page.route("**/api/jobs/retry-video-job", (route) =>
+      route.fulfill({
+        json: {
+          id: "retry-video-job",
+          document_id: "demo-course",
+          job_type: "video",
+          status: "retry_scheduled",
+          queue_position: 1,
+          progress: 34,
+          message: "provider diagnostic must remain private",
+          created_at: "2026-09-05T00:00:00Z",
+          updated_at: "2026-09-05T00:00:00Z",
+        },
+      })
+    );
+
+    await page.goto("/course/demo-course");
+    await page.getByRole("tab", { name: "Video" }).click();
+    await page.getByRole("button", { name: "Tạo video bài giảng" }).click();
+    await expect(page.getByText("Đang chờ thử lại")).toBeVisible();
+    await expect(page.getByText("Thử lại sau 3 giây")).toBeVisible();
+    await expect(page.getByText("Thử lại sau 2 giây")).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByText(/provider diagnostic/iu)).toHaveCount(0);
+  });
+
+  test(`cancel running video cooperatively ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await prepareAuthenticatedPage(page);
+    let cancelRequested = false;
+    let terminalGetCount = 0;
+    const response = (status: "running" | "cancelled") => ({
+      id: "cancel-video-job",
+      document_id: "demo-course",
+      job_type: "video",
+      status,
+      queue_position: status === "running" ? 1 : null,
+      progress: 41,
+      message: "worker-id-3 raw payload",
+      created_at: "2026-09-05T00:00:00Z",
+      updated_at: "2026-09-05T00:00:00Z",
+    });
+    await page.route("**/api/course/demo-course/vid*", (route) =>
+      route.fulfill({ json: { status: "ready", progress: 100, data: null, versions: [] } })
+    );
+    await page.route("**/api/generate-vid", (route) =>
+      route.fulfill({ json: { course_id: "demo-course", version_id: "vid-v2", job_id: "cancel-video-job" } })
+    );
+    await page.route("**/api/jobs/cancel-video-job", (route) => {
+      if (route.request().method() === "DELETE") {
+        cancelRequested = true;
+        return route.fulfill({ status: 202, json: response("running") });
+      }
+      terminalGetCount += 1;
+      return route.fulfill({ json: response(cancelRequested ? "cancelled" : "running") });
+    });
+
+    await page.goto("/course/demo-course");
+    await page.getByRole("tab", { name: "Video" }).click();
+    await page.getByRole("button", { name: "Tạo video bài giảng" }).click();
+    await expect(page.getByText("Đang dựng video (41%)…")).toBeVisible();
+    await page.getByRole("button", { name: "Yêu cầu hủy" }).click();
+    await expect(
+      page.getByText("Đã gửi yêu cầu hủy. Video sẽ dừng ở điểm an toàn gần nhất.")
+    ).toBeVisible();
+    await expect(page.getByText("Đã hủy")).toBeVisible({ timeout: 5_000 });
+    const requestsAtTerminal = terminalGetCount;
+    await page.waitForTimeout(3_200);
+    expect(terminalGetCount).toBe(requestsAtTerminal);
+    await expect(page.getByText(/worker-id|raw payload/iu)).toHaveCount(0);
   });
 
   test(`ingestion error ${viewport.name}`, async ({ page }) => {
@@ -316,6 +431,21 @@ test("document retry recovers quota-paused indexing without upload navigation", 
       },
     });
   });
+  await page.route("**/api/jobs/retry-job", (route) =>
+    route.fulfill({
+      json: {
+        id: "retry-job",
+        document_id: "retry-course",
+        job_type: "preprocess",
+        status: "succeeded",
+        progress: 100,
+        message: "Hoàn tất",
+        created_at: "2026-09-05T00:00:00Z",
+        updated_at: "2026-09-05T00:00:03Z",
+        completed_at: "2026-09-05T00:00:03Z",
+      },
+    })
+  );
   await page.goto("/course/retry-course");
   await expect(page.getByText("Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.")).toBeVisible();
   await expect(page.getByText(/(?:quét|scan).*PDF|PDF.*(?:quét|scan|hỏng)/iu)).toHaveCount(0);

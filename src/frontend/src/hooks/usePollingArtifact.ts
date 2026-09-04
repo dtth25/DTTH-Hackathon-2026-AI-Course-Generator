@@ -22,6 +22,11 @@ export interface ArtifactStatusLike<T> {
   versions?: ArtifactVersion[];
 }
 
+export interface ActiveArtifactJob {
+  jobId: string;
+  versionId: string | null;
+}
+
 interface UsePollingArtifactOptions<T> {
   courseId: string;
   fetchFn: (courseId: string, version?: string | null) => Promise<ArtifactStatusLike<T>>;
@@ -61,6 +66,7 @@ export function usePollingArtifact<T>({
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
   const [viewedVersion, setViewedVersion] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<ActiveArtifactJob | null>(null);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingVersionRef = useRef<string | null>(null);
@@ -142,6 +148,37 @@ export function usePollingArtifact<T>({
     [courseId, timeoutMs, timeoutMessage, defaultErrorMessage, pollMs, viewedVersion]
   );
 
+  const startJob = useCallback((jobId: string | null | undefined, versionId: string | null | undefined) => {
+    if (!jobId) {
+      startPolling(Date.now(), versionId);
+      return;
+    }
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    pollingVersionRef.current = null;
+    setError(null);
+    setGenerating(true);
+    setProgress(0);
+    setActiveJob({ jobId, versionId: versionId ?? null });
+  }, [startPolling]);
+
+  const finishJob = useCallback(() => {
+    setGenerating(false);
+  }, []);
+
+  const dismissJob = useCallback(() => {
+    setActiveJob(null);
+    setGenerating(false);
+  }, []);
+
+  const resumeArtifactPolling = useCallback(() => {
+    if (!activeJob) return;
+    const { versionId } = activeJob;
+    setActiveJob(null);
+    setGenerating(true);
+    setProgress(5);
+    startPolling(Date.now(), versionId);
+  }, [activeJob, startPolling]);
+
   useEffect(() => {
     return () => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
@@ -201,6 +238,11 @@ export function usePollingArtifact<T>({
     setProgress,
     dataByVersion,
     startPolling,
+    activeJob,
+    startJob,
+    finishJob,
+    dismissJob,
+    resumeArtifactPolling,
     versions,
     activeVersion,
     viewedVersion,

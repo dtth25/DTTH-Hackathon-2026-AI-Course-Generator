@@ -31,6 +31,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { BookOptionsPanel, BOOK_DETAIL_OPTIONS } from "@/components/dashboard/BookOptionsPanel";
 import { CreateVersionButton } from "@/components/dashboard/CreateVersionButton";
 import { VersionSwitcher } from "@/components/dashboard/VersionSwitcher";
+import { JobProgress } from "@/components/dashboard/JobProgress";
 import { ApiRequestError, apiDeleteArtifactVersion, apiGetBook, apiGenerateBook, apiRenameArtifactVersion, getDownloadBookUrl } from "@/lib/api";
 import { usePollingArtifact } from "@/hooks/usePollingArtifact";
 import { normalizePublicError, type BookOutput } from "@/lib/types";
@@ -63,7 +64,11 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
     setGenerating,
     progress,
     setProgress,
-    startPolling,
+    activeJob,
+    startJob,
+    finishJob,
+    dismissJob,
+    resumeArtifactPolling,
     versions,
     activeVersion,
     viewedVersion,
@@ -107,7 +112,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
     setProgress(5);
     try {
       const res = await apiGenerateBook(courseId, { detail_level: detailLevel, user_prompt: userPrompt });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo sách ôn tập thất bại.");
       setGenerating(false);
@@ -133,7 +138,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
         user_prompt: userPrompt,
         ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}),
       });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409 && (err.detail as { code?: string })?.code === "version_cap_reached") {
         toast.error("Tối đa 3 phiên bản. Hãy xóa một phiên bản để tạo bản mới.");
@@ -189,6 +194,18 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
       </DialogContent>
     </Dialog>
   );
+  const jobProgress = activeJob ? (
+    <JobProgress
+      key={activeJob.jobId}
+      jobId={activeJob.jobId}
+      onSucceeded={resumeArtifactPolling}
+      onTerminal={finishJob}
+      onRetry={() => {
+        dismissJob();
+        setRegenDialogOpen(true);
+      }}
+    />
+  ) : null;
 
   // ---------- Loading ----------
   if (loading) {
@@ -229,15 +246,17 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
         description="Hệ thống sẽ tổng hợp tài liệu của bạn thành một cuốn sách ôn tập ngắn gọn, có mục lục và các chương rõ ràng để tự học hoặc giảng dạy."
         badge=""
       >
-        <BookOptionsPanel
-          value={optionValue}
-          onChange={updateOptions}
-          onSubmit={handleGenerate}
-          busy={generating}
-          progress={progress}
-          submitLabel="Tạo sách ôn tập"
-          documentProcessing={documentProcessing}
-        />
+        {jobProgress ?? (
+          <BookOptionsPanel
+            value={optionValue}
+            onChange={updateOptions}
+            onSubmit={handleGenerate}
+            busy={generating}
+            progress={progress}
+            submitLabel="Tạo sách ôn tập"
+            documentProcessing={documentProcessing}
+          />
+        )}
       </EmptyState>
     );
   }
@@ -295,6 +314,8 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
           </Button>
         </div>
       </div>
+
+      {jobProgress}
 
       <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 

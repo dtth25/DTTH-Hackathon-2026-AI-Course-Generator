@@ -7,6 +7,7 @@ import {
   ApiResponseError,
   ApiRequestError,
   apiGetCourseStatus,
+  apiGetJob,
   apiGetStudyPack,
   apiRetryDocument,
 } from "@/lib/api";
@@ -40,6 +41,7 @@ vi.mock("@/components/dashboard/VidTab", () => ({
 
 vi.mock("@/lib/api", () => ({
   apiGetCourseStatus: vi.fn(),
+  apiGetJob: vi.fn(),
   apiGetStudyPack: vi.fn(),
   apiRetryDocument: vi.fn(),
   NETWORK_UNAVAILABLE_MESSAGE:
@@ -88,6 +90,17 @@ describe("course workspace", () => {
       file_count: 2,
     });
     vi.mocked(apiGetStudyPack).mockRejectedValue(new Error("Chưa có học liệu"));
+    vi.mocked(apiGetJob).mockResolvedValue({
+      id: "job-1",
+      document_id: "course-1",
+      job_type: "preprocess",
+      status: "succeeded",
+      progress: 100,
+      message: "Hoàn tất",
+      created_at: "2026-09-05T00:00:00Z",
+      updated_at: "2026-09-05T00:00:03Z",
+      completed_at: "2026-09-05T00:00:03Z",
+    });
   });
 
   afterEach(() => {

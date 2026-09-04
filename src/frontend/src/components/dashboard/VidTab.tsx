@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { VidOptionsPanel } from "@/components/dashboard/VidOptionsPanel";
 import { CreateVersionButton } from "@/components/dashboard/CreateVersionButton";
 import { VersionSwitcher } from "@/components/dashboard/VersionSwitcher";
+import { JobProgress } from "@/components/dashboard/JobProgress";
 import {
   ApiRequestError,
   apiDeleteArtifactVersion,
@@ -67,7 +68,11 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
     setGenerating,
     progress,
     setProgress,
-    startPolling,
+    activeJob,
+    startJob,
+    finishJob,
+    dismissJob,
+    resumeArtifactPolling,
     versions,
     activeVersion,
     viewedVersion,
@@ -92,7 +97,7 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
     setProgress(5);
     try {
       const res = await apiGenerateVid(courseId, { format, voice, user_prompt: userPrompt });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo video thất bại.");
       setGenerating(false);
@@ -123,7 +128,7 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
     setProgress(5);
     try {
       const res = await apiGenerateVid(courseId, { format, voice, user_prompt: userPrompt, ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}) });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409 && (err.detail as { code?: string })?.code === "version_cap_reached") {
         toast.error("Tối đa 3 phiên bản. Hãy xóa một phiên bản để tạo bản mới.");
@@ -171,6 +176,19 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
       </DialogContent>
     </Dialog>
   );
+  const jobProgress = activeJob ? (
+    <JobProgress
+      key={activeJob.jobId}
+      jobId={activeJob.jobId}
+      allowCancel
+      onSucceeded={resumeArtifactPolling}
+      onTerminal={finishJob}
+      onRetry={() => {
+        dismissJob();
+        setRegenDialogOpen(true);
+      }}
+    />
+  ) : null;
 
 
   if (loading) {
@@ -210,15 +228,17 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
         description="Hệ thống sẽ dựng một video ngắn có giọng đọc Tiếng Việt, tóm tắt và trình bày nội dung tài liệu của bạn theo từng phần."
         badge=""
       >
-        <VidOptionsPanel
-          value={optionValue}
-          onChange={updateOptions}
-          onSubmit={handleGenerate}
-          busy={generating}
-          progress={progress}
-          submitLabel="Tạo video bài giảng"
-          documentProcessing={documentProcessing}
-        />
+        {jobProgress ?? (
+          <VidOptionsPanel
+            value={optionValue}
+            onChange={updateOptions}
+            onSubmit={handleGenerate}
+            busy={generating}
+            progress={progress}
+            submitLabel="Tạo video bài giảng"
+            documentProcessing={documentProcessing}
+          />
+        )}
       </EmptyState>
     );
   }
@@ -264,6 +284,8 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
           )}
         </div>
       </div>
+
+      {jobProgress}
 
       <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 

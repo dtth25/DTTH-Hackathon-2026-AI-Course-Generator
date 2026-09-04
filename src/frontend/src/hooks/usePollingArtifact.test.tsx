@@ -85,4 +85,41 @@ describe("usePollingArtifact", () => {
     unmount();
     vi.useRealTimers();
   });
+
+  it("stores a queued job beside its version then resumes artifact polling on success", async () => {
+    const fetchFn = vi.fn(async (_courseId: string, version?: string | null) => ({
+      status: "ready",
+      data: { id: version ?? "active" },
+      version_id: version ?? "active",
+    }));
+    const { result, unmount } = renderHook(() =>
+      usePollingArtifact({
+        courseId: "course-1",
+        fetchFn,
+        isReady: (data) => Boolean(data.id),
+        timeoutMs: 60_000,
+        timeoutMessage: "Timed out",
+        defaultErrorMessage: "Failed",
+        pollMs: 10,
+      })
+    );
+    await waitFor(() => expect(result.current.hasFetched).toBe(true));
+
+    act(() => result.current.startJob("job-2", "version-2"));
+    expect(result.current.activeJob).toEqual({ jobId: "job-2", versionId: "version-2" });
+    expect(result.current.generating).toBe(true);
+
+    vi.useFakeTimers();
+    act(() => result.current.resumeArtifactPolling());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(fetchFn).toHaveBeenLastCalledWith("course-1", "version-2");
+    expect(result.current.activeJob).toBeNull();
+    expect(result.current.data).toEqual({ id: "version-2" });
+    expect(result.current.generating).toBe(false);
+    unmount();
+    vi.useRealTimers();
+  });
 });

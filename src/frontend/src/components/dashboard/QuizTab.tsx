@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { QuizOptionsPanel } from "@/components/dashboard/QuizOptionsPanel";
 import { CreateVersionButton } from "@/components/dashboard/CreateVersionButton";
 import { VersionSwitcher } from "@/components/dashboard/VersionSwitcher";
+import { JobProgress } from "@/components/dashboard/JobProgress";
 import { ApiRequestError, apiDeleteArtifactVersion, apiGetQuiz, apiGenerateQuiz, apiRenameArtifactVersion, getDownloadQuizKeyUrl } from "@/lib/api";
 import type { QuizQuestion } from "@/lib/types";
 
@@ -106,7 +107,11 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     setGenerating,
     progress,
     setProgress,
-    startPolling,
+    activeJob,
+    startJob,
+    finishJob,
+    dismissJob,
+    resumeArtifactPolling,
     versions,
     activeVersion,
     viewedVersion,
@@ -130,7 +135,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     setProgress(5);
     try {
       const res = await apiGenerateQuiz(courseId, { quantity, difficulty });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo trắc nghiệm thất bại.");
       setGenerating(false);
@@ -153,7 +158,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     setProgress(5);
     try {
       const res = await apiGenerateQuiz(courseId, { quantity, difficulty, ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}) });
-      startPolling(Date.now(), res.version_id);
+      startJob(res.job_id, res.version_id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409 && (err.detail as { code?: string })?.code === "version_cap_reached") {
         toast.error("Tối đa 3 phiên bản. Hãy xóa một phiên bản để tạo bản mới.");
@@ -209,6 +214,18 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
       </DialogContent>
     </Dialog>
   );
+  const jobProgress = activeJob ? (
+    <JobProgress
+      key={activeJob.jobId}
+      jobId={activeJob.jobId}
+      onSucceeded={resumeArtifactPolling}
+      onTerminal={finishJob}
+      onRetry={() => {
+        dismissJob();
+        setRegenDialogOpen(true);
+      }}
+    />
+  ) : null;
 
   const total = questions?.length ?? 0;
   const currentQuestion = questions?.[currentIndex];
@@ -289,15 +306,17 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
         description="Hệ thống sẽ phân tích tài liệu của bạn và tạo bộ câu hỏi trắc nghiệm bám sát nội dung để ôn luyện."
         badge=""
       >
-        <QuizOptionsPanel
-          value={optionValue}
-          onChange={updateOptions}
-          onSubmit={handleGenerate}
-          busy={generating}
-          progress={progress}
-          submitLabel="Tạo trắc nghiệm"
-          documentProcessing={documentProcessing}
-        />
+        {jobProgress ?? (
+          <QuizOptionsPanel
+            value={optionValue}
+            onChange={updateOptions}
+            onSubmit={handleGenerate}
+            busy={generating}
+            progress={progress}
+            submitLabel="Tạo trắc nghiệm"
+            documentProcessing={documentProcessing}
+          />
+        )}
       </EmptyState>
     );
   }
@@ -308,6 +327,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     const passed = percent >= 70;
     return (
       <div className="mx-auto max-w-2xl space-y-6 py-6 animate-in fade-in-50">
+        {jobProgress}
         <div className="flex flex-col items-center gap-4 rounded-2xl border bg-card/40 p-8 text-center shadow-[var(--shadow-sm)]">
           <div
             className={cn(
@@ -473,6 +493,8 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
           )}
         </div>
       </div>
+
+      {jobProgress}
 
       <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 
