@@ -16,6 +16,14 @@ _CELERY_TASKS = {
 _INLINE_REDISPATCH_MAX_SECONDS = 300
 
 
+class DefiniteJobDispatchError(RuntimeError):
+    """Delivery was provably not registered outside this process."""
+
+
+class AmbiguousJobDispatchError(RuntimeError):
+    """Transport failed without proving whether the broker accepted delivery."""
+
+
 class JobDispatcher(Protocol):
     """Minimal dispatch contract shared by inline and Celery execution."""
 
@@ -49,7 +57,12 @@ class InlineJobDispatcher:
 
     def enqueue(self, job_id: str, queue_name: str) -> str:
         _validate_queue_name(queue_name)
-        self._background_tasks.add_task(execute_job, job_id)
+        try:
+            self._background_tasks.add_task(execute_job, job_id)
+        except Exception as exc:
+            raise DefiniteJobDispatchError(
+                "Inline callback registration failed."
+            ) from exc
         return f"inline:{job_id}"
 
 
@@ -72,12 +85,17 @@ class CeleryJobDispatcher:
 
     def enqueue(self, job_id: str, queue_name: str) -> str:
         _validate_queue_name(queue_name)
-        result = self._celery_app.send_task(
-            _CELERY_TASKS[queue_name],
-            args=[job_id],
-            queue=queue_name,
-            task_id=job_id,
-        )
+        try:
+            result = self._celery_app.send_task(
+                _CELERY_TASKS[queue_name],
+                args=[job_id],
+                queue=queue_name,
+                task_id=job_id,
+            )
+        except Exception as exc:
+            raise AmbiguousJobDispatchError(
+                "Broker acceptance could not be confirmed."
+            ) from exc
         return str(result.id)
 
 

@@ -10,7 +10,7 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db, require_admin
-from app.jobs.dispatcher import get_job_dispatcher
+from app.jobs.dispatcher import DefiniteJobDispatchError, get_job_dispatcher
 from app.models.processing_job import JobStatus, ProcessingJob
 from app.models.user import User
 from app.schemas.course import JobResponse
@@ -47,7 +47,7 @@ def dispatch_persisted_job(
         external_task_id = get_job_dispatcher(background_tasks).enqueue(
             job.id, job.queue_name
         )
-    except Exception as exc:
+    except DefiniteJobDispatchError as exc:
         try:
             terminalize_dispatch_failure(db, job.id)
         except Exception as persistence_exc:
@@ -73,6 +73,17 @@ def dispatch_persisted_job(
             detail={
                 "code": response_code,
                 "message": response_message,
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "JOB_DISPATCH_UNCONFIRMED",
+                "message": (
+                    "Chưa thể xác nhận tác vụ đã bắt đầu. "
+                    "Hệ thống sẽ tự động thử lại."
+                ),
             },
         ) from exc
 

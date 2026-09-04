@@ -74,7 +74,20 @@ class RecordingDispatcher:
 
 class FailingDispatcher:
     def enqueue(self, job_id: str, queue_name: str) -> str:
-        raise ConnectionError("internal broker address must remain private")
+        from app.jobs.dispatcher import DefiniteJobDispatchError
+
+        raise DefiniteJobDispatchError(
+            "internal callback registration detail must remain private"
+        )
+
+
+class AcceptedThenErroredDispatcher:
+    def __init__(self) -> None:
+        self.deliveries: list[tuple[str, str]] = []
+
+    def enqueue(self, job_id: str, queue_name: str) -> str:
+        self.deliveries.append((job_id, queue_name))
+        raise ConnectionError("broker may already have accepted this delivery")
 
 
 class ReservingOnlyGenerator:
@@ -832,3 +845,71 @@ def test_job_queue_position_is_same_queue_active_only(client):
         db.commit()
     assert client.get(f"/api/jobs/{jobs[0]}", headers=headers).json()["queue_position"] is None
     assert client.get(f"/api/jobs/{jobs[2]}", headers=headers).json()["queue_position"] == 1
+
+
+def test_inline_startup_recovers_queued_job_even_with_registration_marker():
+    user = User(
+        email="inline-registration-crash@example.com",
+        hashed_password="unused",
+        is_verified=True,
+    )
+    with SessionLocal() as db:
+        db.add(user)
+        db.flush()
+        course = Course(
+            id="inline-registration-crash",
+            user_id=user.id,
+            filenames=["source.txt"],
+        )
+        db.add(course)
+        db.flush()
+        job = create_job(
+            db,
+            course_id=course.id,
+            user_id=user.id,
+            job_type="preprocess",
+            payload_json={"course_id": course.id},
+            queue_name="ingestion",
+            commit=False,
+        )
+        job.external_task_id = f"inline:{job.id}"
+        db.commit()
+        job_id = job.id
+
+    dispatcher = RecordingDispatcher()
+    assert reconcile_undispatched_jobs(SessionLocal, dispatcher) == 1
+    assert dispatcher.deliveries == [(job_id, "ingestion")]
+
+
+def test_ambiguous_publish_error_keeps_job_and_resource_recoverable(
+    client, monkeypatch
+):
+    from app.routers.generation import get_generator
+
+    email = "ambiguous-dispatch@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "ambiguous-dispatch")
+    ambiguous = AcceptedThenErroredDispatcher()
+    monkeypatch.setattr(
+        "app.routers.jobs.get_job_dispatcher", lambda background_tasks: ambiguous
+    )
+
+    response = client.post(
+        "/api/generate-book", headers=headers, json={"course_id": course.id}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "JOB_DISPATCH_UNCONFIRMED"
+    assert "broker" not in response.text.lower()
+    with SessionLocal() as db:
+        job = db.query(ProcessingJob).one()
+        assert job.status == "queued"
+        assert job.active_key is not None
+        assert job.external_task_id is None
+        job_id = job.id
+    _, versions = get_generator().artifact_versions(course.id, "book")
+    assert versions[0]["status"] == "processing"
+
+    recovered = RecordingDispatcher()
+    assert reconcile_undispatched_jobs(SessionLocal, recovered) == 1
+    assert recovered.deliveries == [(job_id, "generation")]

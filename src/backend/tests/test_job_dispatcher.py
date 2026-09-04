@@ -10,7 +10,9 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.jobs.dispatcher import (
+    AmbiguousJobDispatchError,
     CeleryJobDispatcher,
+    DefiniteJobDispatchError,
     InlineJobDispatcher,
     execute_job,
     get_job_dispatcher,
@@ -84,6 +86,18 @@ def test_celery_dispatcher_routes_video_separately(fake_celery):
         task_id="job-2",
     )
     assert external_id == "celery-external-id"
+
+
+def test_dispatchers_classify_local_registration_and_transport_failures():
+    background_tasks = Mock()
+    background_tasks.add_task.side_effect = RuntimeError("local registration failed")
+    with pytest.raises(DefiniteJobDispatchError):
+        InlineJobDispatcher(background_tasks).enqueue("job-local", "ingestion")
+
+    celery = Mock()
+    celery.send_task.side_effect = ConnectionError("acceptance is unknown")
+    with pytest.raises(AmbiguousJobDispatchError):
+        CeleryJobDispatcher(celery).enqueue("job-remote", "generation")
 
 
 @pytest.mark.parametrize(
