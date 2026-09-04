@@ -125,12 +125,16 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
   }, [deck?.slides, isPresenterMode]);
 
   const handleGenerate = async () => {
-    clearJobRetryVersion();
+    const retryVersionId = consumeJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
     try {
-      const res = await apiGenerateSlide(courseId, { mode, focus_prompt: focusPrompt });
+      const res = await apiGenerateSlide(courseId, {
+        mode,
+        focus_prompt: focusPrompt,
+        ...(retryVersionId ? { retry_version_id: retryVersionId } : {}),
+      });
       startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo slide thất bại.");

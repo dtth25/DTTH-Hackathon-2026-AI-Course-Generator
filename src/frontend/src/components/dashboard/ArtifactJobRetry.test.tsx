@@ -72,6 +72,7 @@ type Case = {
   name: string;
   component: React.ReactElement;
   createButton: string;
+  initialSubmit: string;
   getArtifact: ReturnType<typeof vi.fn>;
   generate: ReturnType<typeof vi.fn>;
   data: unknown;
@@ -83,6 +84,7 @@ const cases: Case[] = [
     name: "Book",
     component: <BookTab courseId="course-1" />,
     createButton: "Tạo mới sách ôn tập",
+    initialSubmit: "Tạo sách ôn tập",
     getArtifact: vi.mocked(apiGetBook),
     generate: vi.mocked(apiGenerateBook),
     data: { title: "Sách", summary: "Tóm tắt", chapters: [{ chapter_title: "Chương", sections: [] }] },
@@ -92,6 +94,7 @@ const cases: Case[] = [
     name: "Slide",
     component: <SlideTab courseId="course-1" />,
     createButton: "Tạo mới bộ slide",
+    initialSubmit: "Tạo slide bài giảng",
     getArtifact: vi.mocked(apiGetSlide),
     generate: vi.mocked(apiGenerateSlide),
     data: { title: "Slide", slides: [{ title: "Trang 1" }] },
@@ -101,6 +104,7 @@ const cases: Case[] = [
     name: "Quiz",
     component: <QuizTab courseId="course-1" />,
     createButton: "Tạo mới bộ câu hỏi",
+    initialSubmit: "Tạo trắc nghiệm",
     getArtifact: vi.mocked(apiGetQuiz),
     generate: vi.mocked(apiGenerateQuiz),
     data: [{ question: "Câu hỏi?", options: ["A", "B"], correct: "A" }],
@@ -110,6 +114,7 @@ const cases: Case[] = [
     name: "Vid",
     component: <VidTab courseId="course-1" />,
     createButton: "Tạo mới video",
+    initialSubmit: "Tạo video bài giảng",
     getArtifact: vi.mocked(apiGetVid),
     generate: vi.mocked(apiGenerateVid),
     data: { title: "Video", scenes: [{ scene_number: 1, title: "Cảnh", narration: "Lời", duration_seconds: 1 }] },
@@ -186,4 +191,51 @@ describe("artifact terminal-job retry identity", () => {
     await waitFor(() => expect(apiGenerateBook).toHaveBeenCalledTimes(2));
     expect(vi.mocked(apiGenerateBook).mock.calls[1]?.[1]).not.toHaveProperty("retry_version_id");
   });
+});
+
+describe("empty artifact terminal-job retry identity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  for (const testCase of cases) {
+    const terminalStatus = testCase.name === "Vid" ? "cancelled" as const : "failed" as const;
+    const retryButton = terminalStatus === "cancelled" ? "Tạo lại" : "Thử lại";
+
+    it(`${testCase.name} reuses the first reserved version after a ${terminalStatus} job`, async () => {
+      const user = userEvent.setup();
+      testCase.getArtifact.mockResolvedValue({
+        status: "empty",
+        progress: 0,
+        version_id: null,
+        active_version: null,
+        versions: [],
+        data: null,
+      });
+      testCase.generate.mockResolvedValue({
+        course_id: "course-1",
+        version_id: "first-reserved-v1",
+        job_id: "first-terminal-job",
+      });
+      vi.mocked(apiGetJob).mockResolvedValue({
+        ...failedJob,
+        id: "first-terminal-job",
+        job_type: testCase.jobType,
+        status: terminalStatus,
+      });
+
+      render(testCase.component);
+      await user.click(await screen.findByRole("button", { name: testCase.initialSubmit }));
+      await waitFor(() => expect(testCase.generate).toHaveBeenCalledTimes(1));
+      expect(testCase.generate.mock.calls[0]?.[1]).not.toHaveProperty("retry_version_id");
+
+      await user.click(await screen.findByRole("button", { name: retryButton }));
+      await user.click(await screen.findByRole("button", { name: testCase.initialSubmit }));
+
+      await waitFor(() => expect(testCase.generate).toHaveBeenCalledTimes(2));
+      expect(testCase.generate.mock.calls[1]?.[1]).toEqual(
+        expect.objectContaining({ retry_version_id: "first-reserved-v1" })
+      );
+    });
+  }
 });

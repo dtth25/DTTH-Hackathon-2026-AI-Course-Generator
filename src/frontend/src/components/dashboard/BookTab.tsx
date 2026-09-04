@@ -109,12 +109,16 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
   };
 
   const handleGenerate = async () => {
-    clearJobRetryVersion();
+    const retryVersionId = consumeJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
     try {
-      const res = await apiGenerateBook(courseId, { detail_level: detailLevel, user_prompt: userPrompt });
+      const res = await apiGenerateBook(courseId, {
+        detail_level: detailLevel,
+        user_prompt: userPrompt,
+        ...(retryVersionId ? { retry_version_id: retryVersionId } : {}),
+      });
       startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo sách ôn tập thất bại.");

@@ -94,12 +94,17 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
 
 
   const handleGenerate = async () => {
-    clearJobRetryVersion();
+    const retryVersionId = consumeJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
     try {
-      const res = await apiGenerateVid(courseId, { format, voice, user_prompt: userPrompt });
+      const res = await apiGenerateVid(courseId, {
+        format,
+        voice,
+        user_prompt: userPrompt,
+        ...(retryVersionId ? { retry_version_id: retryVersionId } : {}),
+      });
       startJob(res.job_id, res.version_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bắt đầu tạo video thất bại.");
