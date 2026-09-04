@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import settings
 from app.jobs.admission import (
     GlobalJobLimitExceeded,
     UserJobLimitExceeded,
@@ -185,3 +186,80 @@ def test_five_concurrent_same_user_requests_accept_exactly_four(tmp_path):
     assert accepted.count(True) == 4
     assert accepted.count(False) == 1
     assert persisted == 4
+
+
+def test_two_concurrent_distinct_users_accept_only_one_at_global_boundary(
+    tmp_path,
+):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'global-admission.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    concurrent_session = sessionmaker(
+        autocommit=False, autoflush=False, bind=engine
+    )
+    Base.metadata.create_all(bind=engine)
+    global_limit = settings.MAX_PENDING_JOBS_GLOBAL
+    per_user_limit = settings.MAX_PENDING_JOBS_PER_USER
+
+    with concurrent_session() as seed_db:
+        owner = None
+        course = None
+        for index in range(global_limit - 1):
+            if index % per_user_limit == 0:
+                owner, course = _add_owner_and_course(
+                    seed_db, suffix=f"global-race-seed-{index}"
+                )
+            seed_db.add(
+                ProcessingJob(
+                    user_id=owner.id,
+                    course_id=course.id,
+                    job_type="preprocess",
+                    status="queued",
+                )
+            )
+        contender_a, course_a = _add_owner_and_course(
+            seed_db, suffix="global-race-a"
+        )
+        contender_b, course_b = _add_owner_and_course(
+            seed_db, suffix="global-race-b"
+        )
+        seed_db.commit()
+        contenders = (
+            (contender_a.id, course_a.id),
+            (contender_b.id, course_b.id),
+        )
+
+    barrier = Barrier(2)
+
+    def submit(contender):
+        user_id, course_id = contender
+        with concurrent_session() as db:
+            barrier.wait(timeout=10)
+            try:
+                enforce_job_admission(db, user_id)
+                create_job(
+                    db,
+                    course_id=course_id,
+                    user_id=user_id,
+                    job_type="preprocess",
+                )
+            except GlobalJobLimitExceeded:
+                db.rollback()
+                return False
+            return True
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        accepted = list(executor.map(submit, contenders))
+
+    with concurrent_session() as verify_db:
+        active_jobs = (
+            verify_db.query(ProcessingJob)
+            .filter(ProcessingJob.status.in_(("queued", "retry_scheduled", "running")))
+            .count()
+        )
+    engine.dispose()
+
+    assert accepted.count(True) == 1
+    assert accepted.count(False) == 1
+    assert active_jobs == global_limit
