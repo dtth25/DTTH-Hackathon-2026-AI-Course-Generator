@@ -38,6 +38,7 @@ def reconcile_interrupted_inline_preprocess_jobs(db_session_factory=None) -> int
             db.query(ProcessingJob)
             .filter(
                 ProcessingJob.job_type == "preprocess",
+                ProcessingJob.active_key.is_(None),
                 ProcessingJob.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value]),
             )
             .all()

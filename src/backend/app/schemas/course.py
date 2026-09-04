@@ -83,6 +83,7 @@ class JobResponse(BaseModel):
     user_id: Optional[str] = None
     job_type: str
     status: str
+    queue_position: Optional[int] = None
     progress: int
     message: str
     error: Optional[str] = None

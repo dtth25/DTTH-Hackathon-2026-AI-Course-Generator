@@ -14,7 +14,6 @@ from app.jobs.admission import enforce_job_admission
 from app.models.course import Course
 from app.models.user import User
 from app.routers.courses import _enforce_course_limit
-from app.routers.documents import mark_inline_scheduling_failure
 from app.routers.jobs import dispatch_persisted_job
 from app.schemas.course import UploadResponse
 from app.services.job_service import create_job
@@ -166,22 +165,7 @@ async def upload_files(
         if created_upload_dir:
             shutil.rmtree(upload_dir, ignore_errors=True)
         raise _upload_failure() from exc
-    try:
-        dispatch_persisted_job(background_tasks, db, job)
-    except HTTPException as exc:
-        mark_inline_scheduling_failure(
-            db,
-            course_id,
-            job.id,
-            technical_error="Durable job dispatch failed.",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "DOCUMENT_SCHEDULING_FAILED",
-                "message": "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
-            },
-        ) from exc
+    dispatch_persisted_job(background_tasks, db, job)
 
     return {
         "course_id": course_id,

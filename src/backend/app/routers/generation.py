@@ -171,6 +171,7 @@ def enqueue_generation_job(
             course.id,
             artifact,
             options,
+            db_session=db,
             **reservation_options,
         )
         job = create_job(
@@ -191,21 +192,7 @@ def enqueue_generation_job(
     except Exception:
         db.rollback()
         raise
-    try:
-        dispatch_persisted_job(background_tasks, db, job)
-    except HTTPException:
-        error_code = ARTIFACT_FAILURE_CODES[artifact]
-        _, error_message = public_error(None, error_code)
-        generator._set_artifact_status(
-            course.id,
-            artifact,
-            "error",
-            error=error_message,
-            error_code=error_code,
-            technical_error="Durable job dispatch failed.",
-            version_id=version_id,
-        )
-        raise
+    dispatch_persisted_job(background_tasks, db, job)
     return job, version_id
 
 

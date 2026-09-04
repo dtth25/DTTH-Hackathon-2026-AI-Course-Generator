@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db, require_admin
@@ -15,6 +15,7 @@ from app.models.processing_job import JobStatus, ProcessingJob
 from app.models.user import User
 from app.schemas.course import JobResponse
 from app.services.job_service import cancel_job
+from app.services.job_resource_state import terminalize_dispatch_failure
 from app.services.public_errors import public_error
 
 
@@ -47,38 +48,54 @@ def dispatch_persisted_job(
             job.id, job.queue_name
         )
     except Exception as exc:
-        now = datetime.utcnow()
+        try:
+            terminalize_dispatch_failure(db, job.id)
+        except Exception as persistence_exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "JOB_DISPATCH_PERSISTENCE_FAILED",
+                    "message": "Không thể lưu trạng thái tác vụ. Vui lòng thử lại.",
+                },
+            ) from persistence_exc
+        response_code = (
+            "DOCUMENT_SCHEDULING_FAILED"
+            if job.job_type == "preprocess"
+            else _DISPATCH_FAILURE_CODE
+        )
+        response_message = (
+            "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại."
+            if job.job_type == "preprocess"
+            else _DISPATCH_FAILURE_MESSAGE
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": response_code,
+                "message": response_message,
+            },
+        ) from exc
+
+    try:
         db.execute(
             update(ProcessingJob)
             .where(
                 ProcessingJob.id == job.id,
                 ProcessingJob.status == JobStatus.QUEUED.value,
+                ProcessingJob.external_task_id.is_(None),
             )
-            .values(
-                status=JobStatus.FAILED.value,
-                active_key=None,
-                error_code=_DISPATCH_FAILURE_CODE,
-                error_message=_DISPATCH_FAILURE_MESSAGE,
-                message=_DISPATCH_FAILURE_MESSAGE,
-                completed_at=now,
-                updated_at=now,
-            )
+            .values(external_task_id=external_task_id)
         )
         db.commit()
+    except Exception as exc:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
-                "code": _DISPATCH_FAILURE_CODE,
-                "message": _DISPATCH_FAILURE_MESSAGE,
+                "code": "JOB_DISPATCH_PERSISTENCE_FAILED",
+                "message": "Không thể lưu trạng thái tác vụ. Vui lòng thử lại.",
             },
         ) from exc
-
-    db.execute(
-        update(ProcessingJob)
-        .where(ProcessingJob.id == job.id)
-        .values(external_task_id=external_task_id)
-    )
-    db.commit()
 
 
 def _owned_job_or_404(db: Session, job_id: str, current_user: User) -> ProcessingJob:
@@ -91,7 +108,38 @@ def _owned_job_or_404(db: Session, job_id: str, current_user: User) -> Processin
     return job
 
 
-def job_response(job: ProcessingJob) -> dict[str, Any]:
+def _queue_position(db: Session, job: ProcessingJob) -> int | None:
+    if job.status not in {
+        JobStatus.QUEUED.value,
+        JobStatus.RETRY_SCHEDULED.value,
+        JobStatus.RUNNING.value,
+    }:
+        return None
+    return int(
+        db.scalar(
+            select(func.count(ProcessingJob.id)).where(
+                ProcessingJob.queue_name == job.queue_name,
+                ProcessingJob.status.in_(
+                    [
+                        JobStatus.QUEUED.value,
+                        JobStatus.RETRY_SCHEDULED.value,
+                        JobStatus.RUNNING.value,
+                    ]
+                ),
+                or_(
+                    ProcessingJob.created_at < job.created_at,
+                    and_(
+                        ProcessingJob.created_at == job.created_at,
+                        ProcessingJob.id <= job.id,
+                    ),
+                ),
+            )
+        )
+        or 0
+    )
+
+
+def job_response(db: Session, job: ProcessingJob) -> dict[str, Any]:
     """Serialize the established Plan A envelope without technical queue data."""
     failed = job.status == JobStatus.FAILED.value
     public_code, public_message = public_error(
@@ -104,6 +152,7 @@ def job_response(job: ProcessingJob) -> dict[str, Any]:
         "user_id": job.user_id,
         "job_type": job.job_type,
         "status": job.status,
+        "queue_position": _queue_position(db, job),
         "progress": job.progress,
         "message": public_message if failed else job.message,
         "error": public_message if failed else None,
@@ -121,7 +170,7 @@ def get_processing_job(
     db: Session = Depends(get_db),
 ):
     """Return a safe job envelope only to its owner or an administrator."""
-    return job_response(_owned_job_or_404(db, job_id, current_user))
+    return job_response(db, _owned_job_or_404(db, job_id, current_user))
 
 
 @router.delete(
@@ -159,7 +208,7 @@ def cancel_processing_job(
             },
         )
     db.expire_all()
-    return job_response(db.get(ProcessingJob, job.id))
+    return job_response(db, db.get(ProcessingJob, job.id))
 
 
 @router.get("/admin/jobs/summary")

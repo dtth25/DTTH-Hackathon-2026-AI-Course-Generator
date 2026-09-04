@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
+from app.services.job_resource_state import synchronize_terminal_resource
 
 
 _AUTO_ACTIVE_KEY = object()
@@ -19,7 +20,8 @@ _ACTIVE_STATUSES = (
 )
 _ATTEMPTS_EXHAUSTED_CODE = "JOB_ATTEMPTS_EXHAUSTED"
 _ATTEMPTS_EXHAUSTED_MESSAGE = "Đã hết số lần thử xử lý."
-_CANCELLED_MESSAGE = "Đã hủy"
+_CANCELLED_MESSAGE = "Đã hủy tác vụ"
+_CANCELLING_MESSAGE = "Đang hủy tác vụ"
 
 
 def _queue_for_job_type(job_type: str) -> str:
@@ -220,7 +222,13 @@ def _terminalize_expired_cancelled_job(
             completed_at=now,
         )
     )
-    return result.rowcount == 1
+    if result.rowcount != 1:
+        return False
+    db.expire_all()
+    job = db.get(ProcessingJob, job_id)
+    if job is not None:
+        synchronize_terminal_resource(db, job, cancelled=True)
+    return True
 
 
 def dead_letter_exhausted_job(db: Session, job_id: str) -> bool:
@@ -387,9 +395,18 @@ def cancel_job(db: Session, job_id: str) -> bool:
             completed_at=case(
                 (immediately_cancelled, now), else_=ProcessingJob.completed_at
             ),
+            message=case(
+                (immediately_cancelled, _CANCELLED_MESSAGE),
+                else_=_CANCELLING_MESSAGE,
+            ),
             updated_at=now,
         )
     )
+    if result.rowcount == 1:
+        db.expire_all()
+        job = db.get(ProcessingJob, job_id)
+        if job is not None and job.status == JobStatus.CANCELLED.value:
+            synchronize_terminal_resource(db, job, cancelled=True)
     db.commit()
     return result.rowcount == 1
 
@@ -422,10 +439,19 @@ def mark_job_cancelled(
             active_key=None,
             worker_id=None,
             lease_expires_at=None,
+            next_attempt_at=None,
+            error_code=None,
+            error_message=None,
+            message=_CANCELLED_MESSAGE,
             updated_at=now,
             completed_at=now,
         )
     )
+    if result.rowcount == 1:
+        db.expire_all()
+        job = db.get(ProcessingJob, job_id)
+        if job is not None:
+            synchronize_terminal_resource(db, job, cancelled=True)
     db.commit()
     return result.rowcount == 1
 

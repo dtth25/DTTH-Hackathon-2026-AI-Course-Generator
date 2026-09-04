@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from sqlalchemy import update
+from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
@@ -932,10 +933,12 @@ class Generator:
 
     def prepare_artifact_version(
         self, course_id: str, artifact: str, options: Dict[str, Any], topic: Optional[str] = None,
-        user_prompt: str = "", retry_version_id: Optional[str] = None, reserve: bool = True, db_session_factory=None,
+        user_prompt: str = "", retry_version_id: Optional[str] = None, reserve: bool = True,
+        db_session_factory=None, db_session: Optional[Session] = None,
     ) -> str:
         """Reserve a version slot and enforce per-artifact concurrency/caps."""
-        db = self._get_db(db_session_factory)
+        owns_session = db_session is None
+        db = db_session or self._get_db(db_session_factory)
         try:
             course = db.query(Course).filter(Course.id == course_id).first()
             if not course:
@@ -991,13 +994,18 @@ class Generator:
             meta["study_pack"] = study_pack
             if reserve:
                 course.metadata_json = json.dumps(meta, ensure_ascii=False)
-                db.commit()
+                if owns_session:
+                    db.commit()
+                else:
+                    db.flush()
             return version_id
         except Exception:
-            db.rollback()
+            if owns_session:
+                db.rollback()
             raise
         finally:
-            db.close()
+            if owns_session:
+                db.close()
 
     @staticmethod
     def _version_summaries(versions: Dict[str, Any]) -> list[Dict[str, Any]]:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event
 from time import perf_counter
@@ -15,7 +18,9 @@ from app.models.course import Course
 from app.models.processing_job import ProcessingJob
 from app.models.user import User
 from app.services.database import SessionLocal
-from app.services.job_service import create_job
+from app.services.job_dispatch_recovery import reconcile_undispatched_jobs
+from app.services.job_resource_state import terminalize_dispatch_failure
+from app.services.job_service import cancel_job, claim_job, create_job, mark_job_cancelled
 
 
 def _headers(client, email: str) -> dict[str, str]:
@@ -501,3 +506,329 @@ def test_admin_job_summary_contains_only_aggregate_queue_state(client):
     serialized = response.text.lower()
     assert "payload" not in serialized
     assert "document" not in serialized
+
+
+def test_queued_preprocess_cancellation_terminalizes_course_polling(client, monkeypatch):
+    headers = _headers(client, "cancel-upload-resource@example.com")
+    _install_recording_dispatcher(monkeypatch)
+    created = client.post(
+        "/api/upload",
+        headers=headers,
+        files=[("files", ("source.txt", b"content", "text/plain"))],
+    )
+
+    cancelled = client.delete(
+        f"/api/jobs/{created.json()['job_id']}", headers=headers
+    )
+    polled = client.get(
+        f"/api/courses/{created.json()['course_id']}/status", headers=headers
+    )
+
+    assert cancelled.status_code == 202
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["message"] == "Đã hủy tác vụ"
+    assert polled.json()["status"] == "failed"
+    assert polled.json()["error_code"] == "DOCUMENT_PROCESSING_CANCELLED"
+
+
+def test_running_cancellation_terminalizes_artifact_at_worker_checkpoint(
+    client, monkeypatch
+):
+    from app.routers.generation import get_generator
+
+    email = "cancel-running-artifact@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "cancel-running-artifact")
+    _install_recording_dispatcher(monkeypatch)
+    created = client.post(
+        "/api/generate-book", headers=headers, json={"course_id": course.id}
+    )
+    job_id = created.json()["job_id"]
+    version_id = created.json()["version_id"]
+    with SessionLocal() as db:
+        assert claim_job(db, job_id, "worker-a", 60)
+        assert cancel_job(db, job_id)
+        active = db.get(ProcessingJob, job_id)
+        assert active.status == "running"
+        assert active.message == "Đang hủy tác vụ"
+        assert mark_job_cancelled(
+            db, job_id, "worker-a", expected_attempt=active.attempts
+        )
+
+    _, versions = get_generator().artifact_versions(course.id, "book")
+    version = next(item for item in versions if item["version_id"] == version_id)
+    assert version["status"] == "error"
+    polled = client.get(
+        f"/api/courses/{course.id}/book?version={version_id}", headers=headers
+    )
+    assert polled.json()["status"] == "error"
+
+
+def test_reservation_rolls_back_when_job_creation_fails(client, monkeypatch):
+    from app.routers.generation import get_generator
+
+    email = "atomic-reservation@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "atomic-reservation")
+
+    def fail_create_job(*args, **kwargs):
+        raise RuntimeError("forced insert failure")
+
+    monkeypatch.setattr("app.routers.generation.create_job", fail_create_job)
+    with pytest.raises(RuntimeError, match="forced insert failure"):
+        client.post(
+            "/api/generate-book", headers=headers, json={"course_id": course.id}
+        )
+    with SessionLocal() as db:
+        assert db.query(ProcessingJob).count() == 0
+        persisted = db.get(Course, course.id)
+        metadata = json.loads(persisted.metadata_json or "{}")
+        assert not metadata.get("study_pack", {}).get("artifacts", {}).get("book")
+    assert get_generator().artifact_versions(course.id, "book") == (None, [])
+
+
+def test_reservation_and_job_roll_back_together_when_outer_commit_fails():
+    from app.routers.generation import get_generator
+
+    user = User(
+        email="atomic-commit@example.com", hashed_password="unused", is_verified=True
+    )
+    with SessionLocal() as db:
+        db.add(user)
+        db.flush()
+        course = Course(
+            id="atomic-commit", user_id=user.id, filenames=["source.txt"], status="ready"
+        )
+        course_id = course.id
+        db.add(course)
+        db.commit()
+        version_id = get_generator().prepare_artifact_version(
+            course_id,
+            "book",
+            {"detail_level": "Tiêu chuẩn"},
+            db_session=db,
+        )
+        create_job(
+            db,
+            course_id=course_id,
+            user_id=user.id,
+            job_type="book",
+            payload_json={
+                "course_id": course_id,
+                "artifact": "book",
+                "version_id": version_id,
+            },
+            commit=False,
+        )
+
+        def fail_commit():
+            raise OSError("commit unavailable")
+
+        db.commit = fail_commit
+        with pytest.raises(OSError):
+            db.commit()
+        db.rollback()
+
+    with SessionLocal() as db:
+        assert db.query(ProcessingJob).count() == 0
+        assert get_generator().artifact_versions(course_id, "book") == (None, [])
+
+
+def test_startup_reconciles_unconfirmed_generation_and_preprocess_deliveries(
+    monkeypatch,
+):
+    user = User(
+        email="recovery@example.com", hashed_password="unused", is_verified=True
+    )
+    with SessionLocal() as db:
+        db.add(user)
+        db.flush()
+        first = Course(id="recover-upload", user_id=user.id, filenames=["a.txt"])
+        second = Course(id="recover-book", user_id=user.id, filenames=["b.txt"])
+        db.add_all([first, second])
+        db.flush()
+        upload_job = create_job(
+            db,
+            course_id=first.id,
+            user_id=user.id,
+            job_type="preprocess",
+            payload_json={"course_id": first.id},
+            queue_name="ingestion",
+            commit=False,
+        )
+        book_job = create_job(
+            db,
+            course_id=second.id,
+            user_id=user.id,
+            job_type="book",
+            payload_json={
+                "course_id": second.id,
+                "artifact": "book",
+                "version_id": "recover-version",
+            },
+            queue_name="generation",
+            commit=False,
+        )
+        db.commit()
+        ids = {upload_job.id, book_job.id}
+
+    class AcceptedWithoutAck:
+        def __init__(self):
+            self.deliveries = []
+
+        def enqueue(self, job_id, queue_name):
+            self.deliveries.append((job_id, queue_name))
+            raise ConnectionError("accepted but acknowledgement lost")
+
+    lost_ack = AcceptedWithoutAck()
+    assert reconcile_undispatched_jobs(SessionLocal, lost_ack) == 0
+    recovered = RecordingDispatcher()
+    assert reconcile_undispatched_jobs(SessionLocal, recovered) == 2
+    assert {job_id for job_id, _ in lost_ack.deliveries} == ids
+    assert {job_id for job_id, _ in recovered.deliveries} == ids
+    with SessionLocal() as db:
+        assert all(db.get(ProcessingJob, job_id).external_task_id for job_id in ids)
+
+    startup_called = []
+    monkeypatch.setattr("main.seed_default_admin", lambda: None)
+    monkeypatch.setattr(
+        "main.reconcile_interrupted_inline_preprocess_jobs", lambda: None
+    )
+    monkeypatch.setattr("main.reconcile_undispatched_jobs", lambda: startup_called.append(True))
+    from main import app, lifespan
+
+    async def enter_startup():
+        async with lifespan(app):
+            pass
+
+    asyncio.run(enter_startup())
+    assert startup_called == [True]
+
+
+def test_dispatch_repair_commit_failure_rolls_back_job_and_artifact_together():
+    user = User(
+        email="repair-rollback@example.com", hashed_password="unused", is_verified=True
+    )
+    with SessionLocal() as db:
+        db.add(user)
+        db.flush()
+        course = Course(
+            id="repair-rollback",
+            user_id=user.id,
+            filenames=["a.txt"],
+            status="ready",
+            metadata_json=json.dumps(
+                {
+                    "study_pack": {
+                        "artifacts": {
+                            "book": {
+                                "active": None,
+                                "versions": {
+                                    "v1": {"status": "processing", "progress": 0}
+                                },
+                            }
+                        }
+                    }
+                }
+            ),
+        )
+        db.add(course)
+        db.flush()
+        job = create_job(
+            db,
+            course_id=course.id,
+            user_id=user.id,
+            job_type="book",
+            payload_json={
+                "course_id": course.id,
+                "artifact": "book",
+                "version_id": "v1",
+            },
+            commit=False,
+        )
+        db.commit()
+        job_id = job.id
+
+    with SessionLocal() as db:
+        original_commit = db.commit
+
+        def fail_commit():
+            raise OSError("database write lost")
+
+        db.commit = fail_commit
+        with pytest.raises(OSError):
+            terminalize_dispatch_failure(db, job_id)
+        db.commit = original_commit
+
+    with SessionLocal() as db:
+        job = db.get(ProcessingJob, job_id)
+        course = db.get(Course, "repair-rollback")
+        version = json.loads(course.metadata_json)["study_pack"]["artifacts"]["book"]["versions"]["v1"]
+        assert job.status == "queued"
+        assert job.active_key is not None
+        assert version["status"] == "processing"
+
+
+def test_dispatch_repair_persistence_failure_returns_only_safe_error(
+    client, monkeypatch
+):
+    email = "repair-safe-error@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "repair-safe-error")
+    _install_failing_dispatcher(monkeypatch)
+    monkeypatch.setattr(
+        "app.routers.jobs.terminalize_dispatch_failure",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("private db path")),
+    )
+
+    response = client.post(
+        "/api/generate-book", headers=headers, json={"course_id": course.id}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "JOB_DISPATCH_PERSISTENCE_FAILED"
+    assert "private" not in response.text.lower()
+
+
+def test_job_queue_position_is_same_queue_active_only(client):
+    headers = _headers(client, "queue-position@example.com")
+    user_id = _user_id("queue-position@example.com")
+    jobs = []
+    with SessionLocal() as db:
+        for index, queue_name in enumerate(("generation", "video", "generation")):
+            course = Course(
+                id=f"position-{index}",
+                user_id=user_id,
+                filenames=["source.txt"],
+                status="ready",
+            )
+            db.add(course)
+            db.flush()
+            job = create_job(
+                db,
+                course_id=course.id,
+                user_id=user_id,
+                job_type="video" if queue_name == "video" else "book",
+                payload_json={
+                    "course_id": course.id,
+                    "artifact": "vid" if queue_name == "video" else "book",
+                    "version_id": f"v-{index}",
+                },
+                queue_name=queue_name,
+                commit=False,
+            )
+            job.created_at = datetime.utcnow() + timedelta(seconds=index)
+            jobs.append(job.id)
+        db.commit()
+
+    assert client.get(f"/api/jobs/{jobs[0]}", headers=headers).json()["queue_position"] == 1
+    assert client.get(f"/api/jobs/{jobs[1]}", headers=headers).json()["queue_position"] == 1
+    assert client.get(f"/api/jobs/{jobs[2]}", headers=headers).json()["queue_position"] == 2
+    with SessionLocal() as db:
+        first = db.get(ProcessingJob, jobs[0])
+        first.status = "cancelled"
+        first.active_key = None
+        first.completed_at = datetime.utcnow()
+        db.commit()
+    assert client.get(f"/api/jobs/{jobs[0]}", headers=headers).json()["queue_position"] is None
+    assert client.get(f"/api/jobs/{jobs[2]}", headers=headers).json()["queue_position"] == 1
