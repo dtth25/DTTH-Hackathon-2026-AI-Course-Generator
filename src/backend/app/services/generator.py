@@ -7,9 +7,12 @@ import os
 import re
 import random
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from sqlalchemy import update
 from app.core.config import settings
 from app.models.course import Course
+from app.models.processing_job import JobStatus, ProcessingJob
 from app.schemas.generation import (
     GroundingData,
     QualityScoresData,
@@ -293,13 +296,22 @@ class Generator:
         os.makedirs(dir_path, exist_ok=True)
         return dir_path
 
-    def _start_version_write(self, course_id: str, artifact: str, version_id: Optional[str]):
+    def _start_version_write(
+        self,
+        course_id: str,
+        artifact: str,
+        version_id: Optional[str],
+        execution_token: Optional[str] = None,
+    ):
         if not version_id:
             return None, None
         self._generation_versions[(course_id, artifact)] = version_id
         transaction = AtomicArtifactDirectory(
             artifact_directory_path(settings.UPLOAD_DIR, course_id, artifact, version_id)
         )
+        if execution_token:
+            safe_token = re.sub(r"[^A-Za-z0-9_-]", "-", execution_token)
+            transaction.temp_dir = Path(f"{transaction.target_dir}.tmp.{safe_token}")
         return transaction, transaction.prepare()
 
     def _ready_version_output(
@@ -336,6 +348,146 @@ class Generator:
     def _finish_version_write(self, transaction, success: bool) -> None:
         if transaction:
             transaction.commit() if success else transaction.abort()
+
+    def _publish_ready_version(
+        self,
+        transaction,
+        *,
+        course_id: str,
+        artifact: str,
+        version_id: str,
+        job_id: Optional[str] = None,
+        worker_id: Optional[str] = None,
+        attempt_number: Optional[int] = None,
+        score: Optional[int] = None,
+        db_session_factory=None,
+    ) -> bool:
+        """Atomically fence job ownership, publish files, and mark both records ready."""
+        if not job_id:
+            self._finish_version_write(transaction, True)
+            self._set_artifact_status(
+                course_id,
+                artifact,
+                "ready",
+                progress=100,
+                version_id=version_id,
+                db_session_factory=db_session_factory,
+            )
+            return True
+
+        db = self._get_db(db_session_factory)
+        try:
+            now = datetime.utcnow()
+            guard = db.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.id == job_id,
+                    ProcessingJob.course_id == course_id,
+                    ProcessingJob.status == JobStatus.RUNNING.value,
+                    ProcessingJob.worker_id == worker_id,
+                    ProcessingJob.attempts == attempt_number,
+                    ProcessingJob.cancel_requested.is_(False),
+                    ProcessingJob.lease_expires_at > now,
+                )
+                .values(updated_at=ProcessingJob.updated_at)
+            )
+            if guard.rowcount != 1:
+                db.rollback()
+                return False
+            course = db.get(Course, course_id)
+            if course is None or course.is_deleted:
+                db.rollback()
+                return False
+            meta, _ = migrate_legacy_artifact_metadata(self._metadata_dict(course))
+            study_pack = dict(meta.get("study_pack", {}))
+            artifacts = dict(study_pack.get("artifacts", {}))
+            entry = dict(artifacts.get(artifact, {}))
+            versions = dict(entry.get("versions", {}))
+            current = dict(versions.get(version_id, {}))
+            timestamp = now.isoformat()
+            current.update(
+                {
+                    "status": "ready",
+                    "error": None,
+                    "error_code": None,
+                    "technical_error": None,
+                    "progress": 100,
+                    "finished_at": timestamp,
+                    "updated_at": timestamp,
+                }
+            )
+            if score is not None:
+                current["quality_score"] = score
+            versions[version_id] = current
+            entry.update({"active": version_id, "versions": versions})
+            artifacts[artifact] = entry
+            study_pack["artifacts"] = artifacts
+            readiness = dict(study_pack.get("readiness", {}))
+            quality_scores = dict(study_pack.get("quality_scores", {}))
+            readiness_key = {
+                "book": "study_guide_pdf",
+                "slides": "slides",
+                "quiz": "quiz",
+                "vid": "vid",
+            }[artifact]
+            readiness[readiness_key] = True
+            if score is not None:
+                quality_scores[readiness_key] = score
+            grounding = dict(
+                study_pack.get(
+                    "grounding",
+                    {
+                        "num_chunks": course.chunk_count,
+                        "quality_score": 0,
+                        "warnings": [],
+                    },
+                )
+            )
+            scores = [value for value in quality_scores.values() if value > 0]
+            if scores:
+                grounding["quality_score"] = sum(scores) // len(scores)
+                course.quality_score = grounding["quality_score"]
+            study_pack["readiness"] = readiness
+            study_pack["quality_scores"] = quality_scores
+            study_pack["grounding"] = grounding
+            meta["study_pack"] = study_pack
+
+            transaction.commit()
+            course.metadata_json = json.dumps(meta, ensure_ascii=False)
+            completed = db.execute(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.id == job_id,
+                    ProcessingJob.worker_id == worker_id,
+                    ProcessingJob.attempts == attempt_number,
+                    ProcessingJob.status == JobStatus.RUNNING.value,
+                    ProcessingJob.cancel_requested.is_(False),
+                )
+                .values(
+                    status=JobStatus.SUCCEEDED.value,
+                    active_key=None,
+                    worker_id=None,
+                    lease_expires_at=None,
+                    next_attempt_at=None,
+                    progress=100,
+                    message="Hoàn thành",
+                    error_code=None,
+                    error_message=None,
+                    updated_at=now,
+                    completed_at=now,
+                )
+            )
+            if completed.rowcount != 1:
+                db.rollback()
+                return False
+            db.commit()
+            self._generation_versions.pop((course_id, artifact), None)
+            return True
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def _save_artifact_json(self, course_id: str, filename: str, data: Any, artifact_dir: Optional[str] = None) -> str:
         """Save generated Pydantic model or dict as JSON file."""
@@ -877,16 +1029,36 @@ class Generator:
         technical_error: Optional[str] = None,
         progress: Optional[int] = None,
         version_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        worker_id: Optional[str] = None,
+        attempt_number: Optional[int] = None,
         db_session_factory=None,
-    ):
+    ) -> bool:
         """Persist per-artifact generation status (processing/ready/error) into Course.metadata_json."""
         version_id = version_id or self._generation_versions.get((course_id, artifact))
         replacement_to_remove: Optional[str] = None
         db = self._get_db(db_session_factory)
         try:
+            if job_id:
+                guard = db.execute(
+                    update(ProcessingJob)
+                    .where(
+                        ProcessingJob.id == job_id,
+                        ProcessingJob.course_id == course_id,
+                        ProcessingJob.status == JobStatus.RUNNING.value,
+                        ProcessingJob.worker_id == worker_id,
+                        ProcessingJob.attempts == attempt_number,
+                        ProcessingJob.cancel_requested.is_(False),
+                        ProcessingJob.lease_expires_at > datetime.utcnow(),
+                    )
+                    .values(updated_at=ProcessingJob.updated_at)
+                )
+                if guard.rowcount != 1:
+                    db.rollback()
+                    return False
             course = db.query(Course).filter(Course.id == course_id).first()
             if not course:
-                return
+                return False
 
             meta, _ = migrate_legacy_artifact_metadata(self._metadata_dict(course))
             study_pack = dict(meta.get("study_pack", {}))
@@ -935,9 +1107,11 @@ class Generator:
                     )
             if version_id and status in ("ready", "error"):
                 self._generation_versions.pop((course_id, artifact), None)
+            return True
         except Exception as e:
             db.rollback()
             logger.error(f"Error setting artifact status for {artifact}: {e}")
+            return False
         finally:
             db.close()
 
@@ -1075,10 +1249,22 @@ class Generator:
         )
         if ready:
             return output
-        transaction, artifact_dir = self._start_version_write(course_id, "book", version_id)
+        execution_token = kwargs.get("execution_token")
+        job_id = kwargs.get("job_id")
+        worker_id = kwargs.get("worker_id")
+        attempt_number = kwargs.get("attempt_number")
+        status_fence = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "attempt_number": attempt_number,
+        }
+        transaction, artifact_dir = self._start_version_write(
+            course_id, "book", version_id, execution_token=execution_token
+        )
         try:
-            self._set_artifact_status(course_id, "book", "processing", progress=5, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "book", "processing", progress=5, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
 
             book_llm = self._llm_for("book")
@@ -1090,8 +1276,9 @@ class Generator:
             if len(plans) < 4:
                 raise ValueError(f"Dàn ý chỉ có {len(plans)} chương, cần tối thiểu 4 chương.")
 
-            self._set_artifact_status(course_id, "book", "processing", progress=15, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "book", "processing", progress=15, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
 
             all_ids = set(base_ids)
             chapters: List[BookChapter] = []
@@ -1120,8 +1307,9 @@ class Generator:
                     )
                 )
                 progress = 15 + int(75 * (i + 1) / total)
-                self._set_artifact_status(course_id, "book", "processing", progress=progress, db_session_factory=db_session_factory)
                 self._report_progress(progress_callback)
+                if not self._set_artifact_status(course_id, "book", "processing", progress=progress, db_session_factory=db_session_factory, **status_fence):
+                    raise _GenerationInterrupted
 
             book = BookOutput(title=outline.title, summary=outline.summary, preface=outline.preface, chapters=chapters)
             validated_output, score, warnings = validate_and_score_output(book, "book", list(all_ids))
@@ -1130,10 +1318,21 @@ class Generator:
 
             self._save_artifact_json(course_id, "book.json", validated_output, artifact_dir)
             self._generate_pdf_book(course_id, validated_output, artifact_dir)
-            self._finish_version_write(transaction, True)
-            self._update_course_metadata(course_id, "book", score, db_session_factory)
-            self._set_artifact_status(course_id, "book", "ready", progress=100, db_session_factory=db_session_factory)
+            if not job_id:
+                self._update_course_metadata(course_id, "book", score, db_session_factory)
             self._report_progress(progress_callback)
+            if not self._publish_ready_version(
+                transaction,
+                course_id=course_id,
+                artifact="book",
+                version_id=version_id,
+                job_id=job_id,
+                worker_id=worker_id,
+                attempt_number=attempt_number,
+                score=score,
+                db_session_factory=db_session_factory,
+            ):
+                raise _GenerationInterrupted
             return validated_output
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
@@ -1149,6 +1348,7 @@ class Generator:
                 error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "BOOK_GENERATION_FAILED"),
                 technical_error=str(e)[:1000],
                 db_session_factory=db_session_factory,
+                **status_fence,
             )
             return None
 
@@ -1165,10 +1365,22 @@ class Generator:
         )
         if ready:
             return output
-        transaction, artifact_dir = self._start_version_write(course_id, "slides", version_id)
+        execution_token = kwargs.get("execution_token")
+        job_id = kwargs.get("job_id")
+        worker_id = kwargs.get("worker_id")
+        attempt_number = kwargs.get("attempt_number")
+        status_fence = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "attempt_number": attempt_number,
+        }
+        transaction, artifact_dir = self._start_version_write(
+            course_id, "slides", version_id, execution_token=execution_token
+        )
         try:
-            self._set_artifact_status(course_id, "slides", "processing", progress=10, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "slides", "processing", progress=10, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1183,14 +1395,26 @@ class Generator:
             validated_output = _repair_flattened_array_indices(validated_output, context, "slides")
             validated_output = _clean_slides_output(validated_output)
 
-            self._set_artifact_status(course_id, "slides", "processing", progress=70, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "slides", "processing", progress=70, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._save_artifact_json(course_id, "slides.json", validated_output, artifact_dir)
             self._generate_pptx_slides(course_id, validated_output, artifact_dir)
-            self._finish_version_write(transaction, True)
-            self._update_course_metadata(course_id, "slides", score, db_session_factory)
-            self._set_artifact_status(course_id, "slides", "ready", progress=100, db_session_factory=db_session_factory)
+            if not job_id:
+                self._update_course_metadata(course_id, "slides", score, db_session_factory)
             self._report_progress(progress_callback)
+            if not self._publish_ready_version(
+                transaction,
+                course_id=course_id,
+                artifact="slides",
+                version_id=version_id,
+                job_id=job_id,
+                worker_id=worker_id,
+                attempt_number=attempt_number,
+                score=score,
+                db_session_factory=db_session_factory,
+            ):
+                raise _GenerationInterrupted
             return validated_output
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
@@ -1206,6 +1430,7 @@ class Generator:
                 error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "SLIDE_GENERATION_FAILED"),
                 technical_error=str(e)[:1000],
                 db_session_factory=db_session_factory,
+                **status_fence,
             )
             return None
 
@@ -1222,10 +1447,22 @@ class Generator:
         )
         if ready:
             return output
-        transaction, artifact_dir = self._start_version_write(course_id, "quiz", version_id)
+        execution_token = kwargs.get("execution_token")
+        job_id = kwargs.get("job_id")
+        worker_id = kwargs.get("worker_id")
+        attempt_number = kwargs.get("attempt_number")
+        status_fence = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "attempt_number": attempt_number,
+        }
+        transaction, artifact_dir = self._start_version_write(
+            course_id, "quiz", version_id, execution_token=execution_token
+        )
         try:
-            self._set_artifact_status(course_id, "quiz", "processing", progress=10, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "quiz", "processing", progress=10, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1239,14 +1476,26 @@ class Generator:
             if warnings:
                 logger.warning(f"Quiz generation warnings for {course_id}: {warnings}")
 
-            self._set_artifact_status(course_id, "quiz", "processing", progress=70, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "quiz", "processing", progress=70, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._save_artifact_json(course_id, "quiz.json", validated_output, artifact_dir)
             self._generate_pdf_quiz_key(course_id, validated_output, artifact_dir)
-            self._finish_version_write(transaction, True)
-            self._update_course_metadata(course_id, "quiz", score, db_session_factory)
-            self._set_artifact_status(course_id, "quiz", "ready", progress=100, db_session_factory=db_session_factory)
+            if not job_id:
+                self._update_course_metadata(course_id, "quiz", score, db_session_factory)
             self._report_progress(progress_callback)
+            if not self._publish_ready_version(
+                transaction,
+                course_id=course_id,
+                artifact="quiz",
+                version_id=version_id,
+                job_id=job_id,
+                worker_id=worker_id,
+                attempt_number=attempt_number,
+                score=score,
+                db_session_factory=db_session_factory,
+            ):
+                raise _GenerationInterrupted
             return validated_output
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
@@ -1262,6 +1511,7 @@ class Generator:
                 error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "QUIZ_GENERATION_FAILED"),
                 technical_error=str(e)[:1000],
                 db_session_factory=db_session_factory,
+                **status_fence,
             )
             return None
 
@@ -1289,10 +1539,22 @@ class Generator:
         )
         if ready:
             return output
-        transaction, artifact_dir = self._start_version_write(course_id, "vid", version_id)
+        execution_token = kwargs.get("execution_token")
+        job_id = kwargs.get("job_id")
+        worker_id = kwargs.get("worker_id")
+        attempt_number = kwargs.get("attempt_number")
+        status_fence = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "attempt_number": attempt_number,
+        }
+        transaction, artifact_dir = self._start_version_write(
+            course_id, "vid", version_id, execution_token=execution_token
+        )
         try:
-            self._set_artifact_status(course_id, "vid", "processing", progress=10, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "vid", "processing", progress=10, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1308,15 +1570,18 @@ class Generator:
             validated_output = _clean_vid_output(validated_output)
             scene_visual_map = self._build_scene_visual_map(course_id, validated_output)
 
-            self._set_artifact_status(course_id, "vid", "processing", progress=25, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "vid", "processing", progress=25, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
 
             def _progress_cb(fraction: float) -> None:
-                self._set_artifact_status(
+                self._report_progress(progress_callback)
+                if not self._set_artifact_status(
                     course_id, "vid", "processing", progress=25 + int(60 * fraction),
                     db_session_factory=db_session_factory,
-                )
-                self._report_progress(progress_callback)
+                    **status_fence,
+                ):
+                    raise _GenerationInterrupted
 
             self._generate_video_mp4(
                 course_id,
@@ -1328,13 +1593,25 @@ class Generator:
                 scene_visual_map=scene_visual_map,
             )
 
-            self._set_artifact_status(course_id, "vid", "processing", progress=90, db_session_factory=db_session_factory)
             self._report_progress(progress_callback)
+            if not self._set_artifact_status(course_id, "vid", "processing", progress=90, db_session_factory=db_session_factory, **status_fence):
+                raise _GenerationInterrupted
             self._save_artifact_json(course_id, "vid.json", validated_output, artifact_dir)
-            self._finish_version_write(transaction, True)
-            self._update_course_metadata(course_id, "vid", score, db_session_factory)
-            self._set_artifact_status(course_id, "vid", "ready", progress=100, db_session_factory=db_session_factory)
+            if not job_id:
+                self._update_course_metadata(course_id, "vid", score, db_session_factory)
             self._report_progress(progress_callback)
+            if not self._publish_ready_version(
+                transaction,
+                course_id=course_id,
+                artifact="vid",
+                version_id=version_id,
+                job_id=job_id,
+                worker_id=worker_id,
+                attempt_number=attempt_number,
+                score=score,
+                db_session_factory=db_session_factory,
+            ):
+                raise _GenerationInterrupted
             return validated_output
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
@@ -1350,6 +1627,7 @@ class Generator:
                 error_code=("ARTIFACT_SOURCE_UNAVAILABLE" if str(e) == self._NO_CONTEXT_MSG else "VIDEO_GENERATION_FAILED"),
                 technical_error=str(e)[:1000],
                 db_session_factory=db_session_factory,
+                **status_fence,
             )
             return None
 

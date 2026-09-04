@@ -278,7 +278,12 @@ def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> b
 
 
 def renew_job_lease(
-    db: Session, job_id: str, worker_id: str, lease_seconds: int
+    db: Session,
+    job_id: str,
+    worker_id: str,
+    lease_seconds: int,
+    *,
+    expected_attempt: int | None = None,
 ) -> bool:
     """Extend the lease only while the same worker still owns a running job."""
     if not worker_id:
@@ -286,6 +291,11 @@ def renew_job_lease(
     if lease_seconds <= 0:
         raise ValueError("lease_seconds must be positive.")
     now = datetime.utcnow()
+    attempt_guard = (
+        ProcessingJob.attempts == expected_attempt
+        if expected_attempt is not None
+        else True
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -294,6 +304,7 @@ def renew_job_lease(
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.lease_expires_at > now,
             ProcessingJob.cancel_requested.is_(False),
+            attempt_guard,
         )
         .values(
             lease_expires_at=now + timedelta(seconds=lease_seconds),
@@ -310,9 +321,16 @@ def schedule_job_retry(
     worker_id: str,
     next_attempt_at: datetime,
     message: str = "Đang chờ thử lại",
+    *,
+    expected_attempt: int | None = None,
 ) -> bool:
     """Release a running attempt for a delayed retry when attempts remain."""
     now = datetime.utcnow()
+    attempt_guard = (
+        ProcessingJob.attempts == expected_attempt
+        if expected_attempt is not None
+        else True
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -321,6 +339,7 @@ def schedule_job_retry(
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.cancel_requested.is_(False),
             ProcessingJob.attempts < ProcessingJob.max_attempts,
+            attempt_guard,
         )
         .values(
             status=JobStatus.RETRY_SCHEDULED.value,
@@ -375,9 +394,20 @@ def cancel_job(db: Session, job_id: str) -> bool:
     return result.rowcount == 1
 
 
-def mark_job_cancelled(db: Session, job_id: str, worker_id: str) -> bool:
+def mark_job_cancelled(
+    db: Session,
+    job_id: str,
+    worker_id: str,
+    *,
+    expected_attempt: int | None = None,
+) -> bool:
     """Finish a cancellation only for the worker that owns the running job."""
     now = datetime.utcnow()
+    attempt_guard = (
+        ProcessingJob.attempts == expected_attempt
+        if expected_attempt is not None
+        else True
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -385,6 +415,7 @@ def mark_job_cancelled(db: Session, job_id: str, worker_id: str) -> bool:
             ProcessingJob.worker_id == worker_id,
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.cancel_requested.is_(True),
+            attempt_guard,
         )
         .values(
             status=JobStatus.CANCELLED.value,
@@ -422,9 +453,15 @@ def mark_job_failed(
     error_code: str,
     message: str,
     worker_id: str | None = None,
+    expected_attempt: int | None = None,
 ) -> bool:
     """Transition the current running attempt to a user-safe final failure."""
     now = datetime.utcnow()
+    attempt_guard = (
+        ProcessingJob.attempts == expected_attempt
+        if expected_attempt is not None
+        else True
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -432,6 +469,7 @@ def mark_job_failed(
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.worker_id == worker_id,
             ProcessingJob.cancel_requested.is_(False),
+            attempt_guard,
         )
         .values(
             status=JobStatus.FAILED.value,
@@ -450,10 +488,19 @@ def mark_job_failed(
 
 
 def mark_job_succeeded(
-    db: Session, job_id: str, *, worker_id: str | None = None
+    db: Session,
+    job_id: str,
+    *,
+    worker_id: str | None = None,
+    expected_attempt: int | None = None,
 ) -> bool:
     """Transition the current running attempt to success."""
     now = datetime.utcnow()
+    attempt_guard = (
+        ProcessingJob.attempts == expected_attempt
+        if expected_attempt is not None
+        else True
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -461,6 +508,7 @@ def mark_job_succeeded(
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.worker_id == worker_id,
             ProcessingJob.cancel_requested.is_(False),
+            attempt_guard,
         )
         .values(
             status=JobStatus.SUCCEEDED.value,

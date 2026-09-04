@@ -206,6 +206,24 @@ class VectorStore:
         except Exception:
             pass  # OpenRouter collection never used for this course, or not configured — fine.
 
+    def delete_job_attempt(
+        self, *, course_id: str, job_id: str, attempt_number: int
+    ) -> None:
+        """Delete only chunks still attributed to one abandoned ingestion attempt.
+
+        A newer stable-ID upsert replaces this metadata, so cleanup cannot erase chunks
+        already published by the reclaimed attempt.
+        """
+        self.collection.delete(
+            where={
+                "$and": [
+                    {"course_id": str(course_id)},
+                    {"processing_job_id": str(job_id)},
+                    {"processing_attempt": int(attempt_number)},
+                ]
+            }
+        )
+
     def get_course_stats(self, course_id: str, provider: str = "openrouter") -> dict:
         """Get statistics about stored chunks for a course."""
         try:
