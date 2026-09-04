@@ -1,94 +1,118 @@
 # Architecture Design
 
-## 1. System Overview
+## 1. System overview
+
+HackaGen is a document-to-Study-Pack application. A user uploads PDF, DOCX, or TXT files, then generates exactly four grounded artifacts: Book, Slide, Quiz, and Video.
+
+Production uses one public entry point and seven private services:
 
 ```text
-Frontend (Next.js)
-  -> FastAPI Backend (Auth Layer: Bearer JWT + HttpOnly Cookie)
-  -> Document Processor
-  -> VectorStore Provider (Chroma Local DB by default, FAISS legacy reference)
-  -> ResourceGenerator
-  -> Local Generated Artifacts
+Browser
+  -> Next.js frontend (only host-published port)
+       -> same-origin /api proxy
+            -> FastAPI API (2 Uvicorn workers)
+                 -> PostgreSQL 16 (users, courses, durable jobs)
+                 -> Redis 7 (Celery broker/result backend + provider guard)
+                 -> Chroma 1.5.9 HTTP (grounded chunks)
+                 -> shared uploads / outputs / embedding-cache volumes
+
+Redis/Celery
+  -> ingestion worker   queue=ingestion   concurrency=2
+  -> generation worker  queue=generation  concurrency=4
+  -> video worker       queue=video       concurrency=1
 ```
 
-Public product surface là **Document-to-Study-Pack** với Study Pack Dashboard kết nối 4 direct generation endpoints:
-- Book (Study Guide PDF)
-- Slide (PPTX Presentation)
-- Quiz (Multiple Choice Quiz)
-- Vid (Video Script & MP4)
+PostgreSQL, Redis, Chroma, FastAPI, and all workers are private to the Compose network. Local development remains a separate, single-process profile using SQLite, embedded Chroma, and inline `BackgroundTasks`.
 
-## 2. Upload & Indexing Flow
+## 2. Upload and indexing flow
 
-1. Frontend gửi `POST /api/upload` với multipart field `files` cho một hoặc nhiều tài liệu.
-2. Backend vẫn hỗ trợ legacy field `file` cho single-file client cũ.
-3. Backend validate extension, empty file và size <= 50MB mỗi file.
-4. Backend lưu files vào `uploads/{course_id}/`, tạo `course_id`, ghi metadata vào `questions/course_{course_id}_meta.json`.
-5. Background thread parse text từng tài liệu bằng document processor.
-6. Text được chunk, embed qua OpenRouter và lưu vào Chroma collection theo `course_id`.
-7. Khi index sẵn sàng, status chuyển thành `ready`.
+1. The frontend sends `POST /api/upload` with multipart field `files` or compatibility field `files[]`.
+2. FastAPI authenticates the caller, validates at most five `.pdf`, `.docx`, or `.txt` files, rejects empty files and files over 50 MiB, and saves them under `uploads/{course_id}/`.
+3. In one database transaction, admission control reserves capacity and creates a durable `ProcessingJob` with only IDs and validated options in `payload_json`.
+4. The API publishes the job ID to the `ingestion` queue and immediately returns `course_id` plus `job_id`.
+5. A worker atomically claims the row with a lease, extracts and cleans text, chunks it, obtains guarded OpenRouter embeddings, and writes course-scoped vectors to Chroma.
+6. Progress is fenced by job ID, worker ID, attempt, and live lease. A stale/redelivered worker cannot overwrite a newer attempt.
+7. The worker commits terminal job and course state together. Provider quota or transient failures become safe retryable states instead of disappearing background exceptions.
 
-## 3. Generation Flow
+Saved-document retry uses the same persisted job and Celery dispatcher; production never falls back to process-local inline execution.
+
+## 3. Grounded generation flow
 
 ```text
-course_id
-  -> load configured vectorstore
-  -> retrieve top-k chunks from the full corpus
-  -> clean internal extraction markers
-  -> prompt OpenRouter paid model đã cấu hình
-  -> validate / retry đúng model một lần khi cần
-  -> save artifact
-  -> return public response
+owned ready course_id
+  -> reserve artifact version + durable job in one transaction
+  -> enqueue job ID on generation or video queue
+  -> retrieve course-filtered chunks from Chroma
+  -> remove extraction/debug noise
+  -> call the configured paid OpenRouter model through the shared permit/circuit guard
+  -> validate schema and source_chunk_ids
+  -> write to attempt-specific staging
+  -> lease-fenced atomic publication of the artifact version
+  -> frontend polls job and artifact endpoints
 ```
 
-Resource generation nằm trong `ResourceGenerator`:
-- `generate_book`
-- `generate_slides_v2`
-- `generate_quiz_v2`
-- `generate_vid`
+Book, Slide, and Quiz use the `generation` queue. Video uses its own concurrency-one queue because ffmpeg rendering has a much larger CPU/RAM burst. Internal `source_chunk_ids` remain persisted for quality and source lookup, but public artifact payloads recursively remove raw chunk IDs, technical errors, prompts, and debug metadata.
 
-Vector metadata vẫn được giữ nội bộ cho retrieval/debug/ownership filtering, nhưng public generation response policy là "không trả raw metadata" (không lộ page, source, chunk_id, citations).
-
-## 4. Backend Modules
+## 4. Load-bearing modules
 
 | Module | Responsibility |
 | --- | --- |
-| `backend.main` | FastAPI routes, validation, response shape |
-| `backend.services.course_gen` | Course lifecycle, lazy loading, LRU cache |
-| `backend.services.doc_processor` | PDF/DOCX/TXT extraction |
-| `backend.services.resource_gen` | Book, Slide, Quiz, Vid generation and artifact export |
-| `backend.vector_db.manager` | Provider selection for Chroma/FAISS |
-| `backend.vector_db.chroma_store` | Chroma create/load/list/drop and retrieval |
-| `backend.vector_db.faiss_manager` | Legacy FAISS create/load/list/drop |
-| `backend.core.prompts` | Prompt templates for 4 outputs |
-| `backend.core.config` | Paths, model factories, utility helpers |
+| `main.py` and `app/routers/*` | FastAPI lifecycle, auth, ownership, enqueue/read/cancel contracts |
+| `app/models/processing_job.py` | Durable job state, queue, attempts, lease, active-operation uniqueness |
+| `app/jobs/admission.py` | Atomic per-user/global admission limits |
+| `app/jobs/dispatcher.py` | Queue-neutral ID-only inline/Celery dispatch |
+| `app/jobs/celery_app.py` and `app/jobs/tasks.py` | JSON-only queue routing, late ack, retry, lease renewal, cancellation |
+| `app/services/document_processor.py` | PDF/DOCX/TXT extraction, cleanup, chunking, indexing |
+| `app/services/vector_client.py` and `vector_store.py` | Embedded local Chroma or fail-closed private HTTP Chroma |
+| `app/services/provider_guard.py` and `provider_health.py` | Shared permits, RPM bound, circuit breaker, redacted preflight |
+| `app/services/generator.py` | Book, Slide, Quiz, Video generation and version publication |
+| `app/services/job_resource_state.py` | Consistent terminal state for jobs, courses, and artifacts |
 
-## 5. Local Storage
+## 5. Storage and consistency
 
-| Path | Purpose |
-| --- | --- |
-| `uploads/{course_id}/` | Original uploaded files for one corpus |
-| `data/chroma/` | Chroma persistent local DB |
-| `indices/chroma_{course_id}.json` | Chroma preprocessing metadata |
-| `indices/faiss_{course_id}/` | Legacy FAISS index when `VECTOR_DB_PROVIDER=faiss` |
-| `indices/faiss_{course_id}.json` | Legacy FAISS metadata |
-| `questions/course_{course_id}_meta.json` | Course lifecycle metadata |
-| `questions/course_{course_id}_questions.json` | Quiz JSON |
-| `questions/course_{course_id}_answer_key.pdf` | Quiz answer key PDF |
-| `books/course_{course_id}_book.json` | Book JSON |
-| `books/course_{course_id}_book.pdf` | Book PDF |
-| `slides/course_{course_id}_slides.json` | Slide JSON |
-| `slides/course_{course_id}_slides.pptx` | Slide PPTX |
-| `videos/course_{course_id}/vid.json` | Vid metadata |
-| `videos/course_{course_id}/vid.mp4` | Vid MP4 |
+| Profile | Database | Vector storage | File storage |
+| --- | --- | --- | --- |
+| Local/dev | `data/app.db` SQLite | `data/chroma/` embedded | `data/uploads`, `data/outputs`, local cache |
+| Production | `production-postgres` volume | `production-chroma` volume owned by Chroma HTTP | shared `production-uploads`, `production-outputs`, `production-cache` volumes |
 
-## 6. Architecture Decisions
+Redis AOF is stored in `production-redis`, but PostgreSQL job rows are the durable source of job truth. Artifact publication uses attempt-specific temporary directories and a lease-fenced rename so redelivery cannot publish duplicate/stale output. Chroma cleanup is attempt-scoped.
+
+## 6. Queue sizing and execution limits
+
+| Queue | Worker concurrency | Soft / hard task limit | Alert age |
+| --- | ---: | ---: | ---: |
+| `ingestion` | 2 | 15 / 20 minutes | oldest queued job >5 minutes |
+| `generation` | 4 | 20 / 25 minutes | oldest queued job >5 minutes |
+| `video` | 1 | 45 / 50 minutes | oldest queued job >15 minutes |
+
+Admission defaults are four active jobs per user and 200 globally. Workers use late acknowledgement, reject-on-worker-loss, `worker_prefetch_multiplier=1`, a 3,600-second renewable job lease, and JSON-only task/result serialization. OpenRouter defaults to six calls in flight and 60 requests per minute across processes through Redis.
+
+Scale only one isolated queue at a time after rerunning `tests/load`; do not increase video concurrency on a 16 GiB host without new peak-memory evidence. The measured 100-user profile and container peaks are in `docs/load-test-results.md`.
+
+## 7. Operations and alerts
+
+Alert on:
+
+- any container restart;
+- oldest queued ingestion or generation job over five minutes;
+- oldest queued video job over 15 minutes;
+- provider circuit open for more than two minutes;
+- global active backlog over 150 (before the hard admission limit of 200);
+- terminal job failure rate over 5% in any 10-minute window;
+- PostgreSQL, Redis, or Chroma becoming unhealthy.
+
+`GET /api/admin/jobs/summary` provides aggregate counts and oldest queued age without job payloads or document text. `GET /api/admin/provider-health` provides a redacted provider check. Container health/restart state remains the deployment platform's responsibility.
+
+Backup, rollout, and rollback commands are maintained in `README.md`. Old SQLite/embedded-Chroma writers and new PostgreSQL/Chroma-HTTP writers must never run simultaneously against the same logical dataset.
+
+## 8. Architecture decisions
 
 | Decision | Choice | Reason |
 | --- | --- | --- |
-| Public outputs | Book, Slide, Quiz, Vid | Hackathon scope rõ, ít phân tán |
-| Multi-document | One `course_id` per uploaded corpus | User cần tạo học liệu từ nhiều tài liệu cùng lúc |
-| AI boundary | Frontend -> FastAPI -> LLM | Không expose API key ở client |
-| Retrieval | Chroma local default, FAISS legacy | Dễ chạy demo, không cần Milvus/external vector DB |
-| Artifact export | Book PDF, Slide PPTX, Quiz key PDF, Vid MP4 | File tải xuống khớp đúng 4 output public |
-| Public metadata | Không trả page/source/chunk | Product mới không hiển thị raw source metadata trong generation response |
-| Auth | Auth v2 đã có (JWT Bearer + HttpOnly Cookie `agy_session`) | Bảo mật API, phân định ownership tài liệu/output giữa regular user và admin |
+| Public outputs | Exactly Book, Slide, Quiz, Video | Keeps one connected Study Pack surface |
+| AI boundary | Frontend -> FastAPI -> OpenRouter | No provider credential reaches the browser |
+| Retrieval | Chroma only | One course-filtered grounded index, no silent fallback |
+| Job durability | PostgreSQL rows + Redis/Celery wake-ups | Durable state survives API/worker restarts |
+| Queue isolation | ingestion / generation / video | Video bursts cannot block document readiness |
+| Public metadata | Sanitized source views only | Preserves grounding without exposing raw internals |
+| Auth | Bearer JWT or HttpOnly `agy_session` cookie | Ownership enforcement for documents, jobs, and artifacts |

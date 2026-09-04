@@ -291,6 +291,101 @@ Cách deploy khuyến nghị cho server thật (kể cả server trường) là 
 
 **Ngoài phạm vi repo**: reverse proxy (nginx/Caddy) và HTTPS/TLS đứng trước cổng 3000 là trách nhiệm người vận hành server — repo này chưa có config sẵn cho phần đó. Chỉ cần route đúng 1 cổng 3000, không cần route cổng 8000 nữa.
 
+## Production operations, backup và rollback
+
+### Queue sizing và alert
+
+Mặc định production: API có 2 Uvicorn workers; Celery dùng `ingestion` concurrency 2, `generation` concurrency 4, `video` concurrency 1; admission tối đa 4 active jobs/user và 200 toàn hệ thống. Soft/hard task limit lần lượt là 15/20 phút cho ingestion, 20/25 phút cho Book/Slide/Quiz, và 45/50 phút cho video. Job lease được gia hạn với cửa sổ 3.600 giây; Celery chỉ nhận JSON, late-ack, reject khi worker mất và prefetch đúng một job.
+
+```powershell
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml ps
+$env:HACKAGEN_ADMIN_TOKEN = "replace-with-a-short-lived-admin-token"
+Invoke-RestMethod http://localhost:3000/api/admin/jobs/summary -Headers @{ Authorization = "Bearer $env:HACKAGEN_ADMIN_TOKEN" } | ConvertTo-Json -Depth 6
+Invoke-RestMethod http://localhost:3000/api/admin/provider-health -Headers @{ Authorization = "Bearer $env:HACKAGEN_ADMIN_TOKEN" } | ConvertTo-Json -Depth 4
+```
+
+Alert ngay khi có một trong các điều kiện:
+
+- bất kỳ container nào restart;
+- job `ingestion` hoặc `generation` già nhất chờ quá 5 phút;
+- job `video` già nhất chờ quá 15 phút;
+- provider circuit mở quá 2 phút;
+- global active backlog vượt 150 (hard admission limit là 200);
+- tỷ lệ job terminal `failed` vượt 5% trong 10 phút;
+- PostgreSQL, Redis hoặc Chroma chuyển sang unhealthy.
+
+Không tăng đồng thời nhiều queue. Trên host 16 GiB, giữ video concurrency 1 vì mixed-load đo được peak khoảng 1,41 GiB riêng video worker; mỗi thay đổi sizing phải chạy lại gate trong `docs/load-test-results.md`.
+
+### Backup trước rollout
+
+Chạy từ root repo trong maintenance window. Tạo thư mục backup ngoài Git và lưu Git ref đang chạy. File `.env` chứa secret nên thư mục backup phải được giới hạn quyền truy cập.
+
+```powershell
+$backupStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$backupDir = Join-Path (Resolve-Path .) "backups\$backupStamp"
+New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+git rev-parse HEAD | Set-Content -LiteralPath (Join-Path $backupDir "git-ref.txt")
+Copy-Item -LiteralPath .env -Destination (Join-Path $backupDir "production.env")
+```
+
+Nếu đang nâng cấp từ topology local hai service, **stop topology cũ trước**, rồi backup SQLite và ba thư mục bind-mount. Không start production writer cho tới khi các copy này hoàn tất.
+
+```powershell
+docker compose -p hackagen-local -f docker-compose.yml stop
+Copy-Item -LiteralPath .\data\app.db -Destination (Join-Path $backupDir "app.db")
+tar -czf (Join-Path $backupDir "uploads-local.tgz") -C .\data uploads
+tar -czf (Join-Path $backupDir "outputs-local.tgz") -C .\data outputs
+tar -czf (Join-Path $backupDir "chroma-local.tgz") -C .\data chroma
+```
+
+Nếu production PostgreSQL/Celery topology đang chạy, stop tất cả writer trước, dump PostgreSQL, rồi snapshot các named volume. Lệnh không dùng `down --volumes`; volume gốc vẫn được giữ.
+
+```powershell
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml stop frontend backend worker-ingestion worker-generation worker-video
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' | Set-Content -LiteralPath (Join-Path $backupDir "postgres.sql") -Encoding utf8
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml stop chroma
+docker run --rm --mount type=volume,src=hackagen-production_production-chroma,dst=/source,readonly --mount "type=bind,src=$backupDir,dst=/backup" alpine:3.20 tar -czf /backup/chroma.tgz -C /source .
+docker run --rm --mount type=volume,src=hackagen-production_production-uploads,dst=/source,readonly --mount "type=bind,src=$backupDir,dst=/backup" alpine:3.20 tar -czf /backup/uploads.tgz -C /source .
+docker run --rm --mount type=volume,src=hackagen-production_production-outputs,dst=/source,readonly --mount "type=bind,src=$backupDir,dst=/backup" alpine:3.20 tar -czf /backup/outputs.tgz -C /source .
+```
+
+Sau khi kiểm tra các archive tồn tại và có dung lượng >0, rollout bằng lệnh production `up -d --build --wait` ở trên. Không bao giờ cho topology SQLite cũ và PostgreSQL mới cùng ghi vào một dataset logic.
+
+### Rollback
+
+Rollback luôn stop API và cả ba worker mới trước. Không dùng `down --volumes`; giữ nguyên state mới để điều tra. Khôi phục ref và `.env` đã backup, rồi chọn đúng một trong hai đường rollback.
+
+```powershell
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml down --remove-orphans
+git switch --detach (Get-Content -LiteralPath (Join-Path $backupDir "git-ref.txt"))
+Copy-Item -LiteralPath (Join-Path $backupDir "production.env") -Destination .env -Force
+```
+
+Rollback về topology SQLite hai service: đổi tên `data` hiện tại để giữ bản điều tra, tạo `data` sạch, restore SQLite/uploads/outputs/Chroma snapshot, rồi chỉ start base Compose.
+
+```powershell
+if (Test-Path -LiteralPath .\data) { Rename-Item -LiteralPath .\data -NewName ("data-after-failed-rollout-" + $backupStamp) }
+New-Item -ItemType Directory -Path .\data -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $backupDir "app.db") -Destination .\data\app.db
+tar -xzf (Join-Path $backupDir "uploads-local.tgz") -C .\data
+tar -xzf (Join-Path $backupDir "outputs-local.tgz") -C .\data
+tar -xzf (Join-Path $backupDir "chroma-local.tgz") -C .\data
+docker compose -p hackagen-local -f docker-compose.yml up -d --build --wait
+```
+
+Rollback production PostgreSQL topology: restore PostgreSQL dump. Nếu deployment thất bại đã ghi vector mới, restore Chroma snapshot trước khi start backend/workers; nếu không có vector write thì giữ Chroma hiện tại. Luôn xác minh chính xác project/volume name trước khi chạy lệnh xóa nội dung volume.
+
+```powershell
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml up -d postgres redis
+Get-Content -LiteralPath (Join-Path $backupDir "postgres.sql") | docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker run --rm --mount type=volume,src=hackagen-production_production-chroma,dst=/target --mount "type=bind,src=$backupDir,dst=/backup,readonly" alpine:3.20 sh -ec 'find /target -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -xzf /backup/chroma.tgz -C /target'
+docker run --rm --mount type=volume,src=hackagen-production_production-uploads,dst=/target --mount "type=bind,src=$backupDir,dst=/backup,readonly" alpine:3.20 sh -ec 'find /target -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -xzf /backup/uploads.tgz -C /target'
+docker run --rm --mount type=volume,src=hackagen-production_production-outputs,dst=/target --mount "type=bind,src=$backupDir,dst=/backup,readonly" alpine:3.20 sh -ec 'find /target -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -xzf /backup/outputs.tgz -C /target'
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml up -d --build --wait --wait-timeout 300
+```
+
+Sau rollback, kiểm tra `ps`, `/health`, login, upload nhỏ, poll job, và một artifact trước khi mở traffic. Nếu restore Chroma, đối chiếu course/vector count với PostgreSQL trước khi cho phép generation.
+
 ## Local Architecture
 
 Local/dev mode hiện tại — **không có provider-abstraction layer nào**, mỗi thứ dưới đây là 1 implementation cụ thể duy nhất, không phải 1 trong nhiều provider chọn được qua env:

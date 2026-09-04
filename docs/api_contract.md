@@ -12,7 +12,7 @@ Auth supports Bearer JWT and an HttpOnly cookie named `agy_session` for browser 
 
 - `POST /api/auth/register`, `/verify-email`, `/resend-verification`, `/forgot-password`, `/reset-password`, `/login`, and `/logout` implement account lifecycle and session creation/clear.
 - `GET /api/auth/me` returns the current public user profile; `DELETE /api/auth/me` deletes the caller's account. Neither exposes `password_hash`.
-- Admin routes are exactly `GET /api/admin/users` and `GET /api/admin/provider-health`; both require `require_admin`.
+- Admin routes are `GET /api/admin/users`, `GET /api/admin/provider-health`, and `GET /api/admin/jobs/summary`; all require `require_admin`.
 
 - `GET /health`: readiness endpoint cho frontend proxy. Không gọi AI warm-up. Response gồm `status`, `ready`, `details.upload_dir`, `details.output_dir`, `details.vector_db`, `details.config_loaded`, `vector_db_provider`, `vector_db_ready`, `chroma_persist_dir`, `chroma_collection_name`, `startup_duration_seconds`, `error`. Với `VECTOR_DB_PROVIDER=chroma`, nếu Chroma thiếu hoặc không initialize được thì `vector_db_ready=false` và không fallback sang simple/local store.
 - `GET /api/health`: trả trạng thái backend và danh sách `course_id`.
@@ -156,9 +156,9 @@ Public response hides internal chunk ids by default and returns clean excerpts o
 
 The frontend should show `page` and `excerpt` to users. `source_chunk_id` must only be displayed when developer mode is explicitly enabled.
 
-### `GET /api/jobs/{job_id}`
+### `GET /api/jobs/{job_id}` and `DELETE /api/jobs/{job_id}`
 
-Durable preprocess-job metadata endpoint. The owner (or an administrator) may read it; another user receives `404`. Current local/dev execution is inline `BackgroundTasks`, while the stored schema is intentionally compatible with a future durable worker.
+The owner (or an administrator) may read or cancel a durable job; another user receives `404` for both operations. Local/dev executes through inline `BackgroundTasks`; production uses PostgreSQL-backed job state and ID-only Redis/Celery delivery. A queued cancellation becomes terminal immediately. A running cancellation is cooperative and becomes terminal at the worker's next fenced progress checkpoint. Cancelling a terminal job returns `409`.
 
 ```json
 {
@@ -177,9 +177,26 @@ Durable preprocess-job metadata endpoint. The owner (or an administrator) may re
 }
 ```
 
+Public job responses may also contain safe queue/progress fields such as `queue_name`, `queue_position`, `attempt`, `max_attempts`, and `next_retry_at`. They never contain `payload_json`, `worker_id`, `lease_expires_at`, `external_task_id`, provider responses, document text, or technical errors.
+
+### `GET /api/admin/jobs/summary`
+
+Admin-only operational aggregate. It returns counts grouped by queue and status plus `oldest_queued_age_seconds`. It deliberately contains no job payload, course text, filename, prompt, token, worker lease, or provider diagnostic.
+
+```json
+{
+  "counts": {
+    "ingestion": {"queued": 2, "running": 1},
+    "generation": {"retry_scheduled": 1},
+    "video": {}
+  },
+  "oldest_queued_age_seconds": 42
+}
+```
+
 ## 3. Generation and Saved Artifacts
 
-All generation endpoints require an owned, non-deleted course and return a queued `GenerateResponse` with `course_id`, `status`, `message`, `estimated_time`, and `version_id`. Content is fetched from its artifact endpoint after processing; a generation request does not return a completed book, slide deck, quiz, or video inline.
+All generation endpoints require an owned, non-deleted course and return a queued `GenerateResponse` with `course_id`, `job_id`, `status`, `message`, `estimated_time`, and `version_id`. Content is fetched from its artifact endpoint after processing; a generation request does not return a completed book, slide deck, quiz, or video inline.
 
 - `POST /api/generate-book`: body/query fields `course_id`, `user_prompt`, `detail_level`, `retry_version_id`.
 - `POST /api/generate-slide`: `course_id`, `topic`, `mode`, `focus_prompt`, `retry_version_id`.
