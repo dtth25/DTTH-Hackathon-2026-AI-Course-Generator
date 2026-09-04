@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user, get_db
+from app.jobs.admission import enforce_job_admission
 from app.models.course import Course
 from app.models.user import User
 from app.routers.courses import _enforce_course_limit
-from app.routers.documents import _schedule_processing, mark_inline_scheduling_failure
+from app.routers.documents import mark_inline_scheduling_failure
+from app.routers.jobs import dispatch_persisted_job
 from app.schemas.course import UploadResponse
 from app.services.job_service import create_job
 
@@ -60,7 +62,6 @@ async def upload_files(
     allowed_exts = {".pdf", ".docx", ".txt"}
     max_size = 50 * 1024 * 1024  # 50 MB
     saved_filenames = []
-    saved_file_paths = []
     file_contents = []
 
     # Validate all files before saving
@@ -101,6 +102,11 @@ async def upload_files(
             )
         file_contents.append((filename, content))
 
+    # Capacity is reserved before any durable course/job state or upload directory is
+    # created. The admission lock remains attached to this DB transaction through the
+    # create_job() insertion and commit below.
+    enforce_job_admission(db, current_user.id)
+
     # Generate IDs
     course_id = uuid.uuid4().hex[:12]
     document_id = uuid.uuid4().hex[:12]
@@ -122,8 +128,8 @@ async def upload_files(
             with open(file_path, "wb") as out_file:
                 out_file.write(content)
             saved_filenames.append(filename)
-            saved_file_paths.append(file_path)
     except Exception as exc:
+        db.rollback()
         if created_upload_dir:
             shutil.rmtree(upload_dir, ignore_errors=True)
         raise _upload_failure() from exc
@@ -150,6 +156,8 @@ async def upload_files(
             course_id=course_id,
             user_id=current_user.id,
             job_type="preprocess",
+            payload_json={"course_id": course_id},
+            queue_name="ingestion",
             commit=False,
         )
         db.commit()
@@ -159,13 +167,14 @@ async def upload_files(
             shutil.rmtree(upload_dir, ignore_errors=True)
         raise _upload_failure() from exc
     try:
-        _schedule_processing(background_tasks, course_id, saved_file_paths, job.id)
-    except Exception as exc:
-        try:
-            mark_inline_scheduling_failure(db, course_id, job.id)
-        except Exception:
-            db.rollback()
-            raise _upload_failure() from exc
+        dispatch_persisted_job(background_tasks, db, job)
+    except HTTPException as exc:
+        mark_inline_scheduling_failure(
+            db,
+            course_id,
+            job.id,
+            technical_error="Durable job dispatch failed.",
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={

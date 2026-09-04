@@ -60,6 +60,7 @@ class GenerateResponse(BaseModel):
     message: str = "Generation started..."
     estimated_time: str = "2 minutes"
     version_id: Optional[str] = None
+    job_id: Optional[str] = None
 
 
 class ReadinessData(BaseModel):

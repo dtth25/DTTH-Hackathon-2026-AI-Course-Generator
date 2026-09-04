@@ -11,11 +11,10 @@ from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
 from app.models.user import User
 from app.routers.generation import get_valid_course
-from app.schemas.course import DocumentRetryResponse, JobResponse
+from app.schemas.course import DocumentRetryResponse
 from app.services import database
 from app.services.document_processor import get_document_processor
 from app.services.job_service import create_job
-from app.services.public_errors import public_error
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
@@ -23,8 +22,13 @@ SCHEDULING_FAILURE_CODE = "DOCUMENT_SCHEDULING_FAILED"
 SCHEDULING_FAILURE_MESSAGE = "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại."
 
 
-def mark_inline_scheduling_failure(db: Session, course_id: str, job_id: str) -> None:
-    """Atomically fail an inline job whose BackgroundTasks registration did not happen."""
+def mark_inline_scheduling_failure(
+    db: Session,
+    course_id: str,
+    job_id: str,
+    technical_error: str = "Inline BackgroundTasks registration failed.",
+) -> None:
+    """Atomically fail a document job whose dispatch did not happen."""
     now = datetime.utcnow()
     course = db.get(Course, course_id)
     job = db.get(ProcessingJob, job_id)
@@ -39,7 +43,7 @@ def mark_inline_scheduling_failure(db: Session, course_id: str, job_id: str) -> 
     course.error_code = SCHEDULING_FAILURE_CODE
     course.can_retry = True
     course.recommended_action = "retry_later"
-    course.technical_error = "Inline BackgroundTasks registration failed."
+    course.technical_error = technical_error
     job.status = JobStatus.FAILED.value
     job.error_code = SCHEDULING_FAILURE_CODE
     job.error_message = SCHEDULING_FAILURE_MESSAGE
@@ -163,36 +167,4 @@ def retry_document_processing(
         "progress": 0,
         "message": "Đang thử lại xử lý tài liệu từ tệp đã tải lên.",
         "job_id": job.id,
-    }
-
-
-@router.get("/jobs/{job_id}", response_model=JobResponse)
-def get_processing_job(
-    job_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Return a safe job envelope only to its owner or an administrator."""
-    job = db.get(ProcessingJob, job_id)
-    if not job or (job.user_id != current_user.id and current_user.role != "admin"):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tác vụ không tồn tại.")
-
-    public_code, public_message = public_error(
-        job.error_code, "DOCUMENT_PROCESSING_FAILED"
-    )
-    failed = job.status == JobStatus.FAILED.value
-
-    return {
-        "id": job.id,
-        "document_id": job.course_id,
-        "user_id": job.user_id,
-        "job_type": job.job_type,
-        "status": job.status,
-        "progress": job.progress,
-        "message": public_message if failed else job.message,
-        "error": public_message if failed else None,
-        "error_code": public_code if failed else None,
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
-        "completed_at": job.completed_at,
     }

@@ -547,7 +547,7 @@ def test_generator_empty_context_guard():
 def test_book_api_error_status_envelope(client, monkeypatch):
     """GET /api/course/{id}/book must surface a real error via the status envelope when the
     background generation job fails, instead of silently reporting readiness."""
-    from app.routers.generation import get_generator
+    from app.jobs import tasks as job_tasks
     from app.services.llm import LLMGenerationError
 
     reg_data = {"email": "book_err_api@example.com", "password": "password123", "full_name": "Book Err User"}
@@ -564,13 +564,13 @@ def test_book_api_error_status_envelope(client, monkeypatch):
     assert res_upload.status_code == 201
     course_id = res_upload.json()["course_id"]
 
-    generator = get_generator()
+    generator = job_tasks.get_generator()
+    monkeypatch.setattr(job_tasks, "get_generator", lambda: generator)
 
     def _raise(*args, **kwargs):
         raise LLMGenerationError("api-boom")
 
-    # Patch the actual LLM instance the "book" feature routes through — this may be a
-    # The shared client remains injectable for isolated generation tests.
+    # Patch the worker-local LLM instance used by the durable book job.
     monkeypatch.setattr(generator._llm_for("book"), "generate_book_outline", _raise)
 
     res_gen = client.post(f"/api/generate-book?course_id={course_id}", headers=headers)

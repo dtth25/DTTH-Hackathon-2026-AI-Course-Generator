@@ -1,0 +1,503 @@
+"""Route coverage for durable upload and study-pack generation jobs."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from threading import Event
+from time import perf_counter
+from typing import Any
+
+import pytest
+
+from app.core.config import settings
+from app.models.course import Course
+from app.models.processing_job import ProcessingJob
+from app.models.user import User
+from app.services.database import SessionLocal
+from app.services.job_service import create_job
+
+
+def _headers(client, email: str) -> dict[str, str]:
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password123", "full_name": email},
+    )
+    assert registered.status_code == 201, registered.text
+    verified = client.post(
+        "/api/auth/verify-email",
+        json={"email": email, "code": "000000"},
+    )
+    assert verified.status_code == 200, verified.text
+    return {"Authorization": f"Bearer {verified.json()['access_token']}"}
+
+
+def _user_id(email: str) -> str:
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).one()
+        return user.id
+
+
+def _ready_course(user_id: str, course_id: str = "queued-course") -> Course:
+    with SessionLocal() as db:
+        course = Course(
+            id=course_id,
+            user_id=user_id,
+            filenames=["source.txt"],
+            status="ready",
+            stage="completed",
+            progress=100,
+            chunk_count=1,
+            embedding_status="completed",
+            quality_score=80,
+        )
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        db.expunge(course)
+        return course
+
+
+@dataclass
+class RecordingDispatcher:
+    deliveries: list[tuple[str, str]] = field(default_factory=list)
+
+    def enqueue(self, job_id: str, queue_name: str) -> str:
+        self.deliveries.append((job_id, queue_name))
+        return f"recorded:{job_id}"
+
+
+class FailingDispatcher:
+    def enqueue(self, job_id: str, queue_name: str) -> str:
+        raise ConnectionError("internal broker address must remain private")
+
+
+class ReservingOnlyGenerator:
+    """A route fake whose generation methods must never be reached by the request."""
+
+    def __init__(self) -> None:
+        self.reservations: list[dict[str, Any]] = []
+        self.generation_started = Event()
+
+    def prepare_artifact_version(
+        self,
+        course_id: str,
+        artifact: str,
+        options: dict[str, Any],
+        **kwargs: Any,
+    ) -> str:
+        self.reservations.append(
+            {
+                "course_id": course_id,
+                "artifact": artifact,
+                "options": options,
+                **kwargs,
+            }
+        )
+        return f"version-{artifact}"
+
+    def __getattr__(self, name: str):
+        if name.startswith("generate_"):
+            def blocked_generator(*args, **kwargs):
+                self.generation_started.set()
+                Event().wait(3)
+
+            return blocked_generator
+        raise AttributeError(name)
+
+
+def _install_recording_dispatcher(monkeypatch) -> RecordingDispatcher:
+    dispatcher = RecordingDispatcher()
+    monkeypatch.setattr(
+        "app.routers.jobs.get_job_dispatcher",
+        lambda background_tasks: dispatcher,
+    )
+    return dispatcher
+
+
+def _install_failing_dispatcher(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.jobs.get_job_dispatcher",
+        lambda background_tasks: FailingDispatcher(),
+    )
+
+
+def test_upload_enqueues_one_id_only_preprocess_job(client, monkeypatch):
+    headers = _headers(client, "queued-upload@example.com")
+    dispatcher = _install_recording_dispatcher(monkeypatch)
+    processor_requested = Event()
+
+    def blocked_processor():
+        processor_requested.set()
+        Event().wait(3)
+
+    monkeypatch.setattr(
+        "app.routers.documents.get_document_processor",
+        blocked_processor,
+    )
+
+    started_at = perf_counter()
+    response = client.post(
+        "/api/upload",
+        headers=headers,
+        files=[("files", ("source.txt", b"grounded source", "text/plain"))],
+    )
+    elapsed = perf_counter() - started_at
+
+    assert response.status_code == 201, response.text
+    assert elapsed < 1.5
+    assert not processor_requested.is_set()
+    body = response.json()
+    assert body["job_id"]
+    with SessionLocal() as db:
+        jobs = db.query(ProcessingJob).all()
+        assert len(jobs) == 1
+        job = jobs[0]
+        assert job.id == body["job_id"]
+        assert job.job_type == "preprocess"
+        assert job.status == "queued"
+        assert job.queue_name == "ingestion"
+        assert job.payload_json == {"course_id": body["course_id"]}
+        assert job.external_task_id == f"recorded:{job.id}"
+    assert dispatcher.deliveries == [(body["job_id"], "ingestion")]
+
+
+GENERATION_CASES = [
+    (
+        "/api/generate-book",
+        {"user_prompt": "Focus", "detail_level": "Chuyên sâu"},
+        "book",
+        "book",
+        "generation",
+        {"detail_level": "Chuyên sâu", "user_prompt": "Focus"},
+    ),
+    (
+        "/api/generate-slide",
+        {"topic": "Networks", "mode": "summary", "focus_prompt": "Routing"},
+        "slides",
+        "slides",
+        "generation",
+        {"topic": "Networks", "num_slides": 8, "focus_prompt": "Routing"},
+    ),
+    (
+        "/api/generate-quiz",
+        {"topic": "Networks", "quantity": 7, "difficulty": "hard"},
+        "quiz",
+        "quiz",
+        "generation",
+        {"topic": "Networks", "quantity": 7, "difficulty": "hard"},
+    ),
+    (
+        "/api/generate-vid",
+        {
+            "topic": "Networks",
+            "format": "overview",
+            "voice": "male",
+            "user_prompt": "Concise",
+        },
+        "video",
+        "vid",
+        "video",
+        {
+            "topic": "Networks",
+            "format": "overview",
+            "voice": "male",
+            "user_prompt": "Concise",
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "endpoint,options,job_type,artifact,queue_name,worker_options",
+    GENERATION_CASES,
+)
+def test_generation_route_enqueues_one_validated_job_without_running_generator(
+    client,
+    monkeypatch,
+    endpoint,
+    options,
+    job_type,
+    artifact,
+    queue_name,
+    worker_options,
+):
+    email = f"queued-{job_type}@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), f"course-{job_type}")
+    dispatcher = _install_recording_dispatcher(monkeypatch)
+    generator = ReservingOnlyGenerator()
+    monkeypatch.setattr("app.routers.generation.get_generator", lambda: generator)
+
+    started_at = perf_counter()
+    response = client.post(
+        endpoint,
+        headers=headers,
+        json={"course_id": course.id, **options},
+    )
+    elapsed = perf_counter() - started_at
+
+    assert response.status_code == 200, response.text
+    assert elapsed < 1.5
+    assert not generator.generation_started.is_set()
+    body = response.json()
+    assert body["job_id"]
+    assert body["version_id"] == f"version-{artifact}"
+    with SessionLocal() as db:
+        jobs = db.query(ProcessingJob).all()
+        assert len(jobs) == 1
+        job = jobs[0]
+        assert job.id == body["job_id"]
+        assert job.job_type == job_type
+        assert job.status == "queued"
+        assert job.queue_name == queue_name
+        assert job.payload_json == {
+            "course_id": course.id,
+            "artifact": artifact,
+            "version_id": f"version-{artifact}",
+            **worker_options,
+        }
+        assert job.external_task_id == f"recorded:{job.id}"
+    assert dispatcher.deliveries == [(body["job_id"], queue_name)]
+
+
+def test_job_read_and_cancel_are_owner_scoped_and_safe(client, monkeypatch):
+    owner_headers = _headers(client, "job-owner@example.com")
+    other_headers = _headers(client, "job-other@example.com")
+    course = _ready_course(_user_id("job-owner@example.com"), "owner-course")
+    _install_recording_dispatcher(monkeypatch)
+    monkeypatch.setattr(
+        "app.routers.generation.get_generator", lambda: ReservingOnlyGenerator()
+    )
+    created = client.post(
+        "/api/generate-book",
+        headers=owner_headers,
+        json={"course_id": course.id},
+    )
+    job_id = created.json()["job_id"]
+
+    assert client.get(f"/api/jobs/{job_id}", headers=other_headers).status_code == 404
+    assert client.delete(f"/api/jobs/{job_id}", headers=other_headers).status_code == 404
+
+    read = client.get(f"/api/jobs/{job_id}", headers=owner_headers)
+    assert read.status_code == 200
+    assert set(read.json()).isdisjoint(
+        {"payload_json", "worker_id", "lease_expires_at", "external_task_id"}
+    )
+    cancelled = client.delete(f"/api/jobs/{job_id}", headers=owner_headers)
+    assert cancelled.status_code == 202
+    assert cancelled.json()["status"] == "cancelled"
+    assert client.delete(f"/api/jobs/{job_id}", headers=owner_headers).status_code == 409
+
+
+def test_cancelled_video_job_never_invokes_generator_or_produces_mp4(
+    client, monkeypatch
+):
+    from app.jobs.tasks import execute_job
+
+    email = "cancel-video@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "cancel-video-course")
+    _install_recording_dispatcher(monkeypatch)
+    monkeypatch.setattr(
+        "app.routers.generation.get_generator", lambda: ReservingOnlyGenerator()
+    )
+    created = client.post(
+        "/api/generate-vid",
+        headers=headers,
+        json={"course_id": course.id},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    version_id = created.json()["version_id"]
+    cancelled = client.delete(f"/api/jobs/{job_id}", headers=headers)
+    assert cancelled.status_code == 202
+
+    monkeypatch.setattr(
+        "app.jobs.tasks.get_generator",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("A cancelled video job constructed the generator.")
+        ),
+    )
+    assert execute_job(job_id, worker_id="test-worker") is None
+    output = (
+        Path(settings.UPLOAD_DIR)
+        / course.id
+        / "artifacts"
+        / "vid"
+        / version_id
+        / "vid.mp4"
+    )
+    assert not output.exists()
+
+
+def test_admission_rejection_does_not_reserve_artifact_or_create_job(
+    client, monkeypatch
+):
+    email = "full-queue@example.com"
+    headers = _headers(client, email)
+    user_id = _user_id(email)
+    course = _ready_course(user_id, "full-queue-course")
+    with SessionLocal() as db:
+        for index in range(settings.MAX_PENDING_JOBS_PER_USER):
+            extra = Course(
+                id=f"full-{index}",
+                user_id=user_id,
+                filenames=["source.txt"],
+                status="ready",
+                stage="completed",
+                progress=100,
+                chunk_count=1,
+                embedding_status="completed",
+                quality_score=80,
+            )
+            db.add(extra)
+            db.flush()
+            create_job(
+                db,
+                course_id=extra.id,
+                user_id=user_id,
+                job_type="book",
+                payload_json={
+                    "course_id": extra.id,
+                    "artifact": "book",
+                    "version_id": f"seed-{index}",
+                },
+                commit=False,
+            )
+        db.commit()
+
+    generator = ReservingOnlyGenerator()
+    monkeypatch.setattr("app.routers.generation.get_generator", lambda: generator)
+    response = client.post(
+        "/api/generate-book",
+        headers=headers,
+        json={"course_id": course.id},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "30"
+    assert generator.reservations == []
+    with SessionLocal() as db:
+        assert db.query(ProcessingJob).count() == settings.MAX_PENDING_JOBS_PER_USER
+
+
+def test_upload_admission_rejection_leaves_no_course_job_or_files(client):
+    email = "full-upload-queue@example.com"
+    headers = _headers(client, email)
+    user_id = _user_id(email)
+    with SessionLocal() as db:
+        for index in range(settings.MAX_PENDING_JOBS_PER_USER):
+            course = Course(
+                id=f"upload-full-{index}",
+                user_id=user_id,
+                filenames=["source.txt"],
+                status="ready",
+                stage="completed",
+                progress=100,
+                chunk_count=1,
+                embedding_status="completed",
+                quality_score=80,
+            )
+            db.add(course)
+            db.flush()
+            create_job(
+                db,
+                course_id=course.id,
+                user_id=user_id,
+                job_type="book",
+                payload_json={
+                    "course_id": course.id,
+                    "artifact": "book",
+                    "version_id": f"upload-seed-{index}",
+                },
+                commit=False,
+            )
+        db.commit()
+
+    response = client.post(
+        "/api/upload",
+        headers=headers,
+        files=[("files", ("rejected.txt", b"content", "text/plain"))],
+    )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "30"
+    with SessionLocal() as db:
+        assert db.query(Course).count() == settings.MAX_PENDING_JOBS_PER_USER
+        assert db.query(ProcessingJob).count() == settings.MAX_PENDING_JOBS_PER_USER
+    assert list(Path(settings.UPLOAD_DIR).iterdir()) == []
+
+
+def test_dispatch_failure_terminalizes_upload_course_with_safe_error(client, monkeypatch):
+    headers = _headers(client, "upload-dispatch-failure@example.com")
+    _install_failing_dispatcher(monkeypatch)
+
+    response = client.post(
+        "/api/upload",
+        headers=headers,
+        files=[("files", ("source.txt", b"content", "text/plain"))],
+    )
+
+    assert response.status_code == 503
+    assert "broker" not in response.text.lower()
+    with SessionLocal() as db:
+        course = db.query(Course).one()
+        job = db.query(ProcessingJob).one()
+        assert course.status == "failed"
+        assert course.error_code == "DOCUMENT_SCHEDULING_FAILED"
+        assert job.status == "failed"
+        assert job.active_key is None
+
+
+def test_dispatch_failure_terminalizes_reserved_artifact_version(client, monkeypatch):
+    email = "generation-dispatch-failure@example.com"
+    headers = _headers(client, email)
+    course = _ready_course(_user_id(email), "generation-dispatch-failure")
+    _install_failing_dispatcher(monkeypatch)
+
+    response = client.post(
+        "/api/generate-book",
+        headers=headers,
+        json={"course_id": course.id},
+    )
+
+    assert response.status_code == 503
+    assert "broker" not in response.text.lower()
+    with SessionLocal() as db:
+        job = db.query(ProcessingJob).one()
+        assert job.status == "failed"
+        assert job.active_key is None
+    from app.routers.generation import get_generator
+
+    _, versions = get_generator().artifact_versions(course.id, "book")
+    assert len(versions) == 1
+    assert versions[0]["status"] == "error"
+
+
+def test_admin_job_summary_contains_only_aggregate_queue_state(client):
+    headers = _headers(client, "jobs-admin@example.com")
+    user_id = _user_id("jobs-admin@example.com")
+    _ready_course(user_id, "admin-summary-course")
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        user.role = "admin"
+        create_job(
+            db,
+            course_id="admin-summary-course",
+            user_id=user_id,
+            job_type="preprocess",
+            payload_json={"course_id": "admin-summary-course"},
+            queue_name="ingestion",
+            commit=False,
+        )
+        db.commit()
+
+    response = client.get("/api/admin/jobs/summary", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["counts"]["ingestion"]["queued"] == 1
+    assert response.json()["oldest_queued_age_seconds"] >= 0
+    serialized = response.text.lower()
+    assert "payload" not in serialized
+    assert "document" not in serialized

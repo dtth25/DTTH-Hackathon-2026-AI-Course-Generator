@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import logger, settings
 from app.models.course import Course
-from app.routers import admin, auth, courses, documents, generation, upload
+from app.routers import admin, auth, courses, documents, generation, jobs, upload
 from app.services.admin_seed import seed_default_admin
 from app.services.database import SessionLocal
 from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
@@ -47,6 +47,7 @@ app.include_router(courses.router)
 app.include_router(courses.router_single)
 app.include_router(upload.router)
 app.include_router(documents.router)
+app.include_router(jobs.router)
 app.include_router(generation.router)
 app.include_router(generation.router_single)
 app.include_router(generation.router_generate)

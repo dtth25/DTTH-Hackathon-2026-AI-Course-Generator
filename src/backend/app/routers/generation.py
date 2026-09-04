@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user, get_db
+from app.jobs.admission import enforce_job_admission
 from app.models.course import Course
 from app.models.user import User
+from app.routers.jobs import dispatch_persisted_job
 from app.schemas.generation import (
     BookGenerateRequest,
     GenerateRequest,
@@ -20,6 +22,7 @@ from app.schemas.generation import (
     VidGenerateRequest,
 )
 from app.services.generator import Generator
+from app.services.job_service import create_job
 from app.services.llm import LLMService
 from app.services.public_errors import public_error, sanitize_public_payload
 from app.services.vector_store import get_vector_store
@@ -148,6 +151,64 @@ def reserve_version_or_raise(generator: Generator, course_id: str, artifact: str
     return prepare_version_or_raise(generator, course_id, artifact, options, **kwargs)
 
 
+def enqueue_generation_job(
+    *,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    course: Course,
+    generator: Generator,
+    job_type: str,
+    artifact: str,
+    options: Dict[str, Any],
+    payload_options: Dict[str, Any],
+    **reservation_options: Any,
+):
+    """Admit, reserve, persist, then dispatch one durable artifact job."""
+    enforce_job_admission(db, course.user_id)
+    try:
+        version_id = reserve_version_or_raise(
+            generator,
+            course.id,
+            artifact,
+            options,
+            **reservation_options,
+        )
+        job = create_job(
+            db,
+            course_id=course.id,
+            user_id=course.user_id,
+            job_type=job_type,
+            payload_json={
+                "course_id": course.id,
+                "artifact": artifact,
+                "version_id": version_id,
+                **payload_options,
+            },
+            queue_name="video" if job_type == "video" else "generation",
+            commit=False,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    try:
+        dispatch_persisted_job(background_tasks, db, job)
+    except HTTPException:
+        error_code = ARTIFACT_FAILURE_CODES[artifact]
+        _, error_message = public_error(None, error_code)
+        generator._set_artifact_status(
+            course.id,
+            artifact,
+            "error",
+            error=error_message,
+            error_code=error_code,
+            technical_error="Durable job dispatch failed.",
+            version_id=version_id,
+        )
+        raise
+    return job, version_id
+
+
 # =====================================================================
 # 1. Study Pack Endpoint
 # =====================================================================
@@ -187,9 +248,19 @@ def generate_book(
     prompt = (req and req.user_prompt) or user_prompt or ""
     detail = (req and req.detail_level) or detail_level or "Tiêu chuẩn"
     generator = get_generator()
-    version_id = reserve_version_or_raise(generator, course.id, "book", {"detail_level": detail}, user_prompt=prompt, retry_version_id=(req and req.retry_version_id) or retry_version_id)
-    background_tasks.add_task(generator.generate_book, course.id, detail_level=detail, user_prompt=prompt, version_id=version_id)
-    return GenerateResponse(course_id=course.id, version_id=version_id)
+    job, version_id = enqueue_generation_job(
+        background_tasks=background_tasks,
+        db=db,
+        course=course,
+        generator=generator,
+        job_type="book",
+        artifact="book",
+        options={"detail_level": detail},
+        payload_options={"detail_level": detail, "user_prompt": prompt},
+        user_prompt=prompt,
+        retry_version_id=(req and req.retry_version_id) or retry_version_id,
+    )
+    return GenerateResponse(course_id=course.id, version_id=version_id, job_id=job.id)
 
 
 @router_generate.post("/generate-slide", response_model=GenerateResponse)
@@ -211,9 +282,19 @@ def generate_slide(
     n = {"summary": 8, "lesson": 15, "deep_dive": 22}.get(slide_mode, 15)
     focus = (req and req.focus_prompt) or focus_prompt or ""
     generator = get_generator()
-    version_id = reserve_version_or_raise(generator, course.id, "slides", {"mode": slide_mode, "num_slides": n, "focus_prompt": focus}, topic=t, retry_version_id=(req and req.retry_version_id) or retry_version_id)
-    background_tasks.add_task(generator.generate_slides, course.id, topic=t, num_slides=n, focus_prompt=focus, version_id=version_id)
-    return GenerateResponse(course_id=course.id, version_id=version_id)
+    job, version_id = enqueue_generation_job(
+        background_tasks=background_tasks,
+        db=db,
+        course=course,
+        generator=generator,
+        job_type="slides",
+        artifact="slides",
+        options={"mode": slide_mode, "num_slides": n, "focus_prompt": focus},
+        payload_options={"topic": t, "num_slides": n, "focus_prompt": focus},
+        topic=t,
+        retry_version_id=(req and req.retry_version_id) or retry_version_id,
+    )
+    return GenerateResponse(course_id=course.id, version_id=version_id, job_id=job.id)
 
 
 @router_generate.post("/generate-quiz", response_model=GenerateResponse)
@@ -234,9 +315,19 @@ def generate_quiz(
     q = (req and req.quantity) or quantity or 5
     d = (req and req.difficulty) or difficulty or "medium"
     generator = get_generator()
-    version_id = reserve_version_or_raise(generator, course.id, "quiz", {"quantity": q, "difficulty": d}, topic=t, retry_version_id=(req and req.retry_version_id) or retry_version_id)
-    background_tasks.add_task(generator.generate_quiz, course.id, topic=t, quantity=q, difficulty=d, version_id=version_id)
-    return GenerateResponse(course_id=course.id, version_id=version_id)
+    job, version_id = enqueue_generation_job(
+        background_tasks=background_tasks,
+        db=db,
+        course=course,
+        generator=generator,
+        job_type="quiz",
+        artifact="quiz",
+        options={"quantity": q, "difficulty": d},
+        payload_options={"topic": t, "quantity": q, "difficulty": d},
+        topic=t,
+        retry_version_id=(req and req.retry_version_id) or retry_version_id,
+    )
+    return GenerateResponse(course_id=course.id, version_id=version_id, job_id=job.id)
 
 
 @router_generate.post("/generate-vid", response_model=GenerateResponse)
@@ -259,9 +350,30 @@ def generate_vid(
     v = (req and req.voice) or voice or "female"
     up = (req and req.user_prompt) or user_prompt or ""
     generator = get_generator()
-    version_id = reserve_version_or_raise(generator, course.id, "vid", {"format": fmt, "voice": v}, topic=t, user_prompt=up, retry_version_id=(req and req.retry_version_id) or retry_version_id)
-    background_tasks.add_task(generator.generate_vid, course.id, topic=t, fmt=fmt, voice=v, user_prompt=up, version_id=version_id)
-    return GenerateResponse(course_id=course.id, estimated_time="3-5 minutes", version_id=version_id)
+    job, version_id = enqueue_generation_job(
+        background_tasks=background_tasks,
+        db=db,
+        course=course,
+        generator=generator,
+        job_type="video",
+        artifact="vid",
+        options={"format": fmt, "voice": v},
+        payload_options={
+            "topic": t,
+            "format": fmt,
+            "voice": v,
+            "user_prompt": up,
+        },
+        topic=t,
+        user_prompt=up,
+        retry_version_id=(req and req.retry_version_id) or retry_version_id,
+    )
+    return GenerateResponse(
+        course_id=course.id,
+        estimated_time="3-5 minutes",
+        version_id=version_id,
+        job_id=job.id,
+    )
 
 
 # =====================================================================
