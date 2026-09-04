@@ -25,9 +25,7 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                f"status {self.status_code}", request=self.request, response=self
-            )
+            raise httpx.HTTPStatusError(f"status {self.status_code}", request=self.request, response=self)
 
 
 class FakeHttpx:
@@ -68,6 +66,10 @@ def fake_httpx(monkeypatch) -> FakeHttpx:
     monkeypatch.setattr("app.services.provider_health.httpx.get", fake.get)
     monkeypatch.setattr("app.services.provider_health._cached_health", None)
     monkeypatch.setattr("app.services.provider_health._cached_at", 0.0)
+    monkeypatch.setattr("app.services.provider_health._cached_generation", None)
+    guard = Mock()
+    guard.preflight_generation.return_value = 0
+    monkeypatch.setattr("app.services.provider_health.get_provider_guard", lambda: guard)
     return fake
 
 
@@ -114,6 +116,41 @@ def test_provider_health_uses_ttl_cache(fake_httpx):
     get_openrouter_health()
 
     assert fake_httpx.call_count == 3
+
+
+def test_shared_generation_invalidates_another_process_cached_failure(fake_httpx, monkeypatch):
+    from app.services import provider_health
+
+    failed = ProviderHealth(
+        available=False,
+        error_code="OPENROUTER_KEY_LIMIT_EXCEEDED",
+        checked_at=datetime.now(UTC),
+        limit=10,
+        limit_remaining=0,
+        limit_reset=None,
+        content_model_available=False,
+        embedding_model_available=False,
+    )
+    healthy = ProviderHealth(
+        available=True,
+        error_code=None,
+        checked_at=datetime.now(UTC),
+        limit=10,
+        limit_remaining=9,
+        limit_reset=None,
+        content_model_available=True,
+        embedding_model_available=True,
+    )
+    checks = iter((failed, healthy))
+    generation = {"value": 0}
+    guard = Mock()
+    guard.preflight_generation.side_effect = lambda: generation["value"]
+    monkeypatch.setattr(provider_health, "get_provider_guard", lambda: guard)
+    monkeypatch.setattr(provider_health, "_check_openrouter_health", lambda: next(checks))
+
+    assert get_openrouter_health(force=True).available is False
+    generation["value"] = 1
+    assert get_openrouter_health().available is True
 
 
 def test_provider_health_caches_from_preflight_completion_time(fake_httpx, monkeypatch):
@@ -217,9 +254,7 @@ def _create_user_token(email: str, role: str) -> str:
 
 def test_provider_health_endpoint_is_admin_only_and_serializes_only_safe_fields(client, monkeypatch):
     normal_token = _create_user_token("provider-user@example.com", "user")
-    forbidden = client.get(
-        "/api/admin/provider-health", headers={"Authorization": f"Bearer {normal_token}"}
-    )
+    forbidden = client.get("/api/admin/provider-health", headers={"Authorization": f"Bearer {normal_token}"})
     assert forbidden.status_code == 403
 
     checked_at = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
@@ -237,9 +272,7 @@ def test_provider_health_endpoint_is_admin_only_and_serializes_only_safe_fields(
     monkeypatch.setattr("app.routers.admin.get_openrouter_health", health_lookup)
     admin_token = _create_user_token("provider-admin@example.com", "admin")
 
-    response = client.get(
-        "/api/admin/provider-health?force=true", headers={"Authorization": f"Bearer {admin_token}"}
-    )
+    response = client.get("/api/admin/provider-health?force=true", headers={"Authorization": f"Bearer {admin_token}"})
 
     assert response.status_code == 200
     health_lookup.assert_called_once_with(force=True, reset_circuit=True)

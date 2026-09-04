@@ -11,8 +11,8 @@ from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
 from app.models.user import User
 from app.routers.generation import get_valid_course
+from app.routers.jobs import dispatch_persisted_job
 from app.schemas.course import DocumentRetryResponse
-from app.services import database
 from app.services.document_processor import get_document_processor
 from app.services.job_service import create_job
 
@@ -55,23 +55,11 @@ def mark_inline_scheduling_failure(
 
 def _schedule_processing(
     background_tasks: BackgroundTasks,
-    course_id: str,
-    file_paths: list[str],
-    job_id: str,
+    db: Session,
+    job: ProcessingJob,
 ) -> None:
-    """Queue the one document-processing task used by uploads and retries.
-
-    The session factory is resolved when scheduling so test session overrides and the
-    production factory both reach the worker; the task itself owns its session.
-    """
-    processor = get_document_processor()
-    background_tasks.add_task(
-        processor.process_course,
-        course_id,
-        file_paths,
-        database.SessionLocal,
-        job_id,
-    )
+    """Dispatch a saved-document retry through the configured durable executor."""
+    dispatch_persisted_job(background_tasks, db, job)
 
 
 @router.post(
@@ -97,7 +85,13 @@ def retry_document_processing(
     active_preprocess = exists().where(
         ProcessingJob.course_id == course.id,
         ProcessingJob.job_type == "preprocess",
-        ProcessingJob.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value]),
+        ProcessingJob.status.in_(
+            [
+                JobStatus.QUEUED.value,
+                JobStatus.RETRY_SCHEDULED.value,
+                JobStatus.RUNNING.value,
+            ]
+        ),
     )
     try:
         transitioned = db.execute(
@@ -132,6 +126,7 @@ def retry_document_processing(
             course_id=course.id,
             user_id=course.user_id,
             job_type="preprocess",
+            payload_json={"course_id": course.id},
             commit=False,
         )
         db.commit()
@@ -145,7 +140,9 @@ def retry_document_processing(
         ) from exc
 
     try:
-        _schedule_processing(background_tasks, course.id, file_paths, job.id)
+        _schedule_processing(background_tasks, db, job)
+    except HTTPException:
+        raise
     except Exception as exc:
         try:
             mark_inline_scheduling_failure(db, course.id, job.id)

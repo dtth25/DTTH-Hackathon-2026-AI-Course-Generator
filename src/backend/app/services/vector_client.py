@@ -9,7 +9,6 @@ import httpx
 from chromadb.api.models.Collection import Collection
 from chromadb.api.types import (
     DefaultEmbeddingFunction,
-    convert_np_embeddings_to_list,
     deserialize_metadata,
     serialize_metadata,
 )
@@ -21,6 +20,13 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _DEFAULT_EMBEDDING_FUNCTION = DefaultEmbeddingFunction()
+
+
+def _json_embeddings(embeddings: Any) -> Any:
+    """Accept both Chroma's ndarray form and OpenAI's native list form."""
+    if hasattr(embeddings, "tolist"):
+        return embeddings.tolist()
+    return embeddings
 
 
 class ChromaConnectionError(RuntimeError):
@@ -150,7 +156,7 @@ class BoundedChromaHttpClient:
             ),
             json={
                 "ids": ids,
-                "embeddings": convert_np_embeddings_to_list(embeddings),
+                "embeddings": _json_embeddings(embeddings),
                 "metadatas": serialized_metadatas,
                 "documents": documents,
                 "uris": uris,
@@ -179,7 +185,7 @@ class BoundedChromaHttpClient:
             ),
             json={
                 "ids": ids,
-                "query_embeddings": convert_np_embeddings_to_list(query_embeddings),
+                "query_embeddings": _json_embeddings(query_embeddings),
                 "n_results": n_results,
                 "where": where,
                 "where_document": where_document,

@@ -1,0 +1,3 @@
+HackaGen deterministic load document.
+
+The system transforms an uploaded source into a connected study pack. Every generated claim must remain grounded in this source. Queue workers process ingestion, books, slides, quizzes, and video independently. This fixture is intentionally small so capacity tests measure orchestration rather than provider cost.

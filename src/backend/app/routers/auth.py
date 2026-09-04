@@ -210,17 +210,37 @@ def login(
 ) -> Any:
     """Authenticate user credentials and set HttpOnly JWT cookie."""
     user = db.query(User).filter(User.email == user_in.email.lower()).first()
-    if not user or not verify_password(user_in.password, user.hashed_password):
+    if not user:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "invalid_credentials", "message": "Email hoặc mật khẩu không chính xác."},
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user.is_active:
+    # Password hashing is deliberately CPU-expensive. Detach the fully-loaded public
+    # user data and release the read transaction before bcrypt so a burst of logins
+    # cannot pin every PostgreSQL pool connection for the duration of the hash check.
+    user_response = UserResponse.model_validate(user)
+    hashed_password = user.hashed_password
+    user_id = user.id
+    user_role = user.role
+    is_active = user.is_active
+    is_verified = user.is_verified
+    db.expunge(user)
+    db.rollback()
+
+    if not verify_password(user_in.password, hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_credentials", "message": "Email hoặc mật khẩu không chính xác."},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not is_active:
         raise _auth_error(status.HTTP_403_FORBIDDEN, "account_disabled", "Tài khoản của bạn đã bị vô hiệu hóa.")
 
-    if not user.is_verified:
+    if not is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -229,13 +249,13 @@ def login(
             },
         )
 
-    access_token = create_access_token({"sub": user.id, "role": user.role})
+    access_token = create_access_token({"sub": user_id, "role": user_role})
     set_auth_cookie(response, access_token)
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user,
+        "user": user_response,
     }
 
 

@@ -40,15 +40,43 @@ SCENE_ACCENT_PALETTE = [
 def _scene_accent(idx: int) -> tuple:
     return SCENE_ACCENT_PALETTE[(idx - 1) % len(SCENE_ACCENT_PALETTE)]
 
+
 # `narration` = target words per scene. Real video length = TTS reading time of the
 # narration (on-screen text is minimal), so scene COUNT alone never controlled duration —
 # every format produced ~2-4 short sentences/scene (~50 words) and so landed at ~2 min
 # regardless of the picked mode. Vietnamese edge-tts reads ~140-150 wpm (~2.4 words/sec),
 # so these word targets are what actually hit each format's stated minutes.
 FORMAT_SPECS: Dict[str, Dict[str, Any]] = {
-    "standard": {"width": 1280, "height": 720, "scenes": (8, 10), "label": "Tiêu chuẩn", "target": "5-7 phút", "narration": (95, 130), "tts_rate": "+0%", "narration_style": "Nhịp giải thích điềm tĩnh, có khoảng nghỉ ngắn sau ý quan trọng để người học kịp theo dõi."},
-    "overview": {"width": 1280, "height": 720, "scenes": (5, 6), "label": "Tổng quan", "target": "2-3 phút", "narration": (65, 90), "tts_rate": "+4%", "narration_style": "Nhịp gọn, đi thẳng vào mạch câu chuyện; mỗi cảnh chỉ giữ một ý then chốt và chuyển ý rõ ràng."},
-    "shorts": {"width": 720, "height": 1280, "scenes": (4, 5), "label": "Shorts", "target": "30-60 giây", "narration": (20, 30), "tts_rate": "+12%", "narration_style": "Nhịp nhanh, dứt khoát và giàu tò mò; câu ngắn, ưu tiên động từ, không lặp lại ý hay mở bài dài."},
+    "standard": {
+        "width": 1280,
+        "height": 720,
+        "scenes": (8, 10),
+        "label": "Tiêu chuẩn",
+        "target": "5-7 phút",
+        "narration": (95, 130),
+        "tts_rate": "+0%",
+        "narration_style": "Nhịp giải thích điềm tĩnh, có khoảng nghỉ ngắn sau ý quan trọng để người học kịp theo dõi.",
+    },
+    "overview": {
+        "width": 1280,
+        "height": 720,
+        "scenes": (5, 6),
+        "label": "Tổng quan",
+        "target": "2-3 phút",
+        "narration": (65, 90),
+        "tts_rate": "+4%",
+        "narration_style": "Nhịp gọn, đi thẳng vào mạch câu chuyện; mỗi cảnh chỉ giữ một ý then chốt và chuyển ý rõ ràng.",
+    },
+    "shorts": {
+        "width": 720,
+        "height": 1280,
+        "scenes": (4, 5),
+        "label": "Shorts",
+        "target": "30-60 giây",
+        "narration": (20, 30),
+        "tts_rate": "+12%",
+        "narration_style": "Nhịp nhanh, dứt khoát và giàu tò mò; câu ngắn, ưu tiên động từ, không lặp lại ý hay mở bài dài.",
+    },
 }
 
 VOICE_MAP = {
@@ -121,14 +149,20 @@ def _estimate_spoken_duration(text: str, rate: str = "+0%") -> float:
 
 def _synthesize_silence(duration: float, mp3_path: str) -> None:
     """Generate a silent placeholder track via ffmpeg's lavfi source — no network involved.
-    Used only under PYTEST_CURRENT_TEST so the render/mux/concat pipeline stays testable
-    without hitting the real edge-tts endpoint (mirrors LLMService's own test/mock-mode guard)."""
+    Used only under tests or the explicitly isolated load-test environment so the
+    render/mux/concat pipeline stays deterministic without external TTS traffic."""
     _run_ffmpeg(
         [
-            _get_ffmpeg(), "-y",
-            "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
-            "-t", str(duration),
-            "-q:a", "9",
+            _get_ffmpeg(),
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=24000:cl=mono",
+            "-t",
+            str(duration),
+            "-q:a",
+            "9",
             mp3_path,
         ]
     )
@@ -136,7 +170,7 @@ def _synthesize_silence(duration: float, mp3_path: str) -> None:
 
 def _synthesize_narration(text: str, voice_id: str, mp3_path: str, rate: str = "+0%") -> List[Dict[str, Any]]:
     """Generate narration audio via edge-tts and return its word-boundary timing data."""
-    if "PYTEST_CURRENT_TEST" in os.environ:
+    if "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ENVIRONMENT") == "loadtest":
         _synthesize_silence(_estimate_spoken_duration(text, rate), mp3_path)
         return []
 
@@ -288,7 +322,9 @@ def _render_scene_diagram(
             row, col = divmod(idx, columns)
             left = x0 + col * (card_w + gap)
             top = y0 + row * (card_h + gap)
-            _draw_diagram_card(draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent)
+            _draw_diagram_card(
+                draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent
+            )
         return
 
     if diagram.type == "flow":
@@ -300,18 +336,34 @@ def _render_scene_diagram(
             left = x0 + (width - card_w) // 2
             for idx, (label, detail) in enumerate(items):
                 top = y0 + idx * (card_h + gap)
-                _draw_diagram_card(draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent)
+                _draw_diagram_card(
+                    draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent
+                )
                 if idx < len(items) - 1:
-                    _draw_arrow(draw, (left + card_w // 2, top + card_h), (left + card_w // 2, top + card_h + gap - 4), accent, max(8, gap // 3))
+                    _draw_arrow(
+                        draw,
+                        (left + card_w // 2, top + card_h),
+                        (left + card_w // 2, top + card_h + gap - 4),
+                        accent,
+                        max(8, gap // 3),
+                    )
         else:
             card_w = max(70, (width - gap * (len(items) - 1)) // len(items))
             card_h = int(height * 0.62)
             top = y0 + (height - card_h) // 2
             for idx, (label, detail) in enumerate(items):
                 left = x0 + idx * (card_w + gap)
-                _draw_diagram_card(draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent)
+                _draw_diagram_card(
+                    draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent
+                )
                 if idx < len(items) - 1:
-                    _draw_arrow(draw, (left + card_w, top + card_h // 2), (left + card_w + gap - 4, top + card_h // 2), accent, max(8, gap // 3))
+                    _draw_arrow(
+                        draw,
+                        (left + card_w, top + card_h // 2),
+                        (left + card_w + gap - 4, top + card_h // 2),
+                        accent,
+                        max(8, gap // 3),
+                    )
         return
 
     # Timeline: a shared line and alternating cards make the temporal order scan quickly.
@@ -323,12 +375,19 @@ def _render_scene_diagram(
     card_h = max(48, int(height * 0.30))
     for idx, ((label, detail), center_x) in enumerate(zip(items, positions)):
         draw.ellipse(
-            (center_x - max(5, width // 110), line_y - max(5, width // 110), center_x + max(5, width // 110), line_y + max(5, width // 110)),
+            (
+                center_x - max(5, width // 110),
+                line_y - max(5, width // 110),
+                center_x + max(5, width // 110),
+                line_y + max(5, width // 110),
+            ),
             fill=accent,
         )
         top = y0 + max(4, height // 20) if idx % 2 == 0 else y1 - card_h - max(4, height // 20)
         left = max(x0, min(x1 - card_w, center_x - card_w // 2))
-        _draw_diagram_card(draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent)
+        _draw_diagram_card(
+            draw, (left, top, left + card_w, top + card_h), label, detail, label_font, detail_font, accent
+        )
 
 
 def _render_document_card(
@@ -433,7 +492,11 @@ def render_scene_layers(
     bullet_font = ImageFont.truetype(ttf_path, bullet_size) if ttf_path else ImageFont.load_default()
 
     if has_document_card and fmt != "shorts":
-        text_x0, text_x1 = (int(width * 0.56), int(width * 0.94)) if document_visual.get("side") == "left" else (int(width * 0.06), int(width * 0.44))
+        text_x0, text_x1 = (
+            (int(width * 0.56), int(width * 0.94))
+            if document_visual.get("side") == "left"
+            else (int(width * 0.06), int(width * 0.44))
+        )
         left_aligned = document_visual.get("side") == "right"
     else:
         text_x0, text_x1 = 0, width
@@ -573,18 +636,12 @@ def build_scene_clip(
         capped_delay = min(delay, duration * 0.6)
         layer_label = f"layer{layer_idx}"
         overlay_label = f"overlay{layer_idx}"
-        filters.append(
-            f"[{layer_idx + 1}:v]format=rgba,split=2[layer_color{layer_idx}][layer_mask{layer_idx}]"
-        )
+        filters.append(f"[{layer_idx + 1}:v]format=rgba,split=2[layer_color{layer_idx}][layer_mask{layer_idx}]")
         filters.append(
             f"[layer_color{layer_idx}]format=rgb24,fade=t=in:st={capped_delay:.2f}:d={fade_dur:.2f}[layer_fade{layer_idx}]"
         )
-        filters.append(
-            f"[layer_mask{layer_idx}]alphaextract[layer_alpha{layer_idx}]"
-        )
-        filters.append(
-            f"[layer_fade{layer_idx}][layer_alpha{layer_idx}]alphamerge[{layer_label}]"
-        )
+        filters.append(f"[layer_mask{layer_idx}]alphaextract[layer_alpha{layer_idx}]")
+        filters.append(f"[layer_fade{layer_idx}][layer_alpha{layer_idx}]alphamerge[{layer_label}]")
         rise_expression = f"{rise_px}*max(0\\,1-(t-{capped_delay:.2f})/{rise_seconds:.2f})"
         filters.append(
             f"[{previous}][{layer_label}]overlay=x=0:y='{rise_expression}':format=auto:shortest=1[{overlay_label}]"
@@ -593,10 +650,25 @@ def build_scene_clip(
     filters.append(f"[{previous}]format=yuv420p[video]")
     cmd.extend(
         [
-            "-filter_complex", ";".join(filters),
-            "-map", "[video]", "-map", f"{audio_input}:a",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(fps),
-            "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.3f}", out_path,
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            "[video]",
+            "-map",
+            f"{audio_input}:a",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            str(fps),
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-t",
+            f"{duration:.3f}",
+            out_path,
         ]
     )
     _run_ffmpeg(cmd)
@@ -620,8 +692,21 @@ def concat_clips(clip_paths: List[str], out_path: str) -> None:
             logger.warning(f"Concat stream-copy failed, retrying with re-encode: {e}")
             _run_ffmpeg(
                 [
-                    ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", list_path,
-                    "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", out_path,
+                    ffmpeg,
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    list_path,
+                    "-c:v",
+                    "libx264",
+                    "-c:a",
+                    "aac",
+                    "-pix_fmt",
+                    "yuv420p",
+                    out_path,
                 ]
             )
     finally:
@@ -669,17 +754,28 @@ def concat_clips_xfade(clip_paths: List[str], durations: List[float], out_path: 
 
         total_audio_duration = sum(durations)
         pad_duration = max(0.0, total_audio_duration - visual_duration)
-        filters.append(
-            f"[{previous}]tpad=stop_mode=clone:stop_duration={pad_duration:.2f}[video]"
-        )
+        filters.append(f"[{previous}]tpad=stop_mode=clone:stop_duration={pad_duration:.2f}[video]")
         audio_inputs = "".join(f"[{idx}:a]" for idx in range(len(clip_paths)))
         filters.append(f"{audio_inputs}concat=n={len(clip_paths)}:v=0:a=1[audio]")
         cmd.extend(
             [
-                "-filter_complex", ";".join(filters),
-                "-map", "[video]", "-map", "[audio]",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
-                "-c:a", "aac", "-b:a", "192k", out_path,
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                "[video]",
+                "-map",
+                "[audio]",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                "30",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                out_path,
             ]
         )
         _run_ffmpeg(cmd)
@@ -736,9 +832,7 @@ def assemble_video(
             )
 
             clip_path = os.path.join(scene_dir, f"scene_{i + 1}.mp4")
-            build_scene_clip(
-                base_png_path, layer_paths, mp3_path, width, height, clip_path, duration, i + 1
-            )
+            build_scene_clip(base_png_path, layer_paths, mp3_path, width, height, clip_path, duration, i + 1)
             clip_paths.append(clip_path)
             clip_durations.append(duration)
 

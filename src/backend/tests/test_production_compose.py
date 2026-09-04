@@ -55,6 +55,7 @@ def _compose_environment(**overrides: str) -> dict[str, str]:
             "JWT_SECRET": "disposable-test-jwt-secret-that-is-not-for-deployment",
             "OPENROUTER_API_KEY": "disposable-test-key-no-provider-request",
             "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+            "LOAD_TEST_CONTROL_TOKEN": "disposable-loadtest-control-token",
             "FRONTEND_PORT": "3000",
         }
     )
@@ -388,7 +389,6 @@ def test_loadtest_overlay_changes_only_the_environment_boundary(production_confi
         "entrypoint",
         "healthcheck",
         "volumes",
-        "depends_on",
         "restart",
         "networks",
         "ports",
@@ -398,6 +398,23 @@ def test_loadtest_overlay_changes_only_the_environment_boundary(production_confi
             assert loadtest_services[service_name].get(field) == production_services[
                 service_name
             ].get(field)
+
+        production_dependencies = production_services[service_name].get(
+            "depends_on", {}
+        )
+        loadtest_dependencies = loadtest_services[service_name].get(
+            "depends_on", {}
+        )
+        if service_name in BACKEND_RUNTIMES:
+            assert loadtest_dependencies == {
+                **production_dependencies,
+                "mock-openrouter": {
+                    "condition": "service_healthy",
+                    "required": True,
+                },
+            }
+        else:
+            assert loadtest_dependencies == production_dependencies
 
     for service_name in PRODUCTION_SERVICES - set(BACKEND_RUNTIMES):
         assert loadtest_services[service_name].get("environment") == production_services[
@@ -422,6 +439,11 @@ def test_loadtest_overlay_changes_only_the_environment_boundary(production_confi
         assert environment["DATABASE_URL"].startswith("postgresql+psycopg://")
         assert environment["CHROMA_MODE"] == "http"
         assert environment["OPENROUTER_BASE_URL"] == "http://mock-openrouter:8080/api/v1"
+    assert set(loadtest_services) == PRODUCTION_SERVICES | {"mock-openrouter"}
+    mock = loadtest_services["mock-openrouter"]
+    assert mock["environment"]["ENVIRONMENT"] == "loadtest"
+    assert mock["healthcheck"]["test"]
+    assert not mock.get("ports")
     assert {name for name, service in loadtest_services.items() if service.get("ports")} == {
         "frontend"
     }

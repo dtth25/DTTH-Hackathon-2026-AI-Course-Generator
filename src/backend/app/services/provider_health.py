@@ -43,6 +43,7 @@ class ProviderHealth(BaseModel):
 
 _cached_health: Optional[ProviderHealth] = None
 _cached_at = 0.0
+_cached_generation: Optional[int] = None
 _cache_lock = threading.Lock()
 
 
@@ -106,8 +107,7 @@ def _check_openrouter_health() -> ProviderHealth:
         key_data: dict[str, Any] = key_payload["data"]
         capacity_values = {field: _safe_number(key_data.get(field)) for field in _CAPACITY_NUMERIC_FIELDS}
         if any(
-            key_data.get(field) is not None and capacity_values[field] is None
-            for field in _CAPACITY_NUMERIC_FIELDS
+            key_data.get(field) is not None and capacity_values[field] is None for field in _CAPACITY_NUMERIC_FIELDS
         ):
             raise ValueError("OpenRouter key response contained an invalid numeric capacity value")
 
@@ -156,17 +156,25 @@ def _check_openrouter_health() -> ProviderHealth:
         return _unavailable_health(str(classify_openrouter_error(exc).code))
 
 
-def get_openrouter_health(
-    force: bool = False, *, reset_circuit: bool = False
-) -> ProviderHealth:
+def get_openrouter_health(force: bool = False, *, reset_circuit: bool = False) -> ProviderHealth:
     """Return cached state; reset circuits only on explicit admin-boundary intent."""
-    global _cached_at, _cached_health
+    global _cached_at, _cached_generation, _cached_health
 
     with _cache_lock:
+        guard = get_provider_guard()
+        try:
+            generation = guard.preflight_generation()
+        except ProviderGuardUnavailable:
+            _cached_health = _unavailable_health(ProviderErrorCode.UNAVAILABLE)
+            _cached_at = time.monotonic()
+            _cached_generation = None
+            return _cached_health
+
         now = time.monotonic()
         if (
             not force
             and _cached_health is not None
+            and _cached_generation == generation
             and now - _cached_at < settings.OPENROUTER_PREFLIGHT_TTL_SECONDS
         ):
             return _cached_health
@@ -174,8 +182,10 @@ def get_openrouter_health(
         _cached_health = _check_openrouter_health()
         if reset_circuit and _cached_health.available:
             try:
-                get_provider_guard().reset_after_successful_preflight()
+                guard.reset_after_successful_preflight()
+                generation = guard.preflight_generation()
             except ProviderGuardUnavailable:
                 _cached_health = _unavailable_health(ProviderErrorCode.UNAVAILABLE)
         _cached_at = time.monotonic()
+        _cached_generation = generation
         return _cached_health

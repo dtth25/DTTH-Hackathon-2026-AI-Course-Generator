@@ -259,7 +259,7 @@ def test_service_reported_failure_also_enters_durable_retry(
 def test_transient_failure_exhaustion_becomes_terminal(worker_database, monkeypatch):
     from app.jobs.tasks import execute_job
 
-    job_id, _ = _seed_job(worker_database)
+    job_id, course_id = _seed_job(worker_database)
     with worker_database() as db:
         job = db.get(ProcessingJob, job_id)
         job.max_attempts = 1
@@ -277,6 +277,10 @@ def test_transient_failure_exhaustion_becomes_terminal(worker_database, monkeypa
         assert job.status == "failed"
         assert job.attempts == 1
         assert job.error_code == "JOB_EXECUTION_FAILED"
+        course = db.get(Course, course_id)
+        assert course.status == "failed"
+        assert course.error_code == "DOCUMENT_PROCESSING_FAILED"
+        assert course.can_retry is True
 
 
 def test_preprocess_receives_claimed_job_identity(worker_database, monkeypatch):

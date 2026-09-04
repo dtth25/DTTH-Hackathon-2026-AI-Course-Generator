@@ -39,10 +39,14 @@ def synchronize_terminal_resource(
             code = "DOCUMENT_PROCESSING_CANCELLED"
             message = "Tài liệu đã bị hủy trước khi xử lý hoàn tất."
             failure_stage = "processing_cancelled"
-        else:
+        elif dispatch_failed:
             code = "DOCUMENT_SCHEDULING_FAILED"
             message = "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại."
             failure_stage = "scheduling_failed"
+        else:
+            code = "DOCUMENT_PROCESSING_FAILED"
+            message = "Không thể hoàn tất xử lý tài liệu. Vui lòng thử lại."
+            failure_stage = "processing_failed"
         course.status = "failed"
         course.stage = "failed"
         course.embedding_status = "failed"
@@ -83,7 +87,11 @@ def synchronize_terminal_resource(
             "error": (
                 "Đã hủy tạo học liệu."
                 if cancelled
-                else "Không thể bắt đầu tạo học liệu. Vui lòng thử lại."
+                else (
+                    "Không thể bắt đầu tạo học liệu. Vui lòng thử lại."
+                    if dispatch_failed
+                    else "Không thể hoàn tất tạo học liệu. Vui lòng thử lại."
+                )
             ),
             "error_code": _ARTIFACT_FAILURE_CODES[artifact],
             "technical_error": (

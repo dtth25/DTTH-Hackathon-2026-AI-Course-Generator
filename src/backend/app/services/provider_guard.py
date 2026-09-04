@@ -117,6 +117,13 @@ redis.call('SET', KEYS[1], deadline, 'EX', retry_after + 1)
 return retry_after
 """
 
+_RESET_SCRIPT = """-- hackagen-provider-reset
+for index = 1, #KEYS - 1 do
+  redis.call('DEL', KEYS[index])
+end
+return redis.call('INCR', KEYS[#KEYS])
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderPermit:
@@ -178,10 +185,7 @@ class ProviderGuard:
     ) -> None:
         self._settings = settings_obj
         self._clock = clock
-        self._distributed = (
-            settings_obj.JOB_QUEUE_PROVIDER == "celery"
-            or settings_obj.ENVIRONMENT == "production"
-        )
+        self._distributed = settings_obj.JOB_QUEUE_PROVIDER == "celery" or settings_obj.ENVIRONMENT == "production"
         self._redis = redis_client
         if self._distributed and self._redis is None:
             from redis import Redis
@@ -197,6 +201,7 @@ class ProviderGuard:
         self._local_rpm: dict[tuple[str, int], int] = {}
         self._local_failures: dict[str, list[float]] = {}
         self._local_open_until: dict[str, float] = {}
+        self._local_preflight_generation = 0
 
     @staticmethod
     def _validate_kind(kind: str) -> str:
@@ -239,9 +244,7 @@ class ProviderGuard:
             except Exception as exc:
                 raise self._redis_error("acquire", exc) from exc
             if int(result[0]) != 1:
-                raise ProviderCircuitOpen(
-                    int(result[2]), reason=self._decode(result[1])
-                )
+                raise ProviderCircuitOpen(int(result[2]), reason=self._decode(result[1]))
             return permit
 
         now = float(self._clock())
@@ -251,31 +254,17 @@ class ProviderGuard:
             if open_until > now:
                 raise ProviderCircuitOpen(math.ceil(open_until - now))
             leases = self._local_inflight.setdefault(kind, {})
-            leases = {
-                permit_id: expires_at
-                for permit_id, expires_at in leases.items()
-                if expires_at > now
-            }
+            leases = {permit_id: expires_at for permit_id, expires_at in leases.items() if expires_at > now}
             self._local_inflight[kind] = leases
             if len(leases) >= self._settings.OPENROUTER_MAX_IN_FLIGHT:
-                raise ProviderCircuitOpen(
-                    math.ceil(min(leases.values()) - now), reason="inflight"
-                )
+                raise ProviderCircuitOpen(math.ceil(min(leases.values()) - now), reason="inflight")
             rpm_key = (kind, minute)
             rpm_count = self._local_rpm.get(rpm_key, 0)
             if rpm_count >= self._settings.OPENROUTER_RPM:
-                raise ProviderCircuitOpen(
-                    max(1, 60 - int(now) % 60), reason="rpm"
-                )
-            self._local_inflight[kind][permit.permit_id] = (
-                now + _PERMIT_TTL_SECONDS
-            )
+                raise ProviderCircuitOpen(max(1, 60 - int(now) % 60), reason="rpm")
+            self._local_inflight[kind][permit.permit_id] = now + _PERMIT_TTL_SECONDS
             self._local_rpm[rpm_key] = rpm_count + 1
-            self._local_rpm = {
-                key: count
-                for key, count in self._local_rpm.items()
-                if key[1] >= minute - 1
-            }
+            self._local_rpm = {key: count for key, count in self._local_rpm.items() if key[1] >= minute - 1}
         return permit
 
     def release(self, permit: ProviderPermit) -> None:
@@ -291,9 +280,7 @@ class ProviderGuard:
             except Exception as exc:
                 # The lease TTL is the recovery path. Do not hide an SDK failure with a
                 # secondary release failure from the finally block.
-                logger.warning(
-                    "Provider guard release failed with %s", type(exc).__name__
-                )
+                logger.warning("Provider guard release failed with %s", type(exc).__name__)
             return
         with self._lock:
             self._local_inflight.get(kind, {}).pop(permit.permit_id, None)
@@ -313,9 +300,7 @@ class ProviderGuard:
             return int(retry_after)
         now = float(self._clock())
         with self._lock:
-            deadline = max(
-                self._local_open_until.get(kind, 0.0), now + seconds
-            )
+            deadline = max(self._local_open_until.get(kind, 0.0), now + seconds)
             self._local_open_until[kind] = deadline
             return max(1, math.ceil(deadline - now))
 
@@ -370,11 +355,7 @@ class ProviderGuard:
         now = float(self._clock())
         with self._lock:
             cutoff = now - self._settings.OPENROUTER_CIRCUIT_WINDOW_SECONDS
-            failures = [
-                occurred_at
-                for occurred_at in self._local_failures.get(kind, [])
-                if occurred_at > cutoff
-            ]
+            failures = [occurred_at for occurred_at in self._local_failures.get(kind, []) if occurred_at > cutoff]
             failures.append(now)
             self._local_failures[kind] = failures
             if len(failures) >= self._settings.OPENROUTER_CIRCUIT_FAILURES:
@@ -398,20 +379,33 @@ class ProviderGuard:
             self._local_failures.pop(kind, None)
 
     def reset_after_successful_preflight(self) -> None:
-        keys = [
-            self._key(kind, suffix)
-            for kind in _KINDS
-            for suffix in ("failures", "open_until")
-        ]
+        keys = [self._key(kind, suffix) for kind in _KINDS for suffix in ("failures", "open_until")]
         if self._redis is not None:
             try:
-                self._redis.delete(*keys)
+                self._redis.eval(
+                    _RESET_SCRIPT,
+                    len(keys) + 1,
+                    *keys,
+                    self._key("all", "preflight_generation"),
+                )
             except Exception as exc:
                 raise self._redis_error("preflight reset", exc) from exc
             return
         with self._lock:
             self._local_failures.clear()
             self._local_open_until.clear()
+            self._local_preflight_generation += 1
+
+    def preflight_generation(self) -> int:
+        """Return the shared revision used to invalidate process-local health caches."""
+        if self._redis is not None:
+            try:
+                value = self._redis.get(self._key("all", "preflight_generation"))
+            except Exception as exc:
+                raise self._redis_error("preflight generation", exc) from exc
+            return int(value or 0)
+        with self._lock:
+            return self._local_preflight_generation
 
 
 _guard: ProviderGuard | None = None

@@ -390,6 +390,11 @@ def test_hanging_http_endpoint_bounds_startup_and_readiness_without_fallback(
     assert not (tmp_path / "must-not-exist").exists()
 
 
+def test_http_adapter_accepts_native_openai_embedding_lists():
+    values = [[0.1, 0.2], [0.3, 0.4]]
+    assert vector_client._json_embeddings(values) is values
+
+
 def test_unavailable_http_endpoint_is_bounded_and_never_falls_back(monkeypatch, tmp_path):
     with socket.socket() as reserved_socket:
         reserved_socket.bind(("127.0.0.1", 0))

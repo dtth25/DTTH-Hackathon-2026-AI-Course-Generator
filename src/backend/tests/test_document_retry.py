@@ -3,14 +3,17 @@
 import os
 from pathlib import Path
 from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import pytest
+from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
 from app.core.config import Settings, settings
 from app.models.course import Course
 from app.models.processing_job import ProcessingJob
 from app.models.user import User
+from app.routers import documents as documents_router
 from app.schemas.course import CourseListItem, CourseStatusResponse
 from app.services.database import SessionLocal
 from app.services.job_service import (
@@ -85,6 +88,22 @@ def failed_course_without_file(client, owner_headers):
 @pytest.fixture
 def ready_course(client, owner_headers):
     return _course_for(client, owner_headers, status="ready", with_file=True)
+
+
+def test_saved_document_retry_uses_configured_durable_dispatcher(monkeypatch):
+    background_tasks = BackgroundTasks()
+    db = Mock()
+    job = Mock()
+    dispatched = []
+    monkeypatch.setattr(
+        documents_router,
+        "dispatch_persisted_job",
+        lambda *args: dispatched.append(args),
+    )
+
+    documents_router._schedule_processing(background_tasks, db, job)
+
+    assert dispatched == [(background_tasks, db, job)]
 
 
 def test_owner_can_retry_failed_course_from_saved_file(

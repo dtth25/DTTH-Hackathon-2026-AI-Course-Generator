@@ -9,12 +9,43 @@ x-loadtest-environment: &loadtest-environment
 services:
   backend:
     environment: *loadtest-environment
+    depends_on:
+      mock-openrouter:
+        condition: service_healthy
 
   worker-ingestion:
     environment: *loadtest-environment
+    depends_on:
+      mock-openrouter:
+        condition: service_healthy
 
   worker-generation:
     environment: *loadtest-environment
+    depends_on:
+      mock-openrouter:
+        condition: service_healthy
 
   worker-video:
     environment: *loadtest-environment
+    depends_on:
+      mock-openrouter:
+        condition: service_healthy
+
+  mock-openrouter:
+    image: ${COMPOSE_PROJECT_NAME:-hackagen-production}-backend:production
+    command: ["python3", "/opt/load/mock_openrouter.py"]
+    environment:
+      ENVIRONMENT: loadtest
+      LOAD_TEST_CONTROL_TOKEN: ${LOAD_TEST_CONTROL_TOKEN:?Set LOAD_TEST_CONTROL_TOKEN for load testing}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-pro}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+    volumes:
+      - ./tests/load/mock_openrouter.py:/opt/load/mock_openrouter.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8080/health', timeout=2))['ready'] is True"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - hackagen-network
+    restart: unless-stopped

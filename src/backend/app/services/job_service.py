@@ -193,6 +193,11 @@ def _dead_letter_exhausted_job(
             completed_at=now,
         )
     )
+    if result.rowcount == 1:
+        db.expire_all()
+        job = db.get(ProcessingJob, job_id)
+        if job is not None:
+            synchronize_terminal_resource(db, job, cancelled=False)
     return result.rowcount == 1
 
 
@@ -509,6 +514,11 @@ def mark_job_failed(
             completed_at=now,
         )
     )
+    if result.rowcount == 1:
+        db.expire_all()
+        job = db.get(ProcessingJob, job_id)
+        if job is not None:
+            synchronize_terminal_resource(db, job, cancelled=False)
     db.commit()
     return result.rowcount == 1
 

@@ -233,6 +233,34 @@ docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.pr
 
 Load-test overlay giữ nguyên database/broker/vector/queue/volume/port boundary, đổi duy nhất runtime boundary sang `ENVIRONMENT=loadtest`, dùng key giả và URL adapter nội bộ để không gọi provider trả phí. Adapter và k6 harness được bổ sung ở Plan B Task 10; không chạy overlay này riêng trước Task 10.
 
+### Chạy capacity gate 100 user
+
+Chỉ chạy trên stack dùng một lần. Đặt `LOAD_TEST_PASSWORD` (ít nhất 12 ký tự) và `LOAD_TEST_CONTROL_TOKEN` (ít nhất 16 ký tự) trong session shell; không commit hai giá trị này. Mock provider tự từ chối start nếu môi trường không phải `loadtest`, và production vẫn chỉ chấp nhận URL OpenRouter chính thức.
+
+```powershell
+$env:COMPOSE_PROJECT_NAME = "hackagen-loadtest"
+$env:LOAD_TEST_PASSWORD = "replace-with-a-load-only-password"
+$env:LOAD_TEST_CONTROL_TOKEN = "replace-with-a-load-only-control-token"
+docker compose -p hackagen-loadtest -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.loadtest.yml up -d --build --wait --wait-timeout 300
+docker compose -p hackagen-loadtest -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.loadtest.yml exec -e LOAD_TEST_PASSWORD=$env:LOAD_TEST_PASSWORD backend uv run python scripts/seed_load_users.py --count 100 --confirm LOADTEST
+docker run --rm --network hackagen-loadtest-network -e LOAD_TEST_PASSWORD=$env:LOAD_TEST_PASSWORD -v "${PWD}/tests/load:/scripts:ro" grafana/k6 run /scripts/k6/read-path.js
+docker run --rm --network hackagen-loadtest-network -e LOAD_TEST_PASSWORD=$env:LOAD_TEST_PASSWORD -v "${PWD}/tests/load:/scripts:ro" grafana/k6 run /scripts/k6/mixed-jobs.js
+docker run --rm --network hackagen-loadtest-network -e LOAD_TEST_PASSWORD=$env:LOAD_TEST_PASSWORD -e LOAD_TEST_CONTROL_TOKEN=$env:LOAD_TEST_CONTROL_TOKEN -v "${PWD}/tests/load:/scripts:ro" grafana/k6 run /scripts/k6/provider-outage.js
+docker stats --no-stream
+docker compose -p hackagen-loadtest -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.loadtest.yml down --volumes --remove-orphans
+```
+
+`docs/load-test-results.md` là release gate: phải ghi số đo thật p95/p99, error, dropped iterations, backlog, drain time, peak memory và restart count. Cấm thay bằng estimate. Tuyệt đối không dùng provider trả phí cho tải 100 user.
+
+Sau khi các gate deterministic đạt, chạy riêng smoke bảy job trên **staging dùng một lần** với URL OpenRouter chính thức. Với Gemini 2.5 Pro, lần đo hiện tại tốn khoảng `0.3025 USD`, vì vậy budget vận hành mặc định là `0.35 USD`; chọn budget thấp hơn sẽ chặn release nếu chi phí thực tế vượt trần. Script chỉ in summary số liệu, không in key, token, prompt, nội dung tài liệu hoặc raw chunk id.
+
+```powershell
+$env:REAL_SMOKE_PASSWORD = "replace-with-a-disposable-12-character-password"
+$env:REAL_SMOKE_BUDGET_USD = "0.35"
+docker compose -p hackagen-staging -f docker-compose.yml -f docker-compose.production.yml cp tests/load/real_provider_smoke.py backend:/tmp/real_provider_smoke.py
+docker compose -p hackagen-staging -f docker-compose.yml -f docker-compose.production.yml exec -e REAL_SMOKE_PASSWORD=$env:REAL_SMOKE_PASSWORD -e REAL_SMOKE_BUDGET_USD=$env:REAL_SMOKE_BUDGET_USD backend uv run python /tmp/real_provider_smoke.py
+```
+
 ```bash
 docker compose -p hackagen-loadtest -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.loadtest.yml config --quiet --no-env-resolution
 ```
