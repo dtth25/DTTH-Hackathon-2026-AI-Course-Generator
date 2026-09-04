@@ -26,6 +26,12 @@ from app.services.provider_errors import (
     ProviderRequestError,
     classify_openrouter_error,
 )
+from app.services.provider_guard import (
+    ProviderCircuitOpen,
+    ProviderGuard,
+    get_provider_guard,
+    retry_after_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +82,11 @@ class LLMService:
         self.client = None
         self.model = model or settings.OPENROUTER_MODEL
         self._test_mode = "PYTEST_CURRENT_TEST" in os.environ
+        self._provider_guard = (
+            ProviderGuard(settings_obj=settings)
+            if self._test_mode
+            else get_provider_guard()
+        )
         self._init_client()
         self.prompts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
@@ -88,7 +99,7 @@ class LLMService:
             from openai import OpenAI
 
             self.client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
+                base_url=settings.OPENROUTER_BASE_URL,
                 api_key=settings.OPENROUTER_API_KEY,
                 max_retries=0,
             )
@@ -107,6 +118,18 @@ class LLMService:
         except Exception as e:
             logger.error(f"Error loading prompt template {template_name}: {e}")
             return f"Generate {template_name} with context: {kwargs.get('context', '')}"
+
+    def _guard(self) -> ProviderGuard:
+        """Return the configured guard, including for tests that replace ``__init__``."""
+        guard = getattr(self, "_provider_guard", None)
+        if guard is None:
+            guard = (
+                ProviderGuard(settings_obj=settings)
+                if "PYTEST_CURRENT_TEST" in os.environ
+                else get_provider_guard()
+            )
+            self._provider_guard = guard
+        return guard
 
     def _call_openrouter_strict(
         self,
@@ -127,7 +150,9 @@ class LLMService:
 
         last_error: Optional[Exception] = None
         model = self.model
+        guard = self._guard()
         for attempt in range(1, 3):
+            permit = guard.acquire("generation")
             try:
                 response = self.client.chat.completions.create(
                     model=model,
@@ -147,7 +172,11 @@ class LLMService:
                 content = response.choices[0].message.content if response.choices else None
                 if not content:
                     raise LLMGenerationError("OpenRouter returned an empty response")
-                return schema_model.model_validate_json(content)
+                result = schema_model.model_validate_json(content)
+                guard.record_success("generation")
+                return result
+            except ProviderCircuitOpen:
+                raise
             except (ValidationError, LLMGenerationError) as e:
                 last_error = e
                 logger.warning(
@@ -157,14 +186,41 @@ class LLMService:
                     e,
                 )
             except Exception as e:
-                last_error = e
+                failure = (
+                    e.failure
+                    if isinstance(e, ProviderRequestError)
+                    else classify_openrouter_error(e)
+                )
+                opened_for = guard.record_failure(
+                    "generation",
+                    failure,
+                    retry_after=retry_after_seconds(e),
+                )
+                if opened_for and failure.automatic_retry:
+                    raise ProviderCircuitOpen(opened_for) from e
+                if not failure.automatic_retry and failure.code in {
+                    "OPENROUTER_KEY_INVALID",
+                    "OPENROUTER_KEY_LIMIT_EXCEEDED",
+                    "OPENROUTER_CREDITS_EXHAUSTED",
+                    "OPENROUTER_ACCESS_DENIED",
+                }:
+                    raise ProviderRequestError(failure) from e
+                last_error = (
+                    ProviderRequestError(failure)
+                    if failure.automatic_retry
+                    else e
+                )
                 logger.warning(
                     "OpenRouter model %s failed on attempt %s/2: %s",
                     model,
                     attempt,
-                    e,
+                    failure.code,
                 )
+            finally:
+                guard.release(permit)
 
+        if isinstance(last_error, ProviderRequestError):
+            raise last_error
         raise LLMGenerationError(
             _friendly_openrouter_error(last_error) if last_error else "AI generation failed."
         )
@@ -181,7 +237,9 @@ class LLMService:
             return ""
         content = [{"type": "text", "text": "Trích xuất toàn bộ văn bản có thể đọc được trong ảnh này, giữ nguyên thứ tự đọc tự nhiên. Chỉ trả về văn bản thuần, không thêm giải thích hay định dạng markdown."}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}"}}]
         model = self.model
+        guard = self._guard()
         for attempt in range(1, 3):
+            permit = guard.acquire("ocr")
             try:
                 response = self.client.chat.completions.create(
                     model=model,
@@ -191,14 +249,22 @@ class LLMService:
                     extra_body={"provider": {"require_parameters": True}},
                 )
                 text = response.choices[0].message.content if response.choices else None
+                guard.record_success("ocr")
                 if text and text.strip():
                     return text.strip()
                 return ""
+            except ProviderCircuitOpen:
+                raise
             except Exception as exc:
                 failure = (
                     exc.failure
                     if isinstance(exc, ProviderRequestError)
                     else classify_openrouter_error(exc)
+                )
+                opened_for = guard.record_failure(
+                    "ocr",
+                    failure,
+                    retry_after=retry_after_seconds(exc),
                 )
                 logger.warning(
                     "OCR via OpenRouter model %s failed on attempt %s/2 with %s",
@@ -206,10 +272,14 @@ class LLMService:
                     attempt,
                     failure.code,
                 )
+                if opened_for and failure.automatic_retry:
+                    raise ProviderCircuitOpen(opened_for) from exc
                 if not failure.automatic_retry or attempt == 2:
                     if isinstance(exc, ProviderRequestError):
                         raise
                     raise ProviderRequestError(failure) from exc
+            finally:
+                guard.release(permit)
         raise AssertionError("unreachable OCR retry state")
 
     def generate_course_title(self, context: str) -> CourseTitleOutput:

@@ -32,6 +32,7 @@ from app.schemas.generator_output import (
 )
 from app.services.llm import LLMService
 from app.services.public_errors import sanitize_public_payload
+from app.services.provider_guard import ProviderCircuitOpen
 from app.services.pdf_book import build_book_pdf
 from app.services.text_format import clean_text
 from app.services.vector_store import Document, VectorStore
@@ -1345,6 +1346,9 @@ class Generator:
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
             return None
+        except ProviderCircuitOpen:
+            self._finish_version_write(transaction, False)
+            raise
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Book generation failed for course {course_id}: {e}", exc_info=True)
@@ -1427,6 +1431,9 @@ class Generator:
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
             return None
+        except ProviderCircuitOpen:
+            self._finish_version_write(transaction, False)
+            raise
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Slides generation failed for course {course_id}: {e}", exc_info=True)
@@ -1508,6 +1515,9 @@ class Generator:
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
             return None
+        except ProviderCircuitOpen:
+            self._finish_version_write(transaction, False)
+            raise
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Quiz generation failed for course {course_id}: {e}", exc_info=True)
@@ -1624,6 +1634,9 @@ class Generator:
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
             return None
+        except ProviderCircuitOpen:
+            self._finish_version_write(transaction, False)
+            raise
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Vid generation failed for course {course_id}: {e}", exc_info=True)

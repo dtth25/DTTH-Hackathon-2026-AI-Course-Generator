@@ -11,9 +11,9 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.provider_errors import ProviderErrorCode, classify_openrouter_error
+from app.services.provider_guard import ProviderGuardUnavailable, get_provider_guard
 
 
-OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1"
 _CAPACITY_NUMERIC_FIELDS = (
     "limit",
     "limit_remaining",
@@ -89,7 +89,7 @@ def _unavailable_health(
 def _request(path: str) -> object:
     """Fetch and decode one preflight endpoint without retaining its raw payload."""
     response = httpx.get(
-        f"{OPENROUTER_API_BASE_URL}{path}",
+        f"{settings.OPENROUTER_BASE_URL}{path}",
         headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
         timeout=settings.OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS,
     )
@@ -170,5 +170,10 @@ def get_openrouter_health(force: bool = False) -> ProviderHealth:
             return _cached_health
 
         _cached_health = _check_openrouter_health()
+        if force and _cached_health.available:
+            try:
+                get_provider_guard().reset_after_successful_preflight()
+            except ProviderGuardUnavailable:
+                _cached_health = _unavailable_health(ProviderErrorCode.UNAVAILABLE)
         _cached_at = time.monotonic()
         return _cached_health

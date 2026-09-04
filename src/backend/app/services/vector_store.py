@@ -6,7 +6,14 @@ import time
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import chromadb
+from app.core.config import settings
 from app.services.provider_errors import ProviderRequestError, classify_openrouter_error
+from app.services.provider_guard import (
+    ProviderCircuitOpen,
+    ProviderGuard,
+    get_provider_guard,
+    retry_after_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +30,15 @@ class OpenRouterEmbeddingFunction:
     def __init__(self, api_key: str, model: str, max_retries: int = 3, max_retry_delay: float = 60):
         from openai import OpenAI
 
-        self._client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+        self._client = OpenAI(
+            base_url=settings.OPENROUTER_BASE_URL,
+            api_key=api_key,
+            max_retries=0,
+        )
         self._model = model
         self._max_retries = max(1, max_retries)
         self._max_retry_delay = max(0.0, max_retry_delay)
+        self._provider_guard = get_provider_guard()
 
     def name(self) -> str:
         return "openrouter"
@@ -41,12 +53,27 @@ class OpenRouterEmbeddingFunction:
         delay = 1.0
         last_failure = None
         for attempt in range(1, self._max_retries + 1):
+            guard = getattr(self, "_provider_guard", None)
+            if guard is None:
+                guard = ProviderGuard(settings_obj=settings)
+            permit = guard.acquire("embedding")
             try:
                 response = self._client.embeddings.create(model=self._model, input=texts)
-                return [item.embedding for item in response.data]
+                embeddings = [item.embedding for item in response.data]
+                if len(embeddings) != len(texts):
+                    raise ValueError("Provider embedding response length did not match input")
+                guard.record_success("embedding")
+                return embeddings
+            except ProviderCircuitOpen:
+                raise
             except Exception as exc:
                 failure = classify_openrouter_error(exc)
                 last_failure = failure
+                opened_for = guard.record_failure(
+                    "embedding",
+                    failure,
+                    retry_after=retry_after_seconds(exc),
+                )
                 logger.warning(
                     "OpenRouter embedding attempt %s/%s failed with %s",
                     attempt,
@@ -55,8 +82,21 @@ class OpenRouterEmbeddingFunction:
                 )
                 if not failure.automatic_retry or attempt == self._max_retries:
                     raise ProviderRequestError(failure) from exc
+                if opened_for:
+                    raise ProviderCircuitOpen(
+                        opened_for,
+                        error_code="AI_UNAVAILABLE",
+                    ) from exc
+                if guard.distributed:
+                    raise ProviderCircuitOpen(
+                        max(1, min(300, int(delay))),
+                        reason="transient",
+                        error_code="AI_UNAVAILABLE",
+                    ) from exc
                 time.sleep(min(delay, self._max_retry_delay))
                 delay *= 2
+            finally:
+                guard.release(permit)
         raise ProviderRequestError(last_failure)
 
 
@@ -64,8 +104,6 @@ def _build_embedding_function() -> Optional[OpenRouterEmbeddingFunction]:
     """Build the OpenRouter embedding function, or use Chroma's test-only default."""
     if "PYTEST_CURRENT_TEST" in os.environ:
         return None
-    from app.core.config import settings
-
     api_key = getattr(settings, "OPENROUTER_API_KEY", "")
     if not api_key:
         return None

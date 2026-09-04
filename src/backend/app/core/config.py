@@ -125,6 +125,12 @@ class Settings(BaseSettings):
     EMBEDDING_CACHE_DIR: str = Field(default="cache/chunk_embeddings", description="Directory for content-hash embedding cache")
 
     OPENROUTER_EMBEDDING_MODEL: str = Field(default="openai/text-embedding-3-small", description="OpenRouter embedding model slug")
+    OPENROUTER_MAX_IN_FLIGHT: int = Field(default=6, ge=1, le=32)
+    OPENROUTER_RPM: int = Field(default=60, ge=1, le=1000)
+    OPENROUTER_CIRCUIT_FAILURES: int = Field(default=5, ge=2, le=20)
+    OPENROUTER_CIRCUIT_WINDOW_SECONDS: int = Field(default=60, ge=10, le=300)
+    OPENROUTER_CIRCUIT_OPEN_SECONDS: int = Field(default=30, ge=5, le=300)
+    OPENROUTER_BASE_URL: str = Field(default="https://openrouter.ai/api/v1")
     OPENROUTER_PREFLIGHT_TTL_SECONDS: int = Field(default=30, ge=5, le=300)
     OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0, le=20.0)
     ENVIRONMENT: str = Field(
@@ -216,6 +222,16 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production" and self.JOB_QUEUE_PROVIDER != "celery":
             raise ValueError(
                 "ENVIRONMENT=production requires JOB_QUEUE_PROVIDER=celery"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_openrouter_base_url(self) -> "Settings":
+        official_url = "https://openrouter.ai/api/v1"
+        self.OPENROUTER_BASE_URL = self.OPENROUTER_BASE_URL.rstrip("/")
+        if self.ENVIRONMENT != "loadtest" and self.OPENROUTER_BASE_URL != official_url:
+            raise ValueError(
+                "A non-official OPENROUTER_BASE_URL is allowed only in loadtest"
             )
         return self
 

@@ -27,6 +27,7 @@ from app.services.job_service import (
     renew_job_lease,
     schedule_job_retry,
 )
+from app.services.provider_guard import ProviderCircuitOpen
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ _ARTIFACT_BY_JOB_TYPE = {
     "video": "vid",
 }
 _JOB_FAILED_MESSAGE = "Không thể hoàn tất tác vụ. Vui lòng thử lại."
+_PROVIDER_DELAY_MESSAGE = "Dịch vụ AI đang bận. Tác vụ có thể thử lại sau."
 _JOB_TYPE_UNSUPPORTED_MESSAGE = "Loại tác vụ không được hỗ trợ."
 
 
@@ -288,7 +290,12 @@ def _execute_artifact(
 
 
 def _retry_or_fail(
-    job_id: str, worker_id: str, attempt_number: int
+    job_id: str,
+    worker_id: str,
+    attempt_number: int,
+    retry_after: int | None = None,
+    final_error_code: str = "JOB_EXECUTION_FAILED",
+    final_message: str = _JOB_FAILED_MESSAGE,
 ) -> DeliveryInstruction | None:
     with database.SessionLocal() as db:
         job = db.get(ProcessingJob, job_id)
@@ -299,9 +306,12 @@ def _retry_or_fail(
                 db, job_id, worker_id, expected_attempt=attempt_number
             )
             return None
-        retry_at = datetime.utcnow() + timedelta(
-            seconds=min(300, 5 * (2 ** max(0, attempt_number - 1)))
+        delay = (
+            max(1, min(300, retry_after))
+            if retry_after is not None
+            else min(300, 5 * (2 ** max(0, attempt_number - 1)))
         )
+        retry_at = datetime.utcnow() + timedelta(seconds=delay)
         if schedule_job_retry(
             db,
             job_id,
@@ -317,8 +327,8 @@ def _retry_or_fail(
             db,
             job_id,
             worker_id=worker_id,
-            error_code="JOB_EXECUTION_FAILED",
-            message=_JOB_FAILED_MESSAGE,
+            error_code=final_error_code,
+            message=final_message,
             expected_attempt=attempt_number,
         )
         return None
@@ -387,6 +397,20 @@ def execute_job(
                 worker_id,
                 attempt_number,
             )
+    except ProviderCircuitOpen as exc:
+        logger.info(
+            "Durable job %s deferred by provider capacity guard for %s seconds",
+            job_id,
+            exc.retry_after,
+        )
+        return _retry_or_fail(
+            job_id,
+            worker_id,
+            attempt_number,
+            retry_after=exc.retry_after,
+            final_error_code=exc.error_code,
+            final_message=_PROVIDER_DELAY_MESSAGE,
+        )
     except Exception:
         logger.exception("Durable job %s failed", job_id)
         return _retry_or_fail(job_id, worker_id, attempt_number)

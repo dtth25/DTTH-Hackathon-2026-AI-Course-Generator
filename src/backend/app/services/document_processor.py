@@ -22,6 +22,7 @@ from app.services.provider_errors import (
     ProviderRequestError,
 )
 from app.services.provider_health import get_openrouter_health
+from app.services.provider_guard import ProviderCircuitOpen
 from app.services.vector_store import Document, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,8 @@ def _provider_failure_from_health(error_code: Optional[str]) -> ProviderFailure:
 
 def _require_provider_preflight() -> None:
     """Fail fast on permanent provider errors, retrying transient cached preflight failures."""
+    from app.core.config import settings
+
     for attempt in range(_PREFLIGHT_MAX_ATTEMPTS):
         # A transient cached failure must be refreshed; otherwise retrying would merely
         # reread the same TTL entry without probing whether the provider recovered.
@@ -156,6 +159,12 @@ def _require_provider_preflight() -> None:
         failure = _provider_failure_from_health(health.error_code)
         if not failure.automatic_retry or attempt == _PREFLIGHT_MAX_ATTEMPTS - 1:
             raise ProviderRequestError(failure)
+        if settings.JOB_QUEUE_PROVIDER == "celery":
+            raise ProviderCircuitOpen(
+                settings.OPENROUTER_CIRCUIT_OPEN_SECONDS,
+                reason="preflight",
+                error_code="AI_UNAVAILABLE",
+            )
         delay = min(
             _PREFLIGHT_INITIAL_DELAY_SECONDS * (2**attempt),
             _PREFLIGHT_MAX_DELAY_SECONDS,
@@ -981,7 +990,7 @@ class DocumentProcessor:
             from app.services.llm import LLMService
 
             return LLMService().ocr_page_image(image_bytes) or None
-        except ProviderRequestError:
+        except (ProviderRequestError, ProviderCircuitOpen):
             raise
         except Exception as e:
             logger.warning(f"OCR fallback failed for page {page_index + 1}: {e}")
@@ -1208,7 +1217,7 @@ class DocumentProcessor:
                     all_documents.extend(self.extract_and_chunk_file(path, course_id))
                 if not all_documents:
                     raise ValueError("No valid text could be extracted from uploaded files.")
-            except ProviderRequestError:
+            except (ProviderRequestError, ProviderCircuitOpen):
                 raise
             except Exception as exc:
                 user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
@@ -1306,6 +1315,8 @@ class DocumentProcessor:
             logger.info("Successfully processed course %s: %s chunks created.", course_id, len(all_documents))
             return ProcessingResult(course_id=course_id, status="ready", chunk_count=len(all_documents), quality_score=quality_score)
 
+        except ProviderCircuitOpen:
+            raise
         except ProviderRequestError as exc:
             failure = exc.failure
             failure_status = "paused_due_to_quota" if failure.code in {

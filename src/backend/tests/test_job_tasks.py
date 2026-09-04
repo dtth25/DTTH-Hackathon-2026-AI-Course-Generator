@@ -591,6 +591,30 @@ def test_ready_artifact_version_is_not_regenerated(worker_database, monkeypatch)
         assert db.get(ProcessingJob, job_id).status == "succeeded"
 
 
+def test_provider_circuit_uses_durable_countdown_without_sleeping(
+    worker_database, monkeypatch
+):
+    from app.jobs.tasks import execute_job
+    from app.services.provider_guard import ProviderCircuitOpen
+
+    job_id, _ = _seed_job(worker_database, "book", {"version_id": "book-v1"})
+    generator = Mock()
+    generator.generate_book.side_effect = ProviderCircuitOpen(137)
+    monkeypatch.setattr("app.jobs.tasks.get_generator", lambda: generator)
+
+    delivery = execute_job(job_id, worker_id="worker-a")
+
+    assert delivery is not None
+    assert delivery.queue_name == "generation"
+    assert 136 <= delivery.countdown <= 137
+    with worker_database() as db:
+        job = db.get(ProcessingJob, job_id)
+        assert job.status == "retry_scheduled"
+        assert job.worker_id is None
+        assert job.lease_expires_at is None
+        assert job.next_attempt_at is not None
+
+
 def test_generator_entrypoint_returns_ready_version_without_rewriting(
     worker_database, monkeypatch, test_upload_dir
 ):
