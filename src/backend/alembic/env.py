@@ -12,8 +12,10 @@ import app.models  # noqa: F401
 # access to the values within the .ini file in use.
 config = context.config
 
-# Dynamically override sqlalchemy.url with our settings.DATABASE_URL
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# ConfigParser treats percent signs as interpolation markers. SQLAlchemy URLs use
+# percent encoding for reserved credential characters, so escape only for storage in
+# Alembic's config and let ConfigParser return the original URL to SQLAlchemy.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
