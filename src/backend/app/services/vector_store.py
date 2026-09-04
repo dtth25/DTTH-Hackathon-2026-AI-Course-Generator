@@ -14,7 +14,6 @@ from app.services.provider_guard import (
     retry_after_seconds,
 )
 from app.services.vector_client import (
-    ChromaConnectionError,
     build_chroma_client,
     chroma_client_ready,
 )
@@ -136,8 +135,6 @@ class VectorStore:
         self.persist_directory = persist_directory
 
         self.client = build_chroma_client(persist_directory=persist_directory)
-        if settings.CHROMA_MODE == "http" and not chroma_client_ready(self.client):
-            raise ChromaConnectionError("Chroma HTTP service is unavailable")
         ef = embedding_function if embedding_function is not None else _build_embedding_function()
         if ef is not None:
             self.collection = self.client.get_or_create_collection(name=self.collection_name, embedding_function=ef)
@@ -146,7 +143,9 @@ class VectorStore:
 
     def is_ready(self) -> bool:
         """Check that the configured Chroma backend is responding now."""
-        return self.collection is not None and chroma_client_ready(self.client)
+        return self.collection is not None and chroma_client_ready(
+            self.client, settings_obj=settings
+        )
 
     def _collection_for(self, provider: str) -> Any:
         """Return the sole active embedding collection."""

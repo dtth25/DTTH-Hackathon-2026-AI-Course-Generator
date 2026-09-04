@@ -1,5 +1,9 @@
 """Chroma embedded/server client selection and readiness contracts."""
 
+import socket
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -8,6 +12,66 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.services import vector_client, vector_store
+
+
+class _HangingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        time.sleep(3)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"nanosecond heartbeat": 1}')
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+class _ConstructorFailureHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.endswith("/heartbeat"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"nanosecond heartbeat": 1}')
+            return
+        self.send_response(503)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"error": "untrusted constructor detail"}')
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+@pytest.fixture
+def hanging_http_port():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _HangingHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_port
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.fixture
+def constructor_failure_http_port():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _ConstructorFailureHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_port
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def _settings_values(**overrides):
@@ -84,6 +148,8 @@ def test_http_mode_builds_only_http_client(monkeypatch, tmp_path):
     http_client = Mock(return_value=client)
     monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
     monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
+    health_probe = Mock(return_value=True)
+    monkeypatch.setattr(vector_client, "chroma_http_ready", health_probe)
 
     result = vector_client.build_chroma_client(
         settings_obj=_chroma_settings(
@@ -96,6 +162,7 @@ def test_http_mode_builds_only_http_client(monkeypatch, tmp_path):
     )
 
     assert result is client
+    health_probe.assert_called_once()
     http_client.assert_called_once_with(host="chroma.internal", port=8443, ssl=True)
     persistent_client.assert_not_called()
     assert not (tmp_path / "must-not-exist").exists()
@@ -124,9 +191,11 @@ def test_production_rejects_embedded_before_creating_local_storage(monkeypatch, 
 def test_http_heartbeat_failure_aborts_before_collection_and_never_falls_back(
     monkeypatch, tmp_path
 ):
-    client = Mock()
-    client.heartbeat.side_effect = ConnectionError("server unavailable")
-    build_client = Mock(return_value=client)
+    build_client = Mock(
+        side_effect=vector_client.ChromaConnectionError(
+            "Chroma HTTP service is unavailable"
+        )
+    )
     persistent_client = Mock()
     monkeypatch.setattr(vector_store, "build_chroma_client", build_client)
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
@@ -141,19 +210,126 @@ def test_http_heartbeat_failure_aborts_before_collection_and_never_falls_back(
         )
 
     build_client.assert_called_once_with(persist_directory=str(persist_directory))
-    client.heartbeat.assert_called_once_with()
-    client.get_or_create_collection.assert_not_called()
     persistent_client.assert_not_called()
     assert not persist_directory.exists()
 
 
+def test_hanging_http_endpoint_bounds_startup_and_readiness_without_fallback(
+    monkeypatch, tmp_path, hanging_http_port
+):
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=hanging_http_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+        CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
+    )
+    http_client = Mock()
+    persistent_client = Mock()
+    monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
+    monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+
+    started = time.monotonic()
+    with pytest.raises(vector_client.ChromaConnectionError, match="unavailable"):
+        vector_client.build_chroma_client(settings_obj=configured)
+    startup_elapsed = time.monotonic() - started
+
+    store = object.__new__(vector_store.VectorStore)
+    store.client = Mock()
+    store.collection = Mock()
+    monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
+    monkeypatch.setattr(vector_store.settings, "CHROMA_HOST", "127.0.0.1")
+    monkeypatch.setattr(vector_store.settings, "CHROMA_PORT", hanging_http_port)
+    monkeypatch.setattr(vector_store.settings, "CHROMA_SSL", False)
+    monkeypatch.setattr(vector_store.settings, "CHROMA_TIMEOUT_SECONDS", 1.0)
+
+    started = time.monotonic()
+    assert store.is_ready() is False
+    readiness_elapsed = time.monotonic() - started
+
+    assert startup_elapsed < 2.5
+    assert readiness_elapsed < 2.5
+    http_client.assert_not_called()
+    persistent_client.assert_not_called()
+    store.client.heartbeat.assert_not_called()
+    assert not (tmp_path / "must-not-exist").exists()
+
+
+def test_unavailable_http_endpoint_is_bounded_and_never_falls_back(monkeypatch, tmp_path):
+    with socket.socket() as reserved_socket:
+        reserved_socket.bind(("127.0.0.1", 0))
+        unavailable_port = reserved_socket.getsockname()[1]
+
+    persistent_client = Mock()
+    http_client = Mock()
+    monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+    monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=unavailable_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+        CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
+    )
+
+    started = time.monotonic()
+    with pytest.raises(vector_client.ChromaConnectionError, match="unavailable"):
+        vector_client.build_chroma_client(settings_obj=configured)
+
+    assert time.monotonic() - started < 2.5
+    http_client.assert_not_called()
+    persistent_client.assert_not_called()
+    assert not (tmp_path / "must-not-exist").exists()
+
+
+def test_http_constructor_failure_is_normalized_after_successful_probe(monkeypatch):
+    constructor_error = ValueError("untrusted host and tenant detail")
+    http_client = Mock(side_effect=constructor_error)
+    persistent_client = Mock()
+    monkeypatch.setattr(vector_client, "chroma_http_ready", Mock(return_value=True))
+    monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
+    monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+
+    with pytest.raises(vector_client.ChromaConnectionError) as exc_info:
+        vector_client.build_chroma_client(
+            settings_obj=_chroma_settings(CHROMA_MODE="http")
+        )
+
+    assert str(exc_info.value) == "Chroma HTTP service is unavailable"
+    assert exc_info.value.__cause__ is constructor_error
+    persistent_client.assert_not_called()
+
+
+def test_real_http_constructor_connection_failure_is_normalized_without_fallback(
+    monkeypatch, tmp_path, constructor_failure_http_port
+):
+    persistent_client = Mock()
+    monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=constructor_failure_http_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+        CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
+    )
+
+    with pytest.raises(vector_client.ChromaConnectionError) as exc_info:
+        vector_client.build_chroma_client(settings_obj=configured)
+
+    assert str(exc_info.value) == "Chroma HTTP service is unavailable"
+    assert exc_info.value.__cause__ is not None
+    persistent_client.assert_not_called()
+    assert not (tmp_path / "must-not-exist").exists()
+
+
 def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
     client = Mock()
-    client.heartbeat.side_effect = [1, ConnectionError("server stopped")]
     collection = Mock(name="active-collection")
     client.get_or_create_collection.return_value = collection
     monkeypatch.setattr(vector_store, "build_chroma_client", Mock(return_value=client))
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
+    health_probe = Mock(return_value=False)
+    monkeypatch.setattr(vector_client, "chroma_http_ready", health_probe)
 
     store = vector_store.VectorStore(
         collection_name="ai_course_chunks",
@@ -163,7 +339,8 @@ def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
 
     assert store.collection is collection
     assert store.is_ready() is False
-    assert client.heartbeat.call_count == 2
+    health_probe.assert_called_once_with(settings_obj=vector_store.settings)
+    client.heartbeat.assert_not_called()
 
 
 def test_embedded_readiness_uses_the_same_heartbeat_contract(monkeypatch, tmp_path):
