@@ -106,7 +106,7 @@ def health_check():
     """Readiness endpoint for frontend proxy."""
     try:
         vs = get_vector_store()
-        vector_db_ready = vs is not None and hasattr(vs, "collection") and vs.collection is not None
+        vector_db_ready = vs is not None and vs.is_ready()
         error_msg = None
     except Exception as e:
         vector_db_ready = False

@@ -118,6 +118,11 @@ class Settings(BaseSettings):
     CHROMA_COLLECTION_NAME: str = Field(
         default="ai_course_chunks", description="ChromaDB collection name"
     )
+    CHROMA_MODE: str = Field(default="embedded", pattern="^(embedded|http)$")
+    CHROMA_HOST: str = Field(default="localhost")
+    CHROMA_PORT: int = Field(default=8000, ge=1, le=65535)
+    CHROMA_SSL: bool = Field(default=False)
+    CHROMA_TIMEOUT_SECONDS: float = Field(default=10.0, ge=1.0, le=60.0)
 
     EMBEDDING_BATCH_SIZE: int = Field(default=32, description="Chunks per embed_content batch call")
     EMBEDDING_BATCH_DELAY: float = Field(default=0, description="Seconds to sleep between embedding batches")
