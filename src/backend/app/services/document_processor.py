@@ -195,14 +195,65 @@ class DocumentProcessor:
         can_retry: bool = False,
         recommended_action: Optional[str] = None,
         technical_error: Optional[str] = None,
+        job_id: Optional[str] = None,
+        worker_id: Optional[str] = None,
+        attempt_number: Optional[int] = None,
         db_session_factory=None,
-    ):
+    ) -> bool:
         """Persist course progress and deliberately propagate persistence failures."""
         if db_session_factory is None:
             from app.services.database import SessionLocal as factory
         else:
             factory = db_session_factory
         with factory() as db:
+            if worker_id is not None:
+                if not job_id or attempt_number is None:
+                    return False
+                now = datetime.utcnow()
+                live_claim = (
+                    select(ProcessingJob.id)
+                    .where(
+                        ProcessingJob.id == job_id,
+                        ProcessingJob.course_id == Course.id,
+                        ProcessingJob.user_id == Course.user_id,
+                        ProcessingJob.worker_id == worker_id,
+                        ProcessingJob.attempts == attempt_number,
+                        ProcessingJob.status == JobStatus.RUNNING.value,
+                        ProcessingJob.cancel_requested.is_(False),
+                        ProcessingJob.lease_expires_at > now,
+                    )
+                    .correlate(Course)
+                    .exists()
+                )
+                course_values = self._terminal_course_values(
+                    status=status,
+                    stage=stage,
+                    progress=progress,
+                    embedding_status=embedding_status,
+                    course_fields={
+                        "chunk_count": chunk_count,
+                        "quality_score": quality_score,
+                        "name": name,
+                        "error_message": error_message,
+                        "embedding_provider": embedding_provider,
+                        "failure_stage": failure_stage,
+                        "error_code": error_code,
+                        "can_retry": can_retry,
+                        "recommended_action": recommended_action,
+                        "technical_error": technical_error,
+                    },
+                )
+                result = db.execute(
+                    update(Course)
+                    .where(
+                        Course.id == course_id,
+                        Course.is_deleted.is_(False),
+                        live_claim,
+                    )
+                    .values(**course_values)
+                )
+                db.commit()
+                return result.rowcount == 1
             course = (
                 db.query(Course)
                 .filter(Course.id == course_id, Course.is_deleted == False)  # noqa: E712
@@ -228,6 +279,7 @@ class DocumentProcessor:
                 technical_error=technical_error,
             )
             db.commit()
+            return True
 
     @staticmethod
     def _apply_course_state(
@@ -1137,10 +1189,14 @@ class DocumentProcessor:
             return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
 
         try:
-            self._update_course_db(
+            if not self._update_course_db(
                 course_id, status="processing", stage="extracting", progress=20,
+                job_id=job_id, worker_id=worker_id, attempt_number=attempt_number,
                 db_session_factory=db_session_factory,
-            )
+            ):
+                return self._resolve_inactive_attempt(
+                    course_id, job_id, db_session_factory, False
+                )
             if progress_callback and not progress_callback():
                 return ProcessingResult(
                     course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
@@ -1179,12 +1235,26 @@ class DocumentProcessor:
                 logger.error("Document extraction failed for course %s: %s", course_id, exc)
                 return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 
-            self._update_course_db(course_id, status="processing", stage="chunking", progress=50, db_session_factory=db_session_factory)
+            if not self._update_course_db(
+                course_id, status="processing", stage="chunking", progress=50,
+                job_id=job_id, worker_id=worker_id, attempt_number=attempt_number,
+                db_session_factory=db_session_factory,
+            ):
+                return self._resolve_inactive_attempt(
+                    course_id, job_id, db_session_factory, False
+                )
             if progress_callback and not progress_callback():
                 return ProcessingResult(
                     course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
                 )
-            self._update_course_db(course_id, status="processing", stage="embedding", progress=75, db_session_factory=db_session_factory)
+            if not self._update_course_db(
+                course_id, status="processing", stage="embedding", progress=75,
+                job_id=job_id, worker_id=worker_id, attempt_number=attempt_number,
+                db_session_factory=db_session_factory,
+            ):
+                return self._resolve_inactive_attempt(
+                    course_id, job_id, db_session_factory, False
+                )
             if progress_callback and not progress_callback():
                 return ProcessingResult(
                     course_id=course_id, status="cancelled", chunk_count=0, quality_score=0

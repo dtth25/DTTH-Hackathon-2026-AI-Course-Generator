@@ -154,6 +154,36 @@ def test_bound_celery_task_reenqueues_live_lease_without_sleeping(monkeypatch):
     )
 
 
+def test_bound_celery_task_rejects_for_redelivery_when_reenqueue_fails(
+    worker_database, monkeypatch,
+):
+    from celery.exceptions import Reject
+    from app.jobs import tasks
+
+    job_id, _ = _seed_job(worker_database)
+    processor = Mock()
+    processor.list_saved_course_files.return_value = ["saved-source.txt"]
+    processor.process_course.side_effect = RuntimeError("temporary provider outage")
+    monkeypatch.setattr(tasks, "get_document_processor", lambda: processor)
+    task = SimpleNamespace(
+        request=SimpleNamespace(hostname="worker-b"),
+        apply_async=Mock(side_effect=ConnectionError("broker unavailable")),
+    )
+
+    with pytest.raises(Reject) as rejected:
+        tasks._run(task, job_id)
+
+    assert rejected.value.requeue is True
+    call = task.apply_async.call_args
+    assert call.kwargs["args"] == [job_id]
+    assert call.kwargs["queue"] == "ingestion"
+    assert call.kwargs["countdown"] >= 1
+    with worker_database() as db:
+        job = db.get(ProcessingJob, job_id)
+        assert job.status == "retry_scheduled"
+        assert job.next_attempt_at is not None
+
+
 def test_concurrent_delivery_invokes_processor_exactly_once(worker_database, monkeypatch):
     from app.jobs.tasks import execute_job
 
@@ -301,6 +331,56 @@ def test_stale_preprocess_attempt_cannot_publish_course_ready(worker_database):
         assert job.worker_id == "worker-b"
         assert job.attempts == 2
         assert course.status == "processing"
+
+
+def test_stale_preprocess_progress_cannot_revert_reclaimed_success(worker_database):
+    from app.services.document_processor import (
+        DocumentProcessor,
+        TerminalPersistenceOutcome,
+    )
+
+    job_id, course_id = _seed_job(worker_database)
+    processor = DocumentProcessor(Mock())
+    with worker_database() as db:
+        assert claim_job(db, job_id, "worker-a", 60)
+        job = db.get(ProcessingJob, job_id)
+        job.lease_expires_at = datetime.utcnow() - timedelta(seconds=1)
+        db.commit()
+        assert claim_job(db, job_id, "worker-b", 60)
+    outcome = processor._persist_terminal_state(
+        course_id,
+        status="ready",
+        stage="completed",
+        progress=100,
+        embedding_status="completed",
+        job_id=job_id,
+        worker_id="worker-b",
+        attempt_number=2,
+        job_succeeded=True,
+        db_session_factory=worker_database,
+    )
+    assert outcome == TerminalPersistenceOutcome.PERSISTED
+
+    updated = processor._update_course_db(
+        course_id,
+        status="processing",
+        stage="chunking",
+        progress=50,
+        job_id=job_id,
+        worker_id="worker-a",
+        attempt_number=1,
+        db_session_factory=worker_database,
+    )
+
+    assert updated is False
+    with worker_database() as db:
+        job = db.get(ProcessingJob, job_id)
+        course = db.get(Course, course_id)
+        assert job.status == "succeeded"
+        assert job.attempts == 2
+        assert course.status == "ready"
+        assert course.stage == "completed"
+        assert course.progress == 100
 
 
 def test_preprocess_retry_clears_only_previous_attempt_chunks(worker_database, monkeypatch):

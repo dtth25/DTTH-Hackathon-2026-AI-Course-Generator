@@ -50,6 +50,29 @@ def test_inline_dispatcher_schedules_id_only(background_tasks):
     assert background_tasks.tasks[0].kwargs == {}
 
 
+def test_inline_executor_schedules_bounded_id_only_redispatch(monkeypatch):
+    from app.jobs import dispatcher
+
+    run_job = Mock(
+        return_value=SimpleNamespace(queue_name="ingestion", countdown=999)
+    )
+    timer = Mock()
+    timer_factory = Mock(return_value=timer)
+    monkeypatch.setattr("app.jobs.tasks.execute_job", run_job)
+    monkeypatch.setattr(dispatcher, "Timer", timer_factory, raising=False)
+
+    dispatcher.execute_job("job-inline-retry")
+
+    run_job.assert_called_once_with("job-inline-retry")
+    timer_factory.assert_called_once_with(
+        300,
+        dispatcher.execute_job,
+        args=("job-inline-retry",),
+    )
+    assert timer.daemon is True
+    timer.start.assert_called_once_with()
+
+
 def test_celery_dispatcher_routes_video_separately(fake_celery):
     dispatcher = CeleryJobDispatcher(fake_celery)
     external_id = dispatcher.enqueue("job-2", "video")

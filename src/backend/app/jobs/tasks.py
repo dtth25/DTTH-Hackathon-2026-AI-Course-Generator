@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from celery.exceptions import Reject
+from sqlalchemy import select, update
+
 from app.core.config import settings
 from app.jobs.celery_app import celery_app
 from app.models.course import Course
@@ -24,7 +27,6 @@ from app.services.job_service import (
     renew_job_lease,
     schedule_job_retry,
 )
-from sqlalchemy import update
 
 
 logger = logging.getLogger(__name__)
@@ -178,25 +180,34 @@ def _execute_preprocess(
 ) -> bool:
     processor = get_document_processor()
     with database.SessionLocal() as db:
-        owned = db.get(ProcessingJob, job_id)
-        if (
-            owned is None
-            or owned.worker_id != worker_id
-            or owned.attempts != attempt_number
-            or owned.status != "running"
-            or owned.cancel_requested
-        ):
-            return False
-        db.execute(
+        now = datetime.utcnow()
+        live_claim = (
+            select(ProcessingJob.id)
+            .where(
+                ProcessingJob.id == job_id,
+                ProcessingJob.course_id == Course.id,
+                ProcessingJob.user_id == Course.user_id,
+                ProcessingJob.worker_id == worker_id,
+                ProcessingJob.attempts == attempt_number,
+                ProcessingJob.status == "running",
+                ProcessingJob.cancel_requested.is_(False),
+                ProcessingJob.lease_expires_at > now,
+            )
+            .correlate(Course)
+            .exists()
+        )
+        updated = db.execute(
             update(Course)
             .where(
                 Course.id == course_id,
-                Course.user_id == owned.user_id,
                 Course.is_deleted.is_(False),
+                live_claim,
             )
             .values(status="processing")
         )
         db.commit()
+        if updated.rowcount != 1:
+            return False
     if attempt_number > 1:
         processor.vector_store.delete_job_attempt(
             course_id=course_id,
@@ -390,11 +401,17 @@ def _run(self, job_id: str) -> None:
         job_id, worker_id=self.request.hostname or "celery-worker"
     )
     if delivery is not None:
-        self.apply_async(
-            args=[job_id],
-            queue=delivery.queue_name,
-            countdown=delivery.countdown,
-        )
+        try:
+            self.apply_async(
+                args=[job_id],
+                queue=delivery.queue_name,
+                countdown=delivery.countdown,
+            )
+        except Exception as exc:
+            # The durable row already records the lease/retry deadline. Rejecting the
+            # current broker delivery with requeue=True ensures a publish failure cannot
+            # acknowledge away the only ID-only wake-up for that row.
+            raise Reject("Unable to schedule durable job redelivery.", requeue=True) from exc
 
 
 @celery_app.task(

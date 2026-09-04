@@ -1,5 +1,6 @@
 """Dispatch durable jobs without exposing a queue provider to API callers."""
 
+from threading import Timer
 from typing import Any, Protocol
 
 from fastapi import BackgroundTasks
@@ -12,6 +13,7 @@ _CELERY_TASKS = {
     "generation": "hackagen.execute_generation_job",
     "video": "hackagen.execute_video_job",
 }
+_INLINE_REDISPATCH_MAX_SECONDS = 300
 
 
 class JobDispatcher(Protocol):
@@ -25,7 +27,13 @@ def execute_job(job_id: str) -> None:
     """Resolve the shared executor lazily so local mode needs no Celery import."""
     from app.jobs.tasks import execute_job as run_job
 
-    run_job(job_id)
+    delivery = run_job(job_id)
+    if delivery is None:
+        return
+    delay = max(1, min(_INLINE_REDISPATCH_MAX_SECONDS, delivery.countdown))
+    timer = Timer(delay, execute_job, args=(job_id,))
+    timer.daemon = True
+    timer.start()
 
 
 def _validate_queue_name(queue_name: str) -> None:
