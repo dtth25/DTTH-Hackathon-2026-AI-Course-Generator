@@ -6,6 +6,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -46,6 +47,107 @@ class _ConstructorFailureHandler(BaseHTTPRequestHandler):
         pass
 
 
+class _HeartbeatThenHangHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.endswith("/heartbeat"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"nanosecond heartbeat": 1}')
+            return
+        time.sleep(3)
+        try:
+            self.send_response(503)
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+class _VectorTrafficHangHandler(BaseHTTPRequestHandler):
+    collection_id = str(uuid4())
+
+    def do_GET(self):
+        if self.path.endswith("/heartbeat"):
+            body = b'{"nanosecond heartbeat": 1}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length:
+            self.rfile.read(content_length)
+        if self.path.endswith("/collections"):
+            body = (
+                "{"
+                f'"id":"{self.collection_id}",'
+                '"name":"bounded_traffic",'
+                '"configuration_json":{},'
+                '"metadata":null,"dimension":null,'
+                '"tenant":"default_tenant","database":"default_database"'
+                "}"
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.endswith("/upsert"):
+            time.sleep(3)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b"{}")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+class _ProxyRecordingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.server.request_count += 1
+        self.send_response(502)
+        self.end_headers()
+
+    def do_POST(self):
+        self.server.request_count += 1
+        self.send_response(502)
+        self.end_headers()
+
+    def log_message(self, _format, *_args):
+        pass
+
+
+def _serve(handler):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def _stop_server(server, thread):
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=2)
+
+
 @pytest.fixture
 def hanging_http_port():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _HangingHandler)
@@ -72,6 +174,34 @@ def constructor_failure_http_port():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+@pytest.fixture
+def heartbeat_then_hang_http_port():
+    server, thread = _serve(_HeartbeatThenHangHandler)
+    try:
+        yield server.server_port
+    finally:
+        _stop_server(server, thread)
+
+
+@pytest.fixture
+def vector_traffic_hang_http_port():
+    server, thread = _serve(_VectorTrafficHangHandler)
+    try:
+        yield server.server_port
+    finally:
+        _stop_server(server, thread)
+
+
+@pytest.fixture
+def recording_proxy():
+    server, thread = _serve(_ProxyRecordingHandler)
+    server.request_count = 0
+    try:
+        yield server
+    finally:
+        _stop_server(server, thread)
 
 
 def _settings_values(**overrides):
@@ -142,28 +272,30 @@ def test_embedded_mode_builds_persistent_client_at_configured_path(monkeypatch, 
     http_client.assert_not_called()
 
 
-def test_http_mode_builds_only_http_client(monkeypatch, tmp_path):
+def test_http_mode_builds_only_bounded_http_client(monkeypatch, tmp_path):
     client = Mock()
+    bounded_client = Mock(return_value=client)
     persistent_client = Mock()
     http_client = Mock(return_value=client)
+    monkeypatch.setattr(vector_client, "BoundedChromaHttpClient", bounded_client)
     monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
     monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
-    health_probe = Mock(return_value=True)
-    monkeypatch.setattr(vector_client, "chroma_http_ready", health_probe)
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="chroma.internal",
+        CHROMA_PORT=8443,
+        CHROMA_SSL=True,
+        CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
+    )
 
     result = vector_client.build_chroma_client(
-        settings_obj=_chroma_settings(
-            CHROMA_MODE="http",
-            CHROMA_HOST="chroma.internal",
-            CHROMA_PORT=8443,
-            CHROMA_SSL=True,
-            CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
-        )
+        settings_obj=configured
     )
 
     assert result is client
-    health_probe.assert_called_once()
-    http_client.assert_called_once_with(host="chroma.internal", port=8443, ssl=True)
+    bounded_client.assert_called_once_with(settings_obj=configured)
+    client.heartbeat.assert_called_once_with()
+    http_client.assert_not_called()
     persistent_client.assert_not_called()
     assert not (tmp_path / "must-not-exist").exists()
 
@@ -235,7 +367,7 @@ def test_hanging_http_endpoint_bounds_startup_and_readiness_without_fallback(
     startup_elapsed = time.monotonic() - started
 
     store = object.__new__(vector_store.VectorStore)
-    store.client = Mock()
+    store.client = vector_client.BoundedChromaHttpClient(settings_obj=configured)
     store.collection = Mock()
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
     monkeypatch.setattr(vector_store.settings, "CHROMA_HOST", "127.0.0.1")
@@ -243,15 +375,17 @@ def test_hanging_http_endpoint_bounds_startup_and_readiness_without_fallback(
     monkeypatch.setattr(vector_store.settings, "CHROMA_SSL", False)
     monkeypatch.setattr(vector_store.settings, "CHROMA_TIMEOUT_SECONDS", 1.0)
 
-    started = time.monotonic()
-    assert store.is_ready() is False
-    readiness_elapsed = time.monotonic() - started
+    try:
+        started = time.monotonic()
+        assert store.is_ready() is False
+        readiness_elapsed = time.monotonic() - started
+    finally:
+        store.client.close()
 
     assert startup_elapsed < 2.5
     assert readiness_elapsed < 2.5
     http_client.assert_not_called()
     persistent_client.assert_not_called()
-    store.client.heartbeat.assert_not_called()
     assert not (tmp_path / "must-not-exist").exists()
 
 
@@ -284,10 +418,9 @@ def test_unavailable_http_endpoint_is_bounded_and_never_falls_back(monkeypatch, 
 
 def test_http_constructor_failure_is_normalized_after_successful_probe(monkeypatch):
     constructor_error = ValueError("untrusted host and tenant detail")
-    http_client = Mock(side_effect=constructor_error)
+    bounded_client = Mock(side_effect=constructor_error)
     persistent_client = Mock()
-    monkeypatch.setattr(vector_client, "chroma_http_ready", Mock(return_value=True))
-    monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
+    monkeypatch.setattr(vector_client, "BoundedChromaHttpClient", bounded_client)
     monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
 
     with pytest.raises(vector_client.ChromaConnectionError) as exc_info:
@@ -300,11 +433,13 @@ def test_http_constructor_failure_is_normalized_after_successful_probe(monkeypat
     persistent_client.assert_not_called()
 
 
-def test_real_http_constructor_connection_failure_is_normalized_without_fallback(
+def test_bounded_adapter_does_not_call_failing_chroma_identity_endpoint(
     monkeypatch, tmp_path, constructor_failure_http_port
 ):
     persistent_client = Mock()
+    http_client = Mock()
     monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+    monkeypatch.setattr(vector_client.chromadb, "HttpClient", http_client)
     configured = _chroma_settings(
         CHROMA_MODE="http",
         CHROMA_HOST="127.0.0.1",
@@ -313,23 +448,88 @@ def test_real_http_constructor_connection_failure_is_normalized_without_fallback
         CHROMA_PERSIST_DIR=str(tmp_path / "must-not-exist"),
     )
 
-    with pytest.raises(vector_client.ChromaConnectionError) as exc_info:
-        vector_client.build_chroma_client(settings_obj=configured)
+    client = vector_client.build_chroma_client(settings_obj=configured)
 
-    assert str(exc_info.value) == "Chroma HTTP service is unavailable"
-    assert exc_info.value.__cause__ is not None
+    assert client.heartbeat() == 1
+    client.close()
+    http_client.assert_not_called()
     persistent_client.assert_not_called()
     assert not (tmp_path / "must-not-exist").exists()
 
 
+def test_healthy_heartbeat_cannot_fall_into_hanging_constructor_network(
+    heartbeat_then_hang_http_port
+):
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=heartbeat_then_hang_http_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+    )
+
+    started = time.monotonic()
+    client = vector_client.build_chroma_client(settings_obj=configured)
+
+    assert time.monotonic() - started < 2.5
+    assert isinstance(client, vector_client.BoundedChromaHttpClient)
+    assert client.heartbeat() == 1
+
+
+def test_http_initialization_and_traffic_ignore_ambient_proxy(
+    monkeypatch, heartbeat_then_hang_http_port, recording_proxy
+):
+    proxy_url = f"http://127.0.0.1:{recording_proxy.server_port}"
+    monkeypatch.setenv("HTTP_PROXY", proxy_url)
+    monkeypatch.setenv("HTTPS_PROXY", proxy_url)
+    monkeypatch.setenv("ALL_PROXY", proxy_url)
+    monkeypatch.setenv("NO_PROXY", "")
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=heartbeat_then_hang_http_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+    )
+
+    client = vector_client.build_chroma_client(settings_obj=configured)
+
+    assert client.heartbeat() == 1
+    assert recording_proxy.request_count == 0
+
+
+def test_vector_write_uses_the_same_bounded_no_proxy_transport(
+    monkeypatch, vector_traffic_hang_http_port, recording_proxy
+):
+    proxy_url = f"http://127.0.0.1:{recording_proxy.server_port}"
+    monkeypatch.setenv("HTTP_PROXY", proxy_url)
+    monkeypatch.setenv("HTTPS_PROXY", proxy_url)
+    monkeypatch.setenv("ALL_PROXY", proxy_url)
+    monkeypatch.setenv("NO_PROXY", "")
+    configured = _chroma_settings(
+        CHROMA_MODE="http",
+        CHROMA_HOST="127.0.0.1",
+        CHROMA_PORT=vector_traffic_hang_http_port,
+        CHROMA_TIMEOUT_SECONDS=1.0,
+    )
+    client = vector_client.build_chroma_client(settings_obj=configured)
+    collection = client.get_or_create_collection(
+        name="bounded_traffic", embedding_function=None
+    )
+
+    started = time.monotonic()
+    with pytest.raises(vector_client.ChromaConnectionError, match="unavailable"):
+        collection.upsert(ids=["one"], embeddings=[[0.1, 0.2]])
+
+    assert time.monotonic() - started < 2.5
+    assert recording_proxy.request_count == 0
+
+
 def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
     client = Mock()
+    client.heartbeat.side_effect = ConnectionError("server stopped")
     collection = Mock(name="active-collection")
     client.get_or_create_collection.return_value = collection
     monkeypatch.setattr(vector_store, "build_chroma_client", Mock(return_value=client))
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
-    health_probe = Mock(return_value=False)
-    monkeypatch.setattr(vector_client, "chroma_http_ready", health_probe)
 
     store = vector_store.VectorStore(
         collection_name="ai_course_chunks",
@@ -339,8 +539,7 @@ def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
 
     assert store.collection is collection
     assert store.is_ready() is False
-    health_probe.assert_called_once_with(settings_obj=vector_store.settings)
-    client.heartbeat.assert_not_called()
+    client.heartbeat.assert_called_once_with()
 
 
 def test_embedded_readiness_uses_the_same_heartbeat_contract(monkeypatch, tmp_path):
