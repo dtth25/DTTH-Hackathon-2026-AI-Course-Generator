@@ -71,6 +71,7 @@ export function usePollingArtifact<T>({
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingVersionRef = useRef<string | null>(null);
   const viewedVersionRef = useRef<string | null>(null);
+  const jobRetryVersionRef = useRef<string | null>(null);
 
   // Keep the latest callbacks in refs so `startPolling`'s recursive closure always calls
   // the current version without needing to be recreated (and without going in the
@@ -149,6 +150,7 @@ export function usePollingArtifact<T>({
   );
 
   const startJob = useCallback((jobId: string | null | undefined, versionId: string | null | undefined) => {
+    jobRetryVersionRef.current = null;
     if (!jobId) {
       startPolling(Date.now(), versionId);
       return;
@@ -165,9 +167,20 @@ export function usePollingArtifact<T>({
     setGenerating(false);
   }, []);
 
-  const dismissJob = useCallback(() => {
+  const prepareActiveJobRetry = useCallback(() => {
+    jobRetryVersionRef.current = activeJob?.versionId ?? null;
     setActiveJob(null);
     setGenerating(false);
+  }, [activeJob]);
+
+  const consumeJobRetryVersion = useCallback(() => {
+    const versionId = jobRetryVersionRef.current;
+    jobRetryVersionRef.current = null;
+    return versionId;
+  }, []);
+
+  const clearJobRetryVersion = useCallback(() => {
+    jobRetryVersionRef.current = null;
   }, []);
 
   const resumeArtifactPolling = useCallback(() => {
@@ -241,7 +254,9 @@ export function usePollingArtifact<T>({
     activeJob,
     startJob,
     finishJob,
-    dismissJob,
+    prepareActiveJobRetry,
+    consumeJobRetryVersion,
+    clearJobRetryVersion,
     resumeArtifactPolling,
     versions,
     activeVersion,

@@ -110,7 +110,9 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     activeJob,
     startJob,
     finishJob,
-    dismissJob,
+    prepareActiveJobRetry,
+    consumeJobRetryVersion,
+    clearJobRetryVersion,
     resumeArtifactPolling,
     versions,
     activeVersion,
@@ -130,6 +132,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
   const loading = !hasFetched && !error;
 
   const handleGenerate = async () => {
+    clearJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
@@ -145,6 +148,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
   // The backend persists a hard "error" status from the last generation attempt, so a plain
   // refetch would just surface the same error forever — retry opens the picker before a new job.
   const handleRetryAfterError = () => {
+    clearJobRetryVersion();
     setRegenDialogOpen(true);
   };
 
@@ -152,12 +156,12 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
   // (stale-while-revalidate) instead of bouncing to the full-page ErrorState/EmptyState —
   // a 429 (regen limit reached) surfaces as a small inline banner instead of blowing away
   // otherwise-valid content. Reuses the currently configured quantity/difficulty.
-  const handleCreateVersion = async (retry = false) => {
+  const handleCreateVersion = async (retryVersionId: string | null = null) => {
     setRegenError(null);
     setGenerating(true);
     setProgress(5);
     try {
-      const res = await apiGenerateQuiz(courseId, { quantity, difficulty, ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}) });
+      const res = await apiGenerateQuiz(courseId, { quantity, difficulty, ...(retryVersionId ? { retry_version_id: retryVersionId } : {}) });
       startJob(res.job_id, res.version_id);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409 && (err.detail as { code?: string })?.code === "version_cap_reached") {
@@ -185,11 +189,21 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     setDifficulty(value.difficulty);
   };
   const submitRegenerateFromDialog = () => {
+    const retryVersionId = consumeJobRetryVersion() ?? (error ? viewedVersion : null);
     setRegenDialogOpen(false);
-    void handleCreateVersion(Boolean(error));
+    void handleCreateVersion(retryVersionId);
+  };
+  const openFreshVersionDialog = () => {
+    clearJobRetryVersion();
+    setRegenError(null);
+    setRegenDialogOpen(true);
+  };
+  const closeRegenerateDialog = () => {
+    clearJobRetryVersion();
+    setRegenDialogOpen(false);
   };
   const regenerateDialog = (
-    <Dialog open={regenDialogOpen} onOpenChange={setRegenDialogOpen}>
+    <Dialog open={regenDialogOpen} onOpenChange={(open) => open ? setRegenDialogOpen(true) : closeRegenerateDialog()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Tạo phiên bản câu hỏi mới</DialogTitle>
@@ -207,7 +221,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
           documentProcessing={documentProcessing}
         />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setRegenDialogOpen(false)}>
+          <Button variant="ghost" onClick={closeRegenerateDialog}>
             Hủy
           </Button>
         </DialogFooter>
@@ -221,7 +235,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {
-        dismissJob();
+        prepareActiveJobRetry();
         setRegenDialogOpen(true);
       }}
     />
@@ -485,10 +499,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
           ) : (
             <CreateVersionButton
               label="bộ câu hỏi"
-              onOpen={() => {
-                setRegenError(null);
-                setRegenDialogOpen(true);
-              }}
+              onOpen={openFreshVersionDialog}
             />
           )}
         </div>
@@ -496,7 +507,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
 
       {jobProgress}
 
-      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
+      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={openFreshVersionDialog} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 
       {regenError && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">

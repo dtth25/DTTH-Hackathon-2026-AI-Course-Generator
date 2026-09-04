@@ -122,4 +122,29 @@ describe("usePollingArtifact", () => {
     unmount();
     vi.useRealTimers();
   });
+
+  it("retains a terminal job version for exactly one retry and can clear it for fresh work", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ status: "ready", data: { id: "old" }, version_id: "old" });
+    const { result } = renderHook(() =>
+      usePollingArtifact({
+        courseId: "course-1",
+        fetchFn,
+        isReady: (data) => Boolean(data.id),
+        timeoutMs: 60_000,
+        timeoutMessage: "Timed out",
+        defaultErrorMessage: "Failed",
+      })
+    );
+    await waitFor(() => expect(result.current.hasFetched).toBe(true));
+
+    act(() => result.current.startJob("job-1", "reserved-v3"));
+    act(() => result.current.prepareActiveJobRetry());
+    expect(result.current.consumeJobRetryVersion()).toBe("reserved-v3");
+    expect(result.current.consumeJobRetryVersion()).toBeNull();
+
+    act(() => result.current.startJob("job-2", "reserved-v4"));
+    act(() => result.current.prepareActiveJobRetry());
+    act(() => result.current.clearJobRetryVersion());
+    expect(result.current.consumeJobRetryVersion()).toBeNull();
+  });
 });

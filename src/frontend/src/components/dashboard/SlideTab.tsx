@@ -74,7 +74,9 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
     activeJob,
     startJob,
     finishJob,
-    dismissJob,
+    prepareActiveJobRetry,
+    consumeJobRetryVersion,
+    clearJobRetryVersion,
     resumeArtifactPolling,
     versions,
     activeVersion,
@@ -123,6 +125,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
   }, [deck?.slides, isPresenterMode]);
 
   const handleGenerate = async () => {
+    clearJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
@@ -138,6 +141,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
   // The backend persists a hard "error" status from the last generation attempt, so a plain
   // refetch would just surface the same error forever — retry opens the picker before a new job.
   const handleRetryAfterError = () => {
+    clearJobRetryVersion();
     setRegenDialogOpen(true);
   };
   const handleRenameVersion = async (versionId: string, label: string) => {
@@ -153,7 +157,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
   // Regenerating from the ready view keeps the current deck visible (stale-while-revalidate)
   // instead of bouncing to the full-page ErrorState/EmptyState — a 429 (regen limit reached)
   // surfaces as a small inline banner instead of blowing away otherwise-valid content.
-  const handleCreateVersion = async (retry = false) => {
+  const handleCreateVersion = async (retryVersionId: string | null = null) => {
     setRegenError(null);
     setGenerating(true);
     setProgress(5);
@@ -161,7 +165,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
       const res = await apiGenerateSlide(courseId, {
         mode,
         focus_prompt: focusPrompt,
-        ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}),
+        ...(retryVersionId ? { retry_version_id: retryVersionId } : {}),
       });
       startJob(res.job_id, res.version_id);
     } catch (err) {
@@ -181,11 +185,21 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
     setFocusPrompt(value.focusPrompt);
   };
   const submitRegenerateFromDialog = () => {
+    const retryVersionId = consumeJobRetryVersion() ?? (error ? viewedVersion : null);
     setRegenDialogOpen(false);
-    void handleCreateVersion(Boolean(error));
+    void handleCreateVersion(retryVersionId);
+  };
+  const openFreshVersionDialog = () => {
+    clearJobRetryVersion();
+    setRegenError(null);
+    setRegenDialogOpen(true);
+  };
+  const closeRegenerateDialog = () => {
+    clearJobRetryVersion();
+    setRegenDialogOpen(false);
   };
   const regenerateDialog = (
-    <Dialog open={regenDialogOpen} onOpenChange={setRegenDialogOpen}>
+    <Dialog open={regenDialogOpen} onOpenChange={(open) => open ? setRegenDialogOpen(true) : closeRegenerateDialog()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Tạo phiên bản slide mới</DialogTitle>
@@ -203,7 +217,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
           documentProcessing={documentProcessing}
         />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setRegenDialogOpen(false)}>
+          <Button variant="ghost" onClick={closeRegenerateDialog}>
             Hủy
           </Button>
         </DialogFooter>
@@ -217,7 +231,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {
-        dismissJob();
+        prepareActiveJobRetry();
         setRegenDialogOpen(true);
       }}
     />
@@ -416,10 +430,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
           ) : (
             <CreateVersionButton
               label="bộ slide"
-              onOpen={() => {
-                setRegenError(null);
-                setRegenDialogOpen(true);
-              }}
+              onOpen={openFreshVersionDialog}
             />
           )}
         </div>
@@ -427,7 +438,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
 
       {jobProgress}
 
-      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
+      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={openFreshVersionDialog} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 
       {regenError && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">

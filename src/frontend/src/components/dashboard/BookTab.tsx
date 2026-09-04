@@ -67,7 +67,9 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
     activeJob,
     startJob,
     finishJob,
-    dismissJob,
+    prepareActiveJobRetry,
+    consumeJobRetryVersion,
+    clearJobRetryVersion,
     resumeArtifactPolling,
     versions,
     activeVersion,
@@ -107,6 +109,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
   };
 
   const handleGenerate = async () => {
+    clearJobRetryVersion();
     setGenerating(true);
     setError(null);
     setProgress(5);
@@ -122,13 +125,14 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
   // The backend persists a hard "error" status from the last generation attempt, so a plain
   // refetch would just surface the same error forever — retry opens the picker before a new job.
   const handleRetryAfterError = () => {
+    clearJobRetryVersion();
     setRegenDialogOpen(true);
   };
 
   // Regenerating from the ready view keeps the current book visible (stale-while-revalidate)
   // instead of bouncing to the full-page ErrorState/EmptyState — a 429 (regen limit reached)
   // surfaces as a small inline banner instead of blowing away otherwise-valid content.
-  const handleCreateVersion = async (retry = false) => {
+  const handleCreateVersion = async (retryVersionId: string | null = null) => {
     setRegenError(null);
     setGenerating(true);
     setProgress(5);
@@ -136,7 +140,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
       const res = await apiGenerateBook(courseId, {
         detail_level: detailLevel,
         user_prompt: userPrompt,
-        ...(retry && viewedVersion ? { retry_version_id: viewedVersion } : {}),
+        ...(retryVersionId ? { retry_version_id: retryVersionId } : {}),
       });
       startJob(res.job_id, res.version_id);
     } catch (err) {
@@ -165,11 +169,21 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
     setUserPrompt(value.userPrompt);
   };
   const submitRegenerateFromDialog = () => {
+    const retryVersionId = consumeJobRetryVersion() ?? (error ? viewedVersion : null);
     setRegenDialogOpen(false);
-    void handleCreateVersion(Boolean(error));
+    void handleCreateVersion(retryVersionId);
+  };
+  const openFreshVersionDialog = () => {
+    clearJobRetryVersion();
+    setRegenError(null);
+    setRegenDialogOpen(true);
+  };
+  const closeRegenerateDialog = () => {
+    clearJobRetryVersion();
+    setRegenDialogOpen(false);
   };
   const regenerateDialog = (
-    <Dialog open={regenDialogOpen} onOpenChange={setRegenDialogOpen}>
+    <Dialog open={regenDialogOpen} onOpenChange={(open) => open ? setRegenDialogOpen(true) : closeRegenerateDialog()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Tạo phiên bản sách mới</DialogTitle>
@@ -187,7 +201,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
           documentProcessing={documentProcessing}
         />
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setRegenDialogOpen(false)}>
+          <Button variant="ghost" onClick={closeRegenerateDialog}>
             Hủy
           </Button>
         </DialogFooter>
@@ -201,7 +215,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {
-        dismissJob();
+        prepareActiveJobRetry();
         setRegenDialogOpen(true);
       }}
     />
@@ -303,10 +317,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
           ) : (
             <CreateVersionButton
               label="sách ôn tập"
-              onOpen={() => {
-                setRegenError(null);
-                setRegenDialogOpen(true);
-              }}
+              onOpen={openFreshVersionDialog}
             />
           )}
           <Button variant="outline" size="icon" onClick={handleRefresh} title="Tải lại sách" disabled={generating}>
@@ -317,7 +328,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
 
       {jobProgress}
 
-      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={() => setRegenDialogOpen(true)} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
+      <VersionSwitcher versions={versions} activeVersion={activeVersion} viewedVersion={viewedVersion} onSwitch={switchVersion} onCreate={openFreshVersionDialog} onRename={handleRenameVersion} onDelete={handleDeleteVersion} />
 
       {regenError && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-error/40 bg-error/5 px-4 py-3 text-sm text-error">
