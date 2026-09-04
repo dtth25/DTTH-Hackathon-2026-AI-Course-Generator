@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     OPENROUTER_EMBEDDING_MODEL: str = Field(default="openai/text-embedding-3-small", description="OpenRouter embedding model slug")
     OPENROUTER_PREFLIGHT_TTL_SECONDS: int = Field(default=30, ge=5, le=300)
     OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0, le=20.0)
+    ENVIRONMENT: str = Field(
+        default="local", pattern="^(local|test|loadtest|production)$"
+    )
+    JOB_QUEUE_PROVIDER: str = Field(default="inline", pattern="^(inline|celery)$")
+    REDIS_URL: str = Field(default="redis://localhost:6379/0")
+    MAX_PENDING_JOBS_PER_USER: int = Field(default=4, ge=1, le=20)
+    MAX_PENDING_JOBS_GLOBAL: int = Field(default=200, ge=10, le=2000)
+    JOB_LEASE_SECONDS: int = Field(default=3600, ge=60, le=7200)
     # Inline BackgroundTasks have no cross-process lease. Recovery is opt-in only for
     # an operator-controlled, single-process local deployment; it is not multi-process safe.
     PROCESSING_EXECUTION_MODE: Literal["inline", "distributed"] = Field(default="inline")
@@ -200,6 +208,14 @@ class Settings(BaseSettings):
         if self.CREATE_DEFAULT_ADMIN and (not self.ADMIN_EMAIL.strip() or not self.ADMIN_PASSWORD.strip()):
             raise ValueError(
                 "CREATE_DEFAULT_ADMIN=true requires ADMIN_EMAIL and ADMIN_PASSWORD to also be set"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_queue_provider(self) -> "Settings":
+        if self.ENVIRONMENT == "production" and self.JOB_QUEUE_PROVIDER != "celery":
+            raise ValueError(
+                "ENVIRONMENT=production requires JOB_QUEUE_PROVIDER=celery"
             )
         return self
 
