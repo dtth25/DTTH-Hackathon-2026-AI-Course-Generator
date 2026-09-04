@@ -220,7 +220,7 @@ Topology dùng Compose merge tag `!override`; Docker Compose plugin phải hỗ 
 
 Các runtime backend production chạy với `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`.
 
-Chuẩn bị `.env` production ở root. Tối thiểu phải thay `DATABASE_URL`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `OPENROUTER_API_KEY`; giữ `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1` và `EMAIL_DEV_FALLBACK=false`. Nếu mật khẩu database có ký tự reserved, URL-encode phần password trong `DATABASE_URL`.
+Chuẩn bị `.env` production ở root. Tối thiểu phải thay `DATABASE_URL`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `OPENROUTER_API_KEY`; giữ `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1` và `EMAIL_DEV_FALLBACK=false`. `DATABASE_URL` phải dùng driver explicit `postgresql+psycopg://` (plain `postgresql://` không hợp lệ vì image chỉ cài psycopg 3). Nếu mật khẩu database có ký tự reserved, URL-encode phần password trong URL.
 
 Topology fail closed trước khi API/worker start nếu password PostgreSQL rỗng, JWT còn `CHANGE_THIS_DEV_SECRET`, email fallback bật, OpenRouter URL không chính thức, queue không phải Celery, database không phải PostgreSQL hoặc Chroma không ở HTTP mode.
 

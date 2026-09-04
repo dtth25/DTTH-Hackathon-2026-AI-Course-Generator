@@ -5,10 +5,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
+
+from app.core.config import Settings
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -86,6 +92,64 @@ def _volume_targets(service: dict[str, Any]) -> set[str]:
     return {volume["target"] for volume in service.get("volumes", [])}
 
 
+def _volumes_by_target(service: dict[str, Any]) -> dict[str, str]:
+    return {
+        volume["target"]: volume["source"] for volume in service.get("volumes", [])
+    }
+
+
+def _deployment_settings(environment: str, **overrides: Any) -> Settings:
+    values: dict[str, Any] = {
+        "DATABASE_URL": "postgresql+psycopg://user:pass@postgres:5432/hackagen",
+        "JWT_SECRET": "deployment-test-secret",
+        "OPENROUTER_API_KEY": "deployment-test-key",
+        "OPENROUTER_BASE_URL": (
+            "http://mock-openrouter:8080/api/v1"
+            if environment == "loadtest"
+            else "https://openrouter.ai/api/v1"
+        ),
+        "ENVIRONMENT": environment,
+        "JOB_QUEUE_PROVIDER": "celery",
+        "CHROMA_MODE": "http",
+        "EMAIL_DEV_FALLBACK": False,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+@pytest.mark.parametrize("environment", ["production", "loadtest"])
+def test_deployment_settings_reject_normalized_default_jwt(environment):
+    with pytest.raises(ValidationError, match="JWT_SECRET"):
+        _deployment_settings(
+            environment,
+            JWT_SECRET=" \tCHANGE_THIS_DEV_SECRET\r\n",
+        )
+
+
+@pytest.mark.parametrize("environment", ["production", "loadtest"])
+@pytest.mark.parametrize("truthy_value", [True, "true", "t", "y", "yes", "1", "on"])
+def test_deployment_settings_reject_every_truthy_email_fallback(
+    environment,
+    truthy_value,
+):
+    with pytest.raises(ValidationError, match="EMAIL_DEV_FALLBACK"):
+        _deployment_settings(
+            environment,
+            EMAIL_DEV_FALLBACK=truthy_value,
+        )
+
+
+def test_production_requires_explicit_psycopg3_driver():
+    with pytest.raises(ValidationError, match=r"postgresql\+psycopg"):
+        _deployment_settings(
+            "production",
+            DATABASE_URL="postgresql://user:pass@postgres:5432/hackagen",
+        )
+
+    configured = _deployment_settings("production")
+    assert configured.DATABASE_URL.startswith("postgresql+psycopg://")
+
+
 def test_production_topology_is_private_and_queue_isolated(production_config):
     services = production_config["services"]
 
@@ -95,14 +159,27 @@ def test_production_topology_is_private_and_queue_isolated(production_config):
     } == {"frontend"}
 
     expected_queues = {
-        "worker-ingestion": "ingestion",
-        "worker-generation": "generation",
-        "worker-video": "video",
+        "worker-ingestion": ("ingestion", "2"),
+        "worker-generation": ("generation", "4"),
+        "worker-video": ("video", "1"),
     }
-    for service_name, expected_queue in expected_queues.items():
+    for service_name, (expected_queue, expected_concurrency) in expected_queues.items():
         command = services[service_name]["command"]
         queue_flags = [command[index + 1] for index, value in enumerate(command) if value == "-Q"]
         assert queue_flags == [expected_queue]
+        concurrency_flags = [
+            command[index + 1]
+            for index, value in enumerate(command)
+            if value == "-c"
+        ]
+        assert concurrency_flags == [expected_concurrency]
+
+    assert services["backend"]["command"] == [
+        "sh",
+        "-c",
+        "uv run --project . alembic upgrade head && uv run --project . uvicorn "
+        "main:app --host 0.0.0.0 --port 8000 --workers 2",
+    ]
 
 
 def test_production_selects_distributed_postgres_redis_and_http_chroma(production_config):
@@ -152,6 +229,9 @@ def test_backend_runtimes_share_only_file_data_and_wait_for_healthy_dependencies
             name: {"condition": condition, "required": True}
             for name, condition in expected_dependencies.items()
         }
+    reference_volumes = _volumes_by_target(services["backend"])
+    for service_name in BACKEND_RUNTIMES[1:]:
+        assert _volumes_by_target(services[service_name]) == reference_volumes
     assert services["frontend"]["depends_on"]["backend"]["condition"] == "service_healthy"
     assert _volume_targets(services["chroma"]) == {"/data"}
 
@@ -171,6 +251,54 @@ def test_production_entrypoint_rejects_unsafe_startup_settings(production_config
             "CHROMA_MODE",
         ):
             assert required_check in entrypoint
+    backend_healthcheck = " ".join(services["backend"]["healthcheck"]["test"])
+    assert "json.load" in backend_healthcheck
+    assert ".get('ready') is True" in backend_healthcheck
+
+
+def test_backend_healthcheck_rejects_http_200_when_ready_is_false(production_config):
+    class ReadinessHandler(BaseHTTPRequestHandler):
+        ready = False
+
+        def do_GET(self):  # noqa: N802 - stdlib handler contract
+            body = json.dumps({"ready": self.ready}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):  # noqa: A002 - stdlib handler contract
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ReadinessHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        health_script = production_config["services"]["backend"]["healthcheck"][
+            "test"
+        ][-1].replace("localhost:8000", f"127.0.0.1:{server.server_port}")
+
+        false_result = subprocess.run(
+            [sys.executable, "-c", health_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert false_result.returncode != 0
+
+        ReadinessHandler.ready = True
+        true_result = subprocess.run(
+            [sys.executable, "-c", health_script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert true_result.returncode == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_empty_postgres_password_fails_compose_validation():
@@ -196,21 +324,56 @@ def test_empty_postgres_password_fails_compose_validation():
     assert completed.returncode != 0
 
 
-def test_loadtest_overlay_changes_only_the_environment_boundary():
-    config = _compose_config(
+def test_loadtest_overlay_changes_only_the_environment_boundary(production_config):
+    loadtest_config = _compose_config(
         "docker-compose.yml",
         "docker-compose.production.yml",
         "docker-compose.loadtest.yml",
     )
-    services = config["services"]
+    production_services = production_config["services"]
+    loadtest_services = loadtest_config["services"]
+
+    preserved_fields = (
+        "image",
+        "build",
+        "command",
+        "entrypoint",
+        "healthcheck",
+        "volumes",
+        "depends_on",
+        "restart",
+        "networks",
+        "ports",
+    )
+    for service_name in PRODUCTION_SERVICES:
+        for field in preserved_fields:
+            assert loadtest_services[service_name].get(field) == production_services[
+                service_name
+            ].get(field)
+
+    for service_name in PRODUCTION_SERVICES - set(BACKEND_RUNTIMES):
+        assert loadtest_services[service_name].get("environment") == production_services[
+            service_name
+        ].get("environment")
 
     for service_name in BACKEND_RUNTIMES:
-        environment = services[service_name]["environment"]
+        production_environment = production_services[service_name]["environment"]
+        environment = loadtest_services[service_name]["environment"]
+        changed_environment = {
+            key
+            for key in environment.keys() | production_environment.keys()
+            if environment.get(key) != production_environment.get(key)
+        }
+        assert changed_environment == {
+            "ENVIRONMENT",
+            "OPENROUTER_API_KEY",
+            "OPENROUTER_BASE_URL",
+        }
         assert environment["ENVIRONMENT"] == "loadtest"
         assert environment["JOB_QUEUE_PROVIDER"] == "celery"
         assert environment["DATABASE_URL"].startswith("postgresql+psycopg://")
         assert environment["CHROMA_MODE"] == "http"
         assert environment["OPENROUTER_BASE_URL"] == "http://mock-openrouter:8080/api/v1"
-    assert {name for name, service in services.items() if service.get("ports")} == {
+    assert {name for name, service in loadtest_services.items() if service.get("ports")} == {
         "frontend"
     }

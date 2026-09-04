@@ -18,6 +18,7 @@ logging.basicConfig(
 # Single source of truth: the .env at the project root, regardless of the process cwd.
 # (config.py -> core -> app -> backend -> src -> project root)
 _ROOT_ENV_FILE = str(Path(__file__).resolve().parents[4] / ".env")
+_DEFAULT_JWT_SECRET = "CHANGE_THIS_DEV_SECRET"
 
 
 class Settings(BaseSettings):
@@ -237,6 +238,20 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_deployment_auth_and_email_safety(self) -> "Settings":
+        if self.ENVIRONMENT not in {"production", "loadtest"}:
+            return self
+        if self.JWT_SECRET == _DEFAULT_JWT_SECRET:
+            raise ValueError(
+                f"ENVIRONMENT={self.ENVIRONMENT} requires JWT_SECRET to be changed"
+            )
+        if self.EMAIL_DEV_FALLBACK:
+            raise ValueError(
+                f"ENVIRONMENT={self.ENVIRONMENT} requires EMAIL_DEV_FALLBACK=false"
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_openrouter_base_url(self) -> "Settings":
         official_url = "https://openrouter.ai/api/v1"
         self.OPENROUTER_BASE_URL = self.OPENROUTER_BASE_URL.rstrip("/")
@@ -250,14 +265,16 @@ class Settings(BaseSettings):
     def validate_production_database(self) -> "Settings":
         if self.ENVIRONMENT == "production":
             try:
-                database_backend = make_url(self.DATABASE_URL).get_backend_name()
+                database_driver = make_url(self.DATABASE_URL).drivername
             except ArgumentError as exc:
                 raise ValueError(
-                    "ENVIRONMENT=production requires a valid PostgreSQL DATABASE_URL"
+                    "ENVIRONMENT=production requires a valid PostgreSQL DATABASE_URL "
+                    "using postgresql+psycopg://"
                 ) from exc
-            if database_backend != "postgresql":
+            if database_driver != "postgresql+psycopg":
                 raise ValueError(
-                    "ENVIRONMENT=production requires a PostgreSQL DATABASE_URL"
+                    "ENVIRONMENT=production requires a PostgreSQL DATABASE_URL "
+                    "using postgresql+psycopg://"
                 )
         return self
 

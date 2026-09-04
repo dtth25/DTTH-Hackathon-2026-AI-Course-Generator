@@ -18,7 +18,7 @@ x-backend-runtime: &backend-runtime
     INLINE_PROCESSING_RECOVERY_ENABLED: "false"
     REDIS_URL: redis://redis:6379/0
     CHROMA_MODE: http
-    CHROMA_HOST: chroma
+    CHROMA_HOST: ${PRODUCTION_CHROMA_HOST:-chroma}
     CHROMA_PORT: "8000"
     CHROMA_SSL: "false"
     UPLOAD_DIR: /app/backend/uploads
@@ -32,13 +32,13 @@ x-backend-runtime: &backend-runtime
       case "$${ENVIRONMENT:-}" in production|loadtest) ;; *) fail "ENVIRONMENT must be production or loadtest" ;; esac
       [ -n "$${POSTGRES_PASSWORD:-}" ] || fail "POSTGRES_PASSWORD must not be empty"
       [ -n "$${JWT_SECRET:-}" ] || fail "JWT_SECRET must not be empty"
-      [ "$${JWT_SECRET}" != "CHANGE_THIS_DEV_SECRET" ] || fail "JWT_SECRET still uses CHANGE_THIS_DEV_SECRET"
-      case "$${EMAIL_DEV_FALLBACK:-false}" in true|True|TRUE|1|yes|Yes|YES|on|On|ON) fail "EMAIL_DEV_FALLBACK must be false" ;; esac
+      case "$${JWT_SECRET}" in *CHANGE_THIS_DEV_SECRET*) fail "JWT_SECRET still uses CHANGE_THIS_DEV_SECRET" ;; esac
+      case "$${EMAIL_DEV_FALLBACK:-false}" in true|True|TRUE|t|T|1|y|Y|yes|Yes|YES|on|On|ON) fail "EMAIL_DEV_FALLBACK must be false" ;; esac
       if [ "$${ENVIRONMENT}" = "production" ]; then
         [ "$${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}" = "https://openrouter.ai/api/v1" ] || fail "production requires the official OpenRouter base URL"
       fi
       [ "$${JOB_QUEUE_PROVIDER:-}" = "celery" ] || fail "JOB_QUEUE_PROVIDER must be celery"
-      case "$${DATABASE_URL:-}" in postgresql://*|postgresql+psycopg://*) ;; *) fail "DATABASE_URL must use PostgreSQL" ;; esac
+      case "$${DATABASE_URL:-}" in postgresql+psycopg://*) ;; *) fail "DATABASE_URL must use postgresql+psycopg://" ;; esac
       [ "$${CHROMA_MODE:-}" = "http" ] || fail "CHROMA_MODE must be http"
       exec "$$@"
     - --
@@ -110,7 +110,7 @@ services:
     container_name: !reset null
     command: ["sh", "-c", "uv run --project . alembic upgrade head && uv run --project . uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2"]
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      test: ["CMD", "python3", "-c", "import json, urllib.request; payload = json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=3)); raise SystemExit(0 if payload.get('ready') is True else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12
