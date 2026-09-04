@@ -7,7 +7,7 @@ import os
 import re
 import random
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.core.config import settings
 from app.models.course import Course
 from app.schemas.generation import (
@@ -44,6 +44,10 @@ from app.services.versioning import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _GenerationInterrupted(Exception):
+    """The durable worker lost its lease or observed cancellation."""
 
 _LEADING_ID_TOKEN_RE = re.compile(r"^([A-Za-z0-9-]+)[_\s]+")
 _ARRAY_INDEX_RE = re.compile(r"\b([A-Za-z][A-Za-z0-9]*)(\[[A-Za-z0-9, ]+\](?:\[[A-Za-z0-9, ]+\])*)")
@@ -297,6 +301,37 @@ class Generator:
             artifact_directory_path(settings.UPLOAD_DIR, course_id, artifact, version_id)
         )
         return transaction, transaction.prepare()
+
+    def _ready_version_output(
+        self,
+        course_id: str,
+        artifact: str,
+        filename: str,
+        version_id: Optional[str],
+        output_type,
+        db_session_factory=None,
+    ):
+        """Return an already-published version without touching its files."""
+        if not version_id:
+            return False, None
+        status = self.get_artifact_status(
+            course_id,
+            artifact,
+            version_id=version_id,
+            db_session_factory=db_session_factory,
+        )
+        if status.get("status") != "ready":
+            return False, None
+        artifact_dir = artifact_directory_path(
+            settings.UPLOAD_DIR, course_id, artifact, version_id
+        )
+        payload = self._load_artifact_json(course_id, filename, artifact_dir)
+        return True, output_type.model_validate(payload) if payload else None
+
+    @staticmethod
+    def _report_progress(progress_callback: Optional[Callable[[], bool]]) -> None:
+        if progress_callback and not progress_callback():
+            raise _GenerationInterrupted
 
     def _finish_version_write(self, transaction, success: bool) -> None:
         if transaction:
@@ -1024,6 +1059,7 @@ class Generator:
         detail_level: str = "Tiêu chuẩn",
         user_prompt: str = "",
         db_session_factory=None,
+        progress_callback: Optional[Callable[[], bool]] = None,
         **kwargs,
     ) -> Optional[BookOutput]:
         """Execute the multi-pass generation pipeline for the Study Guide Book:
@@ -1033,9 +1069,16 @@ class Generator:
         partial/placeholder artifact.
         """
         logger.info(f"Starting Book generation for course {course_id}")
-        transaction, artifact_dir = self._start_version_write(course_id, "book", kwargs.get("version_id"))
+        version_id = kwargs.get("version_id")
+        ready, output = self._ready_version_output(
+            course_id, "book", "book.json", version_id, BookOutput, db_session_factory
+        )
+        if ready:
+            return output
+        transaction, artifact_dir = self._start_version_write(course_id, "book", version_id)
         try:
             self._set_artifact_status(course_id, "book", "processing", progress=5, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._require_course_not_processing(course_id, db_session_factory)
 
             book_llm = self._llm_for("book")
@@ -1048,6 +1091,7 @@ class Generator:
                 raise ValueError(f"Dàn ý chỉ có {len(plans)} chương, cần tối thiểu 4 chương.")
 
             self._set_artifact_status(course_id, "book", "processing", progress=15, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
 
             all_ids = set(base_ids)
             chapters: List[BookChapter] = []
@@ -1077,6 +1121,7 @@ class Generator:
                 )
                 progress = 15 + int(75 * (i + 1) / total)
                 self._set_artifact_status(course_id, "book", "processing", progress=progress, db_session_factory=db_session_factory)
+                self._report_progress(progress_callback)
 
             book = BookOutput(title=outline.title, summary=outline.summary, preface=outline.preface, chapters=chapters)
             validated_output, score, warnings = validate_and_score_output(book, "book", list(all_ids))
@@ -1088,7 +1133,11 @@ class Generator:
             self._finish_version_write(transaction, True)
             self._update_course_metadata(course_id, "book", score, db_session_factory)
             self._set_artifact_status(course_id, "book", "ready", progress=100, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             return validated_output
+        except _GenerationInterrupted:
+            self._finish_version_write(transaction, False)
+            return None
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Book generation failed for course {course_id}: {e}", exc_info=True)
@@ -1103,16 +1152,23 @@ class Generator:
             )
             return None
 
-    def generate_slides(self, course_id: str, topic: str = "AI Overview", num_slides: int = 15, focus_prompt: str = "", db_session_factory=None, **kwargs) -> Optional[SlidesOutput]:
+    def generate_slides(self, course_id: str, topic: str = "AI Overview", num_slides: int = 15, focus_prompt: str = "", db_session_factory=None, progress_callback: Optional[Callable[[], bool]] = None, **kwargs) -> Optional[SlidesOutput]:
         """Execute full generation pipeline for Presentation Slides.
 
         On any failure, records an "error" artifact status and returns None instead of
         letting a background-task exception vanish silently.
         """
         logger.info(f"Starting Slides generation for course {course_id}")
-        transaction, artifact_dir = self._start_version_write(course_id, "slides", kwargs.get("version_id"))
+        version_id = kwargs.get("version_id")
+        ready, output = self._ready_version_output(
+            course_id, "slides", "slides.json", version_id, SlidesOutput, db_session_factory
+        )
+        if ready:
+            return output
+        transaction, artifact_dir = self._start_version_write(course_id, "slides", version_id)
         try:
             self._set_artifact_status(course_id, "slides", "processing", progress=10, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1128,12 +1184,17 @@ class Generator:
             validated_output = _clean_slides_output(validated_output)
 
             self._set_artifact_status(course_id, "slides", "processing", progress=70, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._save_artifact_json(course_id, "slides.json", validated_output, artifact_dir)
             self._generate_pptx_slides(course_id, validated_output, artifact_dir)
             self._finish_version_write(transaction, True)
             self._update_course_metadata(course_id, "slides", score, db_session_factory)
             self._set_artifact_status(course_id, "slides", "ready", progress=100, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             return validated_output
+        except _GenerationInterrupted:
+            self._finish_version_write(transaction, False)
+            return None
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Slides generation failed for course {course_id}: {e}", exc_info=True)
@@ -1148,16 +1209,23 @@ class Generator:
             )
             return None
 
-    def generate_quiz(self, course_id: str, topic: str = "AI Quiz", quantity: int = 5, difficulty: str = "mixed", db_session_factory=None, **kwargs) -> Optional[QuizOutput]:
+    def generate_quiz(self, course_id: str, topic: str = "AI Quiz", quantity: int = 5, difficulty: str = "mixed", db_session_factory=None, progress_callback: Optional[Callable[[], bool]] = None, **kwargs) -> Optional[QuizOutput]:
         """Execute full generation pipeline for Multiple Choice Quiz.
 
         On any failure, records an "error" artifact status and returns None instead of
         letting a background-task exception vanish silently.
         """
         logger.info(f"Starting Quiz generation for course {course_id} (quantity={quantity}, difficulty={difficulty})")
-        transaction, artifact_dir = self._start_version_write(course_id, "quiz", kwargs.get("version_id"))
+        version_id = kwargs.get("version_id")
+        ready, output = self._ready_version_output(
+            course_id, "quiz", "quiz.json", version_id, QuizOutput, db_session_factory
+        )
+        if ready:
+            return output
+        transaction, artifact_dir = self._start_version_write(course_id, "quiz", version_id)
         try:
             self._set_artifact_status(course_id, "quiz", "processing", progress=10, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1172,12 +1240,17 @@ class Generator:
                 logger.warning(f"Quiz generation warnings for {course_id}: {warnings}")
 
             self._set_artifact_status(course_id, "quiz", "processing", progress=70, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._save_artifact_json(course_id, "quiz.json", validated_output, artifact_dir)
             self._generate_pdf_quiz_key(course_id, validated_output, artifact_dir)
             self._finish_version_write(transaction, True)
             self._update_course_metadata(course_id, "quiz", score, db_session_factory)
             self._set_artifact_status(course_id, "quiz", "ready", progress=100, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             return validated_output
+        except _GenerationInterrupted:
+            self._finish_version_write(transaction, False)
+            return None
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Quiz generation failed for course {course_id}: {e}", exc_info=True)
@@ -1200,6 +1273,7 @@ class Generator:
         voice: str = "female",
         user_prompt: str = "",
         db_session_factory=None,
+        progress_callback: Optional[Callable[[], bool]] = None,
         **kwargs,
     ) -> Optional[VidOutput]:
         """Execute full generation pipeline for the narrated Video: LLM script (1 call) ->
@@ -1209,9 +1283,16 @@ class Generator:
         letting a background-task exception vanish silently.
         """
         logger.info(f"Starting Video generation for course {course_id} (format={fmt}, voice={voice})")
-        transaction, artifact_dir = self._start_version_write(course_id, "vid", kwargs.get("version_id"))
+        version_id = kwargs.get("version_id")
+        ready, output = self._ready_version_output(
+            course_id, "vid", "vid.json", version_id, VidOutput, db_session_factory
+        )
+        if ready:
+            return output
+        transaction, artifact_dir = self._start_version_write(course_id, "vid", version_id)
         try:
             self._set_artifact_status(course_id, "vid", "processing", progress=10, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
@@ -1228,12 +1309,14 @@ class Generator:
             scene_visual_map = self._build_scene_visual_map(course_id, validated_output)
 
             self._set_artifact_status(course_id, "vid", "processing", progress=25, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
 
             def _progress_cb(fraction: float) -> None:
                 self._set_artifact_status(
                     course_id, "vid", "processing", progress=25 + int(60 * fraction),
                     db_session_factory=db_session_factory,
                 )
+                self._report_progress(progress_callback)
 
             self._generate_video_mp4(
                 course_id,
@@ -1246,11 +1329,16 @@ class Generator:
             )
 
             self._set_artifact_status(course_id, "vid", "processing", progress=90, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             self._save_artifact_json(course_id, "vid.json", validated_output, artifact_dir)
             self._finish_version_write(transaction, True)
             self._update_course_metadata(course_id, "vid", score, db_session_factory)
             self._set_artifact_status(course_id, "vid", "ready", progress=100, db_session_factory=db_session_factory)
+            self._report_progress(progress_callback)
             return validated_output
+        except _GenerationInterrupted:
+            self._finish_version_write(transaction, False)
+            return None
         except Exception as e:
             self._finish_version_write(transaction, False)
             logger.error(f"Vid generation failed for course {course_id}: {e}", exc_info=True)

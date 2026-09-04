@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 from pydantic import BaseModel
 import fitz  # PyMuPDF
 import docx
@@ -911,8 +911,10 @@ class DocumentProcessor:
             chunk_content = text[start:end].strip()
             if chunk_content:
                 page = _page_for_offset(start)
-                chunk_id = f"{source_file}_p{page}_c{idx}"
-                source_chunk_id = f"{course_id}_{chunk_id}"
+                # Chroma ids are collection-global, so include the course while
+                # retaining a deterministic source/page/ordinal identity for upsert.
+                chunk_id = f"{course_id}_{source_file}_p{page}_c{idx}"
+                source_chunk_id = chunk_id
 
                 doc = Document(
                     content=chunk_content,
@@ -1019,6 +1021,7 @@ class DocumentProcessor:
         file_paths: List[str],
         db_session_factory=None,
         job_id: Optional[str] = None,
+        progress_callback: Optional[Callable[[], bool]] = None,
     ) -> ProcessingResult:
         """
         1. Extract text từ files (PDF/DOCX/TXT)
@@ -1044,6 +1047,10 @@ class DocumentProcessor:
                 course_id, status="processing", stage="extracting", progress=20,
                 db_session_factory=db_session_factory,
             )
+            if progress_callback and not progress_callback():
+                return ProcessingResult(
+                    course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
+                )
             _require_provider_preflight()
             all_documents: List[Document] = []
             try:
@@ -1076,11 +1083,24 @@ class DocumentProcessor:
                 return ProcessingResult(course_id=course_id, status="failed", chunk_count=0, quality_score=0, error=user_message)
 
             self._update_course_db(course_id, status="processing", stage="chunking", progress=50, db_session_factory=db_session_factory)
+            if progress_callback and not progress_callback():
+                return ProcessingResult(
+                    course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
+                )
             self._update_course_db(course_id, status="processing", stage="embedding", progress=75, db_session_factory=db_session_factory)
+            if progress_callback and not progress_callback():
+                return ProcessingResult(
+                    course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
+                )
             if not self._attempt_is_active(course_id, job_id, db_session_factory):
                 return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, False)
             embedding_provider = "openrouter"
             self.vector_store.add_documents(all_documents, course_id=course_id, provider=embedding_provider)
+            if progress_callback and not progress_callback():
+                self.vector_store.delete_course(course_id)
+                return ProcessingResult(
+                    course_id=course_id, status="cancelled", chunk_count=0, quality_score=0
+                )
             if not self._attempt_is_active(course_id, job_id, db_session_factory):
                 return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
             quality_score = min(100, max(50, len(all_documents) * 5 + 60))
