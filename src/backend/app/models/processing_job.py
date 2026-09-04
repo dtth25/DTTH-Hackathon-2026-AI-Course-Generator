@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
 
 from app.services.database import Base
 
@@ -23,9 +23,11 @@ class JobStatus(StrEnum):
     """The lifecycle states persisted for a processing job."""
 
     QUEUED = "queued"
+    RETRY_SCHEDULED = "retry_scheduled"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class ProcessingJob(Base):
@@ -49,6 +51,15 @@ class ProcessingJob(Base):
     error_code = Column(String(80), nullable=True)
     error_message = Column(Text, nullable=True)
     external_task_id = Column(String(100), nullable=True, index=True)
+    payload_json = Column(JSON, nullable=False, default=dict)
+    active_key = Column(String(180), nullable=True, unique=True, index=True)
+    queue_name = Column(String(32), nullable=False, default="ingestion")
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    worker_id = Column(String(120), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True, index=True)
+    next_attempt_at = Column(DateTime, nullable=True, index=True)
+    cancel_requested = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
