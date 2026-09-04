@@ -19,6 +19,7 @@ _ACTIVE_STATUSES = (
 )
 _ATTEMPTS_EXHAUSTED_CODE = "JOB_ATTEMPTS_EXHAUSTED"
 _ATTEMPTS_EXHAUSTED_MESSAGE = "Đã hết số lần thử xử lý."
+_CANCELLED_MESSAGE = "Đã hủy"
 
 
 def _queue_for_job_type(job_type: str) -> str:
@@ -174,6 +175,7 @@ def _dead_letter_exhausted_job(
         .where(
             ProcessingJob.id == job_id,
             abandoned,
+            ProcessingJob.cancel_requested.is_(False),
             ProcessingJob.attempts >= ProcessingJob.max_attempts,
         )
         .values(
@@ -185,6 +187,35 @@ def _dead_letter_exhausted_job(
             error_code=_ATTEMPTS_EXHAUSTED_CODE,
             error_message=_ATTEMPTS_EXHAUSTED_MESSAGE,
             message=_ATTEMPTS_EXHAUSTED_MESSAGE,
+            updated_at=now,
+            completed_at=now,
+        )
+    )
+    return result.rowcount == 1
+
+
+def _terminalize_expired_cancelled_job(
+    db: Session, job_id: str, now: datetime
+) -> bool:
+    """Finish an abandoned cancellation before considering dead-lettering."""
+    result = db.execute(
+        update(ProcessingJob)
+        .where(
+            ProcessingJob.id == job_id,
+            ProcessingJob.status == JobStatus.RUNNING.value,
+            ProcessingJob.worker_id.is_not(None),
+            ProcessingJob.lease_expires_at < now,
+            ProcessingJob.cancel_requested.is_(True),
+        )
+        .values(
+            status=JobStatus.CANCELLED.value,
+            active_key=None,
+            worker_id=None,
+            lease_expires_at=None,
+            next_attempt_at=None,
+            error_code=None,
+            error_message=None,
+            message=_CANCELLED_MESSAGE,
             updated_at=now,
             completed_at=now,
         )
@@ -239,7 +270,9 @@ def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> b
     )
     claimed = result.rowcount == 1
     if not claimed:
-        _dead_letter_exhausted_job(db, job_id, now)
+        cancelled = _terminalize_expired_cancelled_job(db, job_id, now)
+        if not cancelled:
+            _dead_letter_exhausted_job(db, job_id, now)
     db.commit()
     return claimed
 

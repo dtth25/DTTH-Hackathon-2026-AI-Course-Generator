@@ -161,6 +161,30 @@ def test_expired_final_attempt_is_dead_lettered_without_rerunning(
     assert replacement.id != job.id
 
 
+def test_expired_cancelled_final_attempt_finishes_cancelled_without_rerunning(
+    db_session, job_owner_and_course
+):
+    user, course = job_owner_and_course
+    job = _distributed_job(db_session, user, course, max_attempts=1)
+    assert claim_job(db_session, job.id, "worker-a", 300)
+    assert cancel_job(db_session, job.id)
+    job.lease_expires_at = datetime.utcnow() - timedelta(seconds=1)
+    db_session.commit()
+
+    assert not claim_job(db_session, job.id, "worker-b", 300)
+    db_session.refresh(job)
+    assert job.status == "cancelled"
+    assert job.cancel_requested is True
+    assert job.attempts == 1
+    assert job.worker_id is None
+    assert job.lease_expires_at is None
+    assert job.active_key is None
+    assert job.error_code is None
+
+    replacement = _distributed_job(db_session, user, course, max_attempts=1)
+    assert replacement.id != job.id
+
+
 def test_succeeded_job_ignores_redelivery(db_session, succeeded_job):
     assert claim_job(db_session, succeeded_job.id, "worker-b", 300) is False
 
