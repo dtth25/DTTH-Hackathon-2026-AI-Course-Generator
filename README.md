@@ -11,8 +11,8 @@ Code hiện tại là source of truth. README này mô tả đúng flow đang ch
 | Frontend | Next.js App Router, React 19, Tailwind CSS v4, shadcn/base-ui, lucide-react |
 | Backend | FastAPI, Python 3.11+, LangChain |
 | Dependency | `uv` cho backend, npm cho frontend |
-| Vector DB | Chroma local persistent DB, bắt buộc cho local/dev demo |
-| Persistence | Local filesystem JSON/generated files |
+| Vector DB | Chroma embedded cho local; Chroma HTTP private service cho production |
+| Persistence | SQLite local; PostgreSQL 16 + durable filesystem volumes trong production |
 | Auth | JWT bearer token + HttpOnly cookie, user ownership, admin routes |
 | AI Model | OpenRouter paid-only: `google/gemini-2.5-pro` cho toàn bộ feature |
 | Embedding | OpenRouter `openai/text-embedding-3-small` |
@@ -103,7 +103,7 @@ Copy-Item .env.example .env -Force
 
 Backend chỉ load `.env` ở root repo bằng đường dẫn tuyệt đối. Khởi động lại backend sau khi đổi env để startup log hiển thị content model và embedding model đang active.
 
-`PROCESSING_EXECUTION_MODE=inline` và `INLINE_PROCESSING_RECOVERY_ENABLED=true` trong `.env.example` chỉ dành cho local/dev chạy **một** process FastAPI: khi restart, app có thể đánh dấu retryable các job inline bị gián đoạn. Nếu deploy nhiều API process/replica, phải dùng `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`; inline recovery không có lease liên-process. Queue/lease bền vững là phần mở rộng sau này.
+`PROCESSING_EXECUTION_MODE=inline`, `JOB_QUEUE_PROVIDER=inline` và `INLINE_PROCESSING_RECOVERY_ENABLED=true` trong `.env.example` chỉ dành cho local/dev chạy **một** process FastAPI. Production Compose ép distributed/Celery, tách ba worker queue và tắt inline recovery.
 
 ## OpenRouter recovery runbook
 
@@ -135,7 +135,7 @@ docker compose up -d --wait
 
 `EMBEDDING_MAX_RETRIES` chỉ retry lỗi transient. Key-limit `403`/credit exhaustion dừng sau một embedding attempt để tránh tiêu tốn quota vô ích; sau khôi phục capacity, retry từ saved upload mới tạo job xử lý tiếp theo.
 
-Lưu ý vận hành: `PROCESSING_EXECUTION_MODE=inline` + `INLINE_PROCESSING_RECOVERY_ENABLED=true` chỉ an toàn khi đúng một FastAPI process sở hữu BackgroundTasks. Với nhiều API process/replica, đặt `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`; mode distributed/queue/lease bền vững là Plan B, chưa được repo này triển khai.
+Lưu ý vận hành: `PROCESSING_EXECUTION_MODE=inline` + `INLINE_PROCESSING_RECOVERY_ENABLED=true` chỉ an toàn khi đúng một FastAPI process sở hữu BackgroundTasks. Topology production dùng PostgreSQL, Redis/Celery và lease bền vững; không chạy đồng thời writer local và production trên cùng dữ liệu.
 
 ## Backend Runbook
 
@@ -202,7 +202,7 @@ npm run start
 4. Mở dashboard Study Pack hoặc generate Book, Slide, Quiz, Vid.
 5. Kiểm tra download: Book PDF, Slide PPTX, Quiz answer-key PDF, Vid MP4 nếu render thành công.
 
-## Docker Compose (Backend + Frontend)
+## Docker Compose local (Backend + Frontend)
 
 ```bash
 cp .env.example .env
@@ -210,19 +210,44 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Chạy cả 2 service (`backend` cổng 8000, `frontend` cổng 3000) cùng lúc. Dữ liệu bền vững (Chroma vectors, SQLite, upload/artifact, embedding cache) được mount ra `./data/` trên host — restart container không mất dữ liệu.
+Chạy local stack hai service; chỉ frontend publish cổng 3000. Dữ liệu Chroma embedded, SQLite, upload/artifact và embedding cache được mount ra `./data/` trên host.
+
+## Production Compose (API + isolated workers)
+
+Production dùng PostgreSQL 16, Redis 7 với AOF, Chroma 1.5.9 HTTP, một API hai Uvicorn worker và ba Celery worker chỉ nghe lần lượt `ingestion`, `generation`, `video`. Upload, output và embedding cache là named volume dùng chung cho API/workers; vector persistence chỉ gắn vào Chroma. PostgreSQL, Redis, Chroma và backend không publish host port; frontend là cổng ứng dụng duy nhất.
+
+Topology dùng Compose merge tag `!override`; Docker Compose plugin phải hỗ trợ tag này. Chạy `docker compose version` và nâng plugin nếu bước `config` báo không hiểu tag.
+
+Các runtime backend production chạy với `PROCESSING_EXECUTION_MODE=distributed` và `INLINE_PROCESSING_RECOVERY_ENABLED=false`.
+
+Chuẩn bị `.env` production ở root. Tối thiểu phải thay `DATABASE_URL`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `OPENROUTER_API_KEY`; giữ `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1` và `EMAIL_DEV_FALLBACK=false`. Nếu mật khẩu database có ký tự reserved, URL-encode phần password trong `DATABASE_URL`.
+
+Topology fail closed trước khi API/worker start nếu password PostgreSQL rỗng, JWT còn `CHANGE_THIS_DEV_SECRET`, email fallback bật, OpenRouter URL không chính thức, queue không phải Celery, database không phải PostgreSQL hoặc Chroma không ở HTTP mode.
+
+```bash
+# Validation im lặng, tránh in resolved environment ra terminal/log CI.
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml config --quiet --no-env-resolution
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml up -d --build --wait --wait-timeout 300
+docker compose -p hackagen-production -f docker-compose.yml -f docker-compose.production.yml ps
+```
+
+Load-test overlay giữ nguyên database/broker/vector/queue/volume/port boundary, đổi duy nhất runtime boundary sang `ENVIRONMENT=loadtest`, dùng key giả và URL adapter nội bộ để không gọi provider trả phí. Adapter và k6 harness được bổ sung ở Plan B Task 10; không chạy overlay này riêng trước Task 10.
+
+```bash
+docker compose -p hackagen-loadtest -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.loadtest.yml config --quiet --no-env-resolution
+```
 
 ## Deploy lên Linux server
 
-Cách deploy khuyến nghị cho server thật (kể cả server trường) là Docker Compose ở trên. Ghi chú vận hành:
+Cách deploy khuyến nghị cho server thật (kể cả server trường) là production Compose ở trên. Ghi chú vận hành:
 
 **Prerequisites**: chỉ cần Docker Engine + Docker Compose plugin. Không cần cài build toolchain (gcc/C++) — image build sẵn dùng wheel/base image chuẩn.
 
-**Chỉ có ĐÚNG 1 file env cần quan tâm khi deploy: `.env` ở root repo.** Không phải `src/backend/.env` (không tồn tại, đừng tạo — backend luôn resolve `.env` theo đường dẫn tuyệt đối về root, bất kể cwd). Không phải `src/frontend/.env` (file đó chỉ để `npm run dev` local dùng — **Docker build không đọc nó**; giá trị thật được `docker-compose.yml` truyền vào qua build `arg` lấy từ root `.env`, xem `src/frontend/Dockerfile`). Nếu build script nào đó tự chạy `npm run build` trực tiếp trong `src/frontend` (không qua `docker compose build`), nó sẽ **không** thấy `NEXT_PUBLIC_API_BASE_URL` của root `.env` — đây chính là nguyên nhân bug "frontend gọi localhost:8000 sau khi deploy". Luôn deploy bằng đúng 1 lệnh `docker compose up -d --build` ở root, không tự build tay từng service.
+**Chỉ có ĐÚNG 1 file env cần quan tâm khi deploy: `.env` ở root repo.** Không phải `src/backend/.env` (không tồn tại, đừng tạo — backend luôn resolve `.env` theo đường dẫn tuyệt đối về root, bất kể cwd). Không phải `src/frontend/.env` (file đó chỉ để `npm run dev` local dùng — **Docker build không đọc nó**; giá trị thật được Compose truyền vào qua build `arg` lấy từ root `.env`, xem `src/frontend/Dockerfile`). Nếu build script nào đó tự chạy `npm run build` trực tiếp trong `src/frontend` (không qua `docker compose build`), nó sẽ **không** thấy `NEXT_PUBLIC_API_BASE_URL` của root `.env`. Luôn deploy bằng đủ base + production Compose files như lệnh ở trên, không tự build tay từng service.
 
-**Kiến trúc mạng**: backend **không** có port nào ra host/internet — cả 2 service nằm chung 1 Docker network tên `hackagen-network`, browser người dùng không bao giờ gọi thẳng backend. Mọi request `/api/*` từ frontend đi qua chính domain của frontend, được `next.config.ts`'s `rewrites()` proxy server-side sang backend qua network nội bộ đó (`BACKEND_INTERNAL_URL=http://backend:8000`, tự cấu hình sẵn trong compose, không cần sửa). Chỉ cần mở/trỏ domain vào **đúng 1 cổng** (`FRONTEND_PORT`, mặc định 3000) ra ngoài. Nếu server đã có sẵn reverse proxy riêng (container khác, ngoài file compose này), attach nó vào network `hackagen-network` (`docker network connect hackagen-network <tên container proxy>`) là gọi được `frontend`/`backend` bằng tên container, không cần qua host port.
+**Kiến trúc mạng**: backend **không** có port nào ra host/internet — toàn bộ tám service nằm chung network `${COMPOSE_PROJECT_NAME}-network`; browser người dùng không bao giờ gọi thẳng backend. Mọi request `/api/*` từ frontend đi qua chính domain của frontend, được `next.config.ts`'s `rewrites()` proxy server-side sang `http://backend:8000`. Chỉ cần mở/trỏ domain vào **đúng 1 cổng** (`FRONTEND_PORT`, mặc định 3000). Nếu reverse proxy là container ngoài project, attach nó vào đúng network project (với lệnh mẫu là `hackagen-production-network`) rồi route tới frontend.
 
-**Health check**: cả 2 container có `HEALTHCHECK` built-in của Docker — xem trạng thái bằng `docker compose ps` (cột STATUS hiện `healthy`/`unhealthy`), không cần tự `curl` để kiểm tra. Frontend chỉ start sau khi backend báo `healthy` (`depends_on: condition: service_healthy`).
+**Health check**: cả tám service có health check — xem trạng thái bằng lệnh `docker compose ... ps` với đúng hai file deployment. API/workers chỉ start sau PostgreSQL, Redis và Chroma; frontend chỉ start sau API healthy.
 
 **Checklist env production** (sửa trong `.env` ở root trước khi build):
 - `NEXT_PUBLIC_API_BASE_URL` phải để **RỖNG** (`NEXT_PUBLIC_API_BASE_URL=`) — rỗng nghĩa là browser gọi same-origin rồi được proxy nội bộ như trên. Nếu điền domain/IP thật vào đây, browser sẽ cố gọi thẳng cổng 8000 và **fail** vì cổng đó không public. Next.js inline biến này lúc `next build`, nên đổi giá trị bắt buộc phải `docker compose build frontend` lại, restart container không đủ.
@@ -230,11 +255,11 @@ Cách deploy khuyến nghị cho server thật (kể cả server trường) là 
 - `OPENROUTER_API_KEY` phải là key thật, không phải placeholder.
 - `SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD` + `EMAIL_FROM_ADDRESS` phải là tài khoản Gmail thật (SMTP_PASSWORD là "App Password", không phải mật khẩu đăng nhập thường), và `EMAIL_DEV_FALLBACK=false` (hoặc bỏ hẳn dòng này) — bật `true` ở production nghĩa là user đăng ký "thành công" nhưng không ai nhận được mã xác thực.
 - Cân nhắc bật `AUTH_COOKIE_SECURE=true` khi server đã có HTTPS.
-- Nếu cổng 3000 đã bị chiếm trên server (ví dụ máy chạy nhiều app sau cùng 1 reverse proxy), set `FRONTEND_PORT=` trong `.env` — không cần sửa `docker-compose.yml`. Backend không có host port nên không có gì để đổi ở đó. Repo này **không** tự chạy reverse proxy/HTTPS nào — nếu server đã có sẵn nginx/Caddy riêng, chỉ cần trỏ nó vào đúng `FRONTEND_PORT` (hoặc attach thẳng vào network `hackagen-network`, xem phần Kiến trúc mạng ở trên).
+- Nếu cổng 3000 đã bị chiếm trên server (ví dụ máy chạy nhiều app sau cùng 1 reverse proxy), set `FRONTEND_PORT=` trong `.env` — không cần sửa Compose. Backend không có host port nên không có gì để đổi ở đó. Repo này **không** tự chạy reverse proxy/HTTPS; nginx/Caddy chỉ cần trỏ vào `FRONTEND_PORT` hoặc attach vào project network nêu trên.
 
-**Chạy**: `docker compose up -d --build` dựng cả backend + frontend. Sau **mọi** lần `git pull` có đổi code, chạy lại đúng lệnh này (không chỉ `docker compose restart`) — đặc biệt bắt buộc nếu đổi bất kỳ biến `NEXT_PUBLIC_*` nào, vì nó bị bake cứng vào frontend lúc build.
+**Chạy**: dùng đủ hai file `docker-compose.yml` + `docker-compose.production.yml` như lệnh phía trên. Sau **mọi** lần `git pull` có đổi code, chạy lại với `--build` (không chỉ `docker compose restart`) — đặc biệt bắt buộc nếu đổi bất kỳ biến `NEXT_PUBLIC_*` nào, vì nó bị bake cứng vào frontend lúc build.
 
-**Dữ liệu**: toàn bộ state bền vững nằm ở `./data/` trên host (`app-data/` = Chroma + SQLite, `uploads/`, `outputs/`, `cache/`) — đây là phần cần backup định kỳ.
+**Dữ liệu**: production state nằm trong sáu named volume cho PostgreSQL, Redis AOF, Chroma, uploads, outputs và cache. Đây là các volume cần backup/restore theo cùng một deployment generation.
 
 **Ngoài phạm vi repo**: reverse proxy (nginx/Caddy) và HTTPS/TLS đứng trước cổng 3000 là trách nhiệm người vận hành server — repo này chưa có config sẵn cho phần đó. Chỉ cần route đúng 1 cổng 3000, không cần route cổng 8000 nữa.
 
@@ -246,12 +271,12 @@ Local/dev mode hiện tại — **không có provider-abstraction layer nào**, 
 - Backend: FastAPI trong `src/backend`.
 - Vector DB: Chroma, code thật ở `src/backend/app/services/vector_store.py`, lưu local tại `CHROMA_PERSIST_DIR`. Không có interface/2nd provider nào khác trong repo.
 - File storage: filesystem thô (`os.path` + `UPLOAD_DIR`), rải rác trong `document_processor.py`/`generator.py`/`upload.py` — không có service module riêng.
-- Job queue: FastAPI `BackgroundTasks` gọi trực tiếp trong router — không có queue/broker thật.
+- Job queue: inline dispatcher cho local; Redis/Celery với three isolated queues cho production.
 - Cache: `src/backend/app/services/cache.py` — dùng thật cho JWT blacklist + document/embedding cache.
 - Database: SQLite qua `DATABASE_URL`.
 - Auth: Bearer JWT + HttpOnly cookie; protected APIs require active user.
 
-Postgres, Redis worker/cache, S3/R2 storage, Qdrant/Milvus/pgvector chỉ là hướng mở rộng tương lai — **chưa có code nào** cho các provider này. `.env.example` giữ lại tên biến (`VECTOR_DB_PROVIDER`, `STORAGE_PROVIDER`, `JOB_QUEUE_PROVIDER`, `CACHE_PROVIDER`, `MILVUS_*`, `S3_*`, `REDIS_URL`...) làm chỗ đặt tên sẵn cho lần thực sự implement, nhưng set chúng trong `.env` hôm nay không có tác dụng gì — không có field `Settings` nào đọc các biến đó.
+S3/R2, Qdrant, Milvus và pgvector vẫn chỉ là hướng mở rộng. `JOB_QUEUE_PROVIDER` và `REDIS_URL` là live settings; các tên provider dự phòng khác trong `.env.example` chưa được Settings đọc.
 
 ## Chroma Notes
 

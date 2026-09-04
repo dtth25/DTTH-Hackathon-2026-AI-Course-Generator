@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install a pinned uv release so production builds do not change underneath us.
+COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /usr/local/bin/uv
 
 # python:3.11-slim ships with ZERO system fonts, so PDF export (ReportLab) and video
 # frame rendering (Pillow) both fell back to a non-Vietnamese font — diacritics rendered
@@ -18,7 +18,9 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./backend/
 
 WORKDIR /app/backend
-RUN uv sync --frozen --no-dev
+ENV UV_HTTP_TIMEOUT=300
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 WORKDIR /app
 COPY backend ./backend

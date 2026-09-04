@@ -1,0 +1,20 @@
+# Overlay for the deterministic provider adapter added by Plan B Task 10.
+# It deliberately preserves the production database, broker, Chroma, queue,
+# volume, health, and port boundaries while preventing use of a paid provider key.
+x-loadtest-environment: &loadtest-environment
+  ENVIRONMENT: loadtest
+  OPENROUTER_API_KEY: deterministic-loadtest-key-no-paid-provider
+  OPENROUTER_BASE_URL: http://mock-openrouter:8080/api/v1
+
+services:
+  backend:
+    environment: *loadtest-environment
+
+  worker-ingestion:
+    environment: *loadtest-environment
+
+  worker-generation:
+    environment: *loadtest-environment
+
+  worker-video:
+    environment: *loadtest-environment
