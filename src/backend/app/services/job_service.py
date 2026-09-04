@@ -17,6 +17,8 @@ _ACTIVE_STATUSES = (
     JobStatus.RETRY_SCHEDULED.value,
     JobStatus.RUNNING.value,
 )
+_ATTEMPTS_EXHAUSTED_CODE = "JOB_ATTEMPTS_EXHAUSTED"
+_ATTEMPTS_EXHAUSTED_MESSAGE = "Đã hết số lần thử xử lý."
 
 
 def _queue_for_job_type(job_type: str) -> str:
@@ -36,6 +38,26 @@ def _active_key_for(
     if not isinstance(version_id, str) or not version_id:
         raise ValueError("Artifact jobs require payload_json.version_id.")
     return f"{job_type}:{course_id}:{version_id}"
+
+
+def _find_owned_active_job(
+    db: Session,
+    *,
+    active_key: str,
+    course_id: str,
+    user_id: str,
+    job_type: str,
+) -> ProcessingJob | None:
+    """Resolve a deduplication hit without crossing its ownership boundary."""
+    return db.scalar(
+        select(ProcessingJob).where(
+            ProcessingJob.active_key == active_key,
+            ProcessingJob.course_id == course_id,
+            ProcessingJob.user_id == user_id,
+            ProcessingJob.job_type == job_type,
+            ProcessingJob.status.in_(_ACTIVE_STATUSES),
+        )
+    )
 
 
 def create_job(
@@ -86,11 +108,12 @@ def create_job(
         resolved_active_key = active_key  # type: ignore[assignment]
 
     if resolved_active_key is not None:
-        existing = db.scalar(
-            select(ProcessingJob).where(
-                ProcessingJob.active_key == resolved_active_key,
-                ProcessingJob.status.in_(_ACTIVE_STATUSES),
-            )
+        existing = _find_owned_active_job(
+            db,
+            active_key=resolved_active_key,
+            course_id=course_id,
+            user_id=user_id,
+            job_type=job_type,
         )
         if existing is not None:
             return existing
@@ -111,11 +134,12 @@ def create_job(
     except IntegrityError:
         if resolved_active_key is None:
             raise
-        existing = db.scalar(
-            select(ProcessingJob).where(
-                ProcessingJob.active_key == resolved_active_key,
-                ProcessingJob.status.in_(_ACTIVE_STATUSES),
-            )
+        existing = _find_owned_active_job(
+            db,
+            active_key=resolved_active_key,
+            course_id=course_id,
+            user_id=user_id,
+            job_type=job_type,
         )
         if existing is None:
             raise
@@ -129,6 +153,52 @@ def create_job(
     return job
 
 
+def _dead_letter_exhausted_job(
+    db: Session, job_id: str, now: datetime
+) -> bool:
+    """Terminalize exhausted unowned work without executing it again."""
+    abandoned = or_(
+        and_(
+            ProcessingJob.status.in_(
+                [JobStatus.QUEUED.value, JobStatus.RETRY_SCHEDULED.value]
+            ),
+            ProcessingJob.worker_id.is_(None),
+        ),
+        and_(
+            ProcessingJob.status == JobStatus.RUNNING.value,
+            ProcessingJob.lease_expires_at < now,
+        ),
+    )
+    result = db.execute(
+        update(ProcessingJob)
+        .where(
+            ProcessingJob.id == job_id,
+            abandoned,
+            ProcessingJob.attempts >= ProcessingJob.max_attempts,
+        )
+        .values(
+            status=JobStatus.FAILED.value,
+            active_key=None,
+            worker_id=None,
+            lease_expires_at=None,
+            next_attempt_at=None,
+            error_code=_ATTEMPTS_EXHAUSTED_CODE,
+            error_message=_ATTEMPTS_EXHAUSTED_MESSAGE,
+            message=_ATTEMPTS_EXHAUSTED_MESSAGE,
+            updated_at=now,
+            completed_at=now,
+        )
+    )
+    return result.rowcount == 1
+
+
+def dead_letter_exhausted_job(db: Session, job_id: str) -> bool:
+    """Atomically fail abandoned work after its final permitted attempt."""
+    dead_lettered = _dead_letter_exhausted_job(db, job_id, datetime.utcnow())
+    db.commit()
+    return dead_lettered
+
+
 def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> bool:
     """Atomically claim a queued job or reclaim one whose lease expired."""
     if not worker_id:
@@ -137,8 +207,13 @@ def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> b
         raise ValueError("lease_seconds must be positive.")
     now = datetime.utcnow()
     claimable = or_(
-        ProcessingJob.status.in_(
-            [JobStatus.QUEUED.value, JobStatus.RETRY_SCHEDULED.value]
+        ProcessingJob.status == JobStatus.QUEUED.value,
+        and_(
+            ProcessingJob.status == JobStatus.RETRY_SCHEDULED.value,
+            or_(
+                ProcessingJob.next_attempt_at.is_(None),
+                ProcessingJob.next_attempt_at <= now,
+            ),
         ),
         and_(
             ProcessingJob.status == JobStatus.RUNNING.value,
@@ -162,8 +237,11 @@ def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> b
             updated_at=now,
         )
     )
+    claimed = result.rowcount == 1
+    if not claimed:
+        _dead_letter_exhausted_job(db, job_id, now)
     db.commit()
-    return result.rowcount == 1
+    return claimed
 
 
 def renew_job_lease(
@@ -181,6 +259,8 @@ def renew_job_lease(
             ProcessingJob.id == job_id,
             ProcessingJob.worker_id == worker_id,
             ProcessingJob.status == JobStatus.RUNNING.value,
+            ProcessingJob.lease_expires_at > now,
+            ProcessingJob.cancel_requested.is_(False),
         )
         .values(
             lease_expires_at=now + timedelta(seconds=lease_seconds),
@@ -251,6 +331,7 @@ def cancel_job(db: Session, job_id: str) -> bool:
                 (immediately_cancelled, None),
                 else_=ProcessingJob.lease_expires_at,
             ),
+            next_attempt_at=None,
             completed_at=case(
                 (immediately_cancelled, now), else_=ProcessingJob.completed_at
             ),

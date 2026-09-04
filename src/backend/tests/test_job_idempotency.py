@@ -7,15 +7,18 @@ from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.models.course import Course
+from app.models.processing_job import ProcessingJob
 from app.models.user import User
 from app.services.database import Base
 from app.services.job_service import (
     cancel_job,
     claim_job,
     create_job,
+    dead_letter_exhausted_job,
     mark_job_cancelled,
     mark_job_failed,
     mark_job_succeeded,
@@ -130,6 +133,34 @@ def test_expired_lease_allows_redelivery(db_session, running_job):
     assert running_job.attempts == 2
 
 
+def test_expired_final_attempt_is_dead_lettered_without_rerunning(
+    db_session, job_owner_and_course
+):
+    user, course = job_owner_and_course
+    job = _distributed_job(db_session, user, course, max_attempts=1)
+    assert claim_job(db_session, job.id, "worker-a", 300)
+    assert not claim_job(db_session, job.id, "worker-b", 300)
+    assert not dead_letter_exhausted_job(db_session, job.id)
+    db_session.refresh(job)
+    assert job.status == "running"
+    assert job.active_key == f"preprocess:{course.id}"
+
+    job.lease_expires_at = datetime.utcnow() - timedelta(seconds=1)
+    db_session.commit()
+
+    assert not claim_job(db_session, job.id, "worker-b", 300)
+    db_session.refresh(job)
+    assert job.status == "failed"
+    assert job.attempts == 1
+    assert job.worker_id is None
+    assert job.lease_expires_at is None
+    assert job.active_key is None
+    assert job.error_code == "JOB_ATTEMPTS_EXHAUSTED"
+
+    replacement = _distributed_job(db_session, user, course, max_attempts=1)
+    assert replacement.id != job.id
+
+
 def test_succeeded_job_ignores_redelivery(db_session, succeeded_job):
     assert claim_job(db_session, succeeded_job.id, "worker-b", 300) is False
 
@@ -168,6 +199,62 @@ def test_distributed_create_deduplicates_active_operation(
     assert first.queue_name == "ingestion"
 
 
+def test_unique_insert_race_recovers_existing_job_via_savepoint(
+    db_session, job_owner_and_course, monkeypatch
+):
+    user, course = job_owner_and_course
+    existing = _distributed_job(db_session, user, course)
+    real_scalar = db_session.scalar
+    preflight_calls = 0
+
+    def simulate_raced_preflight(statement, *args, **kwargs):
+        nonlocal preflight_calls
+        preflight_calls += 1
+        if preflight_calls == 1:
+            return None
+        return real_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "scalar", simulate_raced_preflight)
+    raced = _distributed_job(db_session, user, course)
+
+    assert raced.id == existing.id
+    assert preflight_calls == 2
+
+
+def test_explicit_active_key_collision_cannot_cross_ownership(
+    db_session, job_owner_and_course
+):
+    first_user, first_course = job_owner_and_course
+    first = create_job(
+        db_session,
+        course_id=first_course.id,
+        user_id=first_user.id,
+        job_type="preprocess",
+        active_key="caller-supplied-key",
+    )
+    second_user = User(
+        email="second-distributed-job-owner@example.com",
+        hashed_password="not-used-by-this-test",
+        is_verified=True,
+    )
+    db_session.add(second_user)
+    db_session.flush()
+    second_course = Course(user_id=second_user.id, filenames=["other.txt"])
+    db_session.add(second_course)
+    db_session.commit()
+
+    with pytest.raises(IntegrityError):
+        create_job(
+            db_session,
+            course_id=second_course.id,
+            user_id=second_user.id,
+            job_type="preprocess",
+            active_key="caller-supplied-key",
+        )
+
+    assert db_session.get(ProcessingJob, first.id).user_id == first_user.id
+
+
 def test_artifact_active_key_includes_stable_version(
     db_session, job_owner_and_course
 ):
@@ -191,6 +278,33 @@ def test_lease_renewal_requires_current_worker(db_session, running_job):
     db_session.refresh(running_job)
     assert running_job.lease_expires_at > old_expiry
 
+    running_job.lease_expires_at = datetime.utcnow() - timedelta(seconds=1)
+    db_session.commit()
+    assert not renew_job_lease(db_session, running_job.id, "worker-a", 600)
+
+
+def test_retry_cannot_be_claimed_before_backoff_is_due(
+    db_session, job_owner_and_course
+):
+    user, course = job_owner_and_course
+    job = _distributed_job(db_session, user, course)
+    assert claim_job(db_session, job.id, "worker-a", 300)
+    retry_at = datetime.utcnow() + timedelta(minutes=5)
+    assert schedule_job_retry(db_session, job.id, "worker-a", retry_at)
+
+    assert not claim_job(db_session, job.id, "worker-b", 300)
+    db_session.refresh(job)
+    assert job.status == "retry_scheduled"
+    assert job.attempts == 1
+
+    job.next_attempt_at = datetime.utcnow() - timedelta(seconds=1)
+    db_session.commit()
+    assert claim_job(db_session, job.id, "worker-b", 300)
+    db_session.refresh(job)
+    assert job.status == "running"
+    assert job.attempts == 2
+    assert job.worker_id == "worker-b"
+
 
 def test_retry_releases_worker_and_refuses_exhausted_attempts(
     db_session, job_owner_and_course
@@ -210,6 +324,8 @@ def test_retry_releases_worker_and_refuses_exhausted_attempts(
     assert job.lease_expires_at is None
     assert job.next_attempt_at == retry_at
 
+    job.next_attempt_at = None
+    db_session.commit()
     assert claim_job(db_session, job.id, "worker-b", 300)
     assert not schedule_job_retry(db_session, job.id, "worker-b", retry_at)
 
@@ -262,12 +378,24 @@ def test_cancellation_is_immediate_before_claim_and_cooperative_while_running(
     assert queued.active_key is None
     assert not claim_job(db_session, queued.id, "worker-a", 300)
 
+    retrying = _distributed_job(db_session, user, course)
+    assert claim_job(db_session, retrying.id, "worker-a", 300)
+    retry_at = datetime.utcnow() + timedelta(seconds=30)
+    assert schedule_job_retry(
+        db_session, retrying.id, "worker-a", retry_at
+    )
+    assert cancel_job(db_session, retrying.id)
+    db_session.refresh(retrying)
+    assert retrying.status == "cancelled"
+    assert retrying.next_attempt_at is None
+
     running = _distributed_job(db_session, user, course)
     assert claim_job(db_session, running.id, "worker-a", 300)
     assert cancel_job(db_session, running.id)
     db_session.refresh(running)
     assert running.status == "running"
     assert running.cancel_requested is True
+    assert not renew_job_lease(db_session, running.id, "worker-a", 600)
     retry_at = datetime.utcnow() + timedelta(seconds=30)
     assert not schedule_job_retry(
         db_session, running.id, "worker-a", retry_at
