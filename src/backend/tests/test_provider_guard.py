@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -30,6 +32,7 @@ class FakeRedis:
 
     def __init__(self, clock: FakeClock):
         self.clock = clock
+        self.lock = threading.Lock()
         self.strings: dict[str, str] = {}
         self.zsets: dict[str, dict[str, float]] = {}
         self.expiry: dict[str, float] = {}
@@ -56,13 +59,19 @@ class FakeRedis:
         return deleted
 
     def eval(self, script: str, numkeys: int, *values):
+        with self.lock:
+            return self._eval(script, numkeys, *values)
+
+    def _eval(self, script: str, numkeys: int, *values):
         del numkeys
         self._purge()
         operation = script.splitlines()[0]
         if operation == "-- hackagen-provider-acquire":
-            inflight, rpm, open_until = values[:3]
-            permit_id, now, lease_seconds, max_inflight, rpm_limit, rpm_ttl = values[3:]
-            now = float(now)
+            inflight, rpm_prefix, open_until = values[:3]
+            permit_id, lease_seconds, max_inflight, rpm_limit = values[3:]
+            now = float(self.clock())
+            rpm = f"{rpm_prefix}{int(now // 60)}"
+            rpm_ttl = max(1, 61 - int(now) % 60)
             open_value = float(self.strings.get(open_until, "0"))
             if open_value > now:
                 return [0, "circuit", max(1, int(open_value - now + 0.999))]
@@ -90,8 +99,8 @@ class FakeRedis:
             return removed
         if operation == "-- hackagen-provider-failure":
             failures, open_until = values[:2]
-            member, now, window, threshold, open_seconds = values[2:]
-            now = float(now)
+            member, window, threshold, open_seconds = values[2:]
+            now = float(self.clock())
             recent = self.zsets.setdefault(failures, {})
             for item, occurred_at in list(recent.items()):
                 if occurred_at <= now - int(window):
@@ -100,14 +109,22 @@ class FakeRedis:
             self.expiry[failures] = now + int(window) + 1
             count = len(recent)
             if count >= int(threshold):
-                self.strings[open_until] = str(now + int(open_seconds))
-                self.expiry[open_until] = now + int(open_seconds) + 1
-            return count
+                proposed = now + int(open_seconds)
+                deadline = max(
+                    float(self.strings.get(open_until, "0")), proposed
+                )
+                self.strings[open_until] = str(deadline)
+                self.expiry[open_until] = deadline + 1
+                return [count, max(1, int(deadline - now + 0.999))]
+            return [count, 0]
         if operation == "-- hackagen-provider-open":
-            open_until, now, seconds = values
-            self.strings[open_until] = str(float(now) + int(seconds))
-            self.expiry[open_until] = float(now) + int(seconds) + 1
-            return 1
+            open_until, seconds = values
+            now = float(self.clock())
+            proposed = now + int(seconds)
+            deadline = max(float(self.strings.get(open_until, "0")), proposed)
+            self.strings[open_until] = str(deadline)
+            self.expiry[open_until] = deadline + 1
+            return max(1, int(deadline - now + 0.999))
         raise AssertionError(f"unexpected Lua script: {operation}")
 
 
@@ -234,6 +251,129 @@ def test_429_retry_after_is_capped_at_five_minutes():
     assert caught.value.retry_after == 300
 
 
+@pytest.mark.parametrize("order", ["stronger_first", "shorter_first"])
+@pytest.mark.parametrize("shorter_failure", ["rate_limit", "failure_threshold"])
+def test_circuit_deadline_order_permutations_preserve_strongest_deadline(
+    shorter_failure, order
+):
+    server_clock = FakeClock()
+    guard = ProviderGuard(
+        redis_client=FakeRedis(server_clock),
+        settings_obj=guard_settings(),
+        clock=FakeClock(server_clock() + 10_000),
+    )
+    quota = classify_openrouter_error(
+        FakeStatusError(403, "Key limit exceeded (total limit)")
+    )
+    rate_limit = classify_openrouter_error(FakeStatusError(429, "rate limited"))
+    unavailable = classify_openrouter_error(FakeStatusError(503, "unavailable"))
+    def record_shorter_failure() -> None:
+        if shorter_failure == "rate_limit":
+            guard.record_failure("generation", rate_limit, retry_after=20)
+        else:
+            for _ in range(5):
+                guard.record_failure("generation", unavailable)
+
+    if order == "stronger_first":
+        guard.record_failure("generation", quota)
+        server_clock.advance(10)
+        record_shorter_failure()
+        expected_retry = 290
+    else:
+        record_shorter_failure()
+        server_clock.advance(10)
+        guard.record_failure("generation", quota)
+        expected_retry = 300
+
+    with pytest.raises(ProviderCircuitOpen) as caught:
+        guard.acquire("generation")
+    assert caught.value.retry_after == expected_retry
+
+
+def test_concurrent_circuit_openers_preserve_the_strongest_deadline():
+    server_clock = FakeClock()
+    redis = FakeRedis(server_clock)
+    guard = ProviderGuard(
+        redis_client=redis, settings_obj=guard_settings(), clock=FakeClock(1.0)
+    )
+    quota = classify_openrouter_error(
+        FakeStatusError(403, "Key limit exceeded (total limit)")
+    )
+    rate_limit = classify_openrouter_error(FakeStatusError(429, "rate limited"))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda item: guard.record_failure(
+                    "ocr", item[0], retry_after=item[1]
+                ),
+                ((quota, None), (rate_limit, 20)),
+            )
+        )
+
+    assert max(results) == 300
+    with pytest.raises(ProviderCircuitOpen) as caught:
+        guard.acquire("ocr")
+    assert caught.value.retry_after == 300
+
+
+def test_redis_time_prevents_skewed_workers_from_reaping_live_permits_or_circuit():
+    server_clock = FakeClock()
+    redis = FakeRedis(server_clock)
+    slow = ProviderGuard(
+        redis_client=redis,
+        settings_obj=guard_settings(OPENROUTER_MAX_IN_FLIGHT=1),
+        clock=FakeClock(server_clock() - 3_700),
+    )
+    fast = ProviderGuard(
+        redis_client=redis,
+        settings_obj=guard_settings(OPENROUTER_MAX_IN_FLIGHT=1),
+        clock=FakeClock(server_clock() + 3_700),
+    )
+    quota = classify_openrouter_error(
+        FakeStatusError(403, "Key limit exceeded (total limit)")
+    )
+
+    permit = slow.acquire("embedding")
+    with pytest.raises(ProviderCircuitOpen) as inflight:
+        fast.acquire("embedding")
+    assert inflight.value.reason == "inflight"
+    slow.release(permit)
+
+    slow.record_failure("embedding", quota)
+    with pytest.raises(ProviderCircuitOpen) as circuit:
+        fast.acquire("embedding")
+    assert circuit.value.reason == "circuit"
+    assert circuit.value.retry_after == 300
+
+
+def test_redis_time_keeps_skewed_workers_in_one_rpm_bucket():
+    server_clock = FakeClock(value=1_800_000_010.0)
+    redis = FakeRedis(server_clock)
+    config = guard_settings(OPENROUTER_MAX_IN_FLIGHT=32, OPENROUTER_RPM=2)
+    slow = ProviderGuard(
+        redis_client=redis,
+        settings_obj=config,
+        clock=FakeClock(server_clock() - 120),
+    )
+    fast = ProviderGuard(
+        redis_client=redis,
+        settings_obj=config,
+        clock=FakeClock(server_clock() + 120),
+    )
+    for guard in (slow, fast):
+        permit = guard.acquire("ocr")
+        guard.release(permit)
+
+    with pytest.raises(ProviderCircuitOpen) as caught:
+        fast.acquire("ocr")
+
+    assert caught.value.reason == "rpm"
+    assert caught.value.retry_after == 50
+    rpm_keys = [key for key in redis.strings if ":rpm:" in key]
+    assert rpm_keys == ["hackagen:provider:ocr:rpm:30000000"]
+
+
 def test_success_clears_transient_failure_count():
     clock = FakeClock()
     guard = ProviderGuard(
@@ -309,7 +449,7 @@ def test_loadtest_accepts_non_official_base_url_and_exact_guard_defaults():
     assert configured.OPENROUTER_CIRCUIT_OPEN_SECONDS == 30
 
 
-def test_successful_forced_preflight_clears_stale_circuits(monkeypatch):
+def test_generic_forced_preflight_does_not_clear_stale_circuits(monkeypatch):
     from datetime import UTC, datetime
 
     from app.services import provider_health
@@ -333,6 +473,38 @@ def test_successful_forced_preflight_clears_stale_circuits(monkeypatch):
 
     assert provider_health.get_openrouter_health(force=True).available is True
 
+    guard.reset_after_successful_preflight.assert_not_called()
+
+
+def test_explicit_successful_preflight_reset_intent_clears_stale_circuits(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    from app.services import provider_health
+    from app.services.provider_health import ProviderHealth
+
+    healthy = ProviderHealth(
+        available=True,
+        error_code=None,
+        checked_at=datetime.now(UTC),
+        limit=10,
+        limit_remaining=9,
+        limit_reset=None,
+        content_model_available=True,
+        embedding_model_available=True,
+    )
+    guard = Mock()
+    monkeypatch.setattr(provider_health, "_check_openrouter_health", lambda: healthy)
+    monkeypatch.setattr(provider_health, "get_provider_guard", lambda: guard)
+    monkeypatch.setattr(provider_health, "_cached_health", None)
+    monkeypatch.setattr(provider_health, "_cached_at", 0.0)
+
+    result = provider_health.get_openrouter_health(
+        force=True, reset_circuit=True
+    )
+
+    assert result.available is True
     guard.reset_after_successful_preflight.assert_called_once_with()
 
 

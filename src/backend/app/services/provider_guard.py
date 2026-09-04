@@ -28,14 +28,17 @@ _INFRASTRUCTURE_RETRY_SECONDS = 5
 
 _ACQUIRE_SCRIPT = """-- hackagen-provider-acquire
 local inflight = KEYS[1]
-local rpm = KEYS[2]
+local rpm_prefix = KEYS[2]
 local open_until = KEYS[3]
 local permit_id = ARGV[1]
-local now = tonumber(ARGV[2])
-local lease_seconds = tonumber(ARGV[3])
-local max_inflight = tonumber(ARGV[4])
-local rpm_limit = tonumber(ARGV[5])
-local rpm_ttl = tonumber(ARGV[6])
+local lease_seconds = tonumber(ARGV[2])
+local max_inflight = tonumber(ARGV[3])
+local rpm_limit = tonumber(ARGV[4])
+local redis_time = redis.call('TIME')
+local seconds = tonumber(redis_time[1])
+local now = seconds + tonumber(redis_time[2]) / 1000000
+local rpm = rpm_prefix .. math.floor(seconds / 60)
+local rpm_ttl = math.max(1, 61 - (seconds % 60))
 
 local circuit_deadline = tonumber(redis.call('GET', open_until) or '0')
 if circuit_deadline > now then
@@ -78,25 +81,40 @@ _FAILURE_SCRIPT = """-- hackagen-provider-failure
 local failures = KEYS[1]
 local open_until = KEYS[2]
 local member = ARGV[1]
-local now = tonumber(ARGV[2])
-local window = tonumber(ARGV[3])
-local threshold = tonumber(ARGV[4])
-local open_seconds = tonumber(ARGV[5])
+local window = tonumber(ARGV[2])
+local threshold = tonumber(ARGV[3])
+local open_seconds = tonumber(ARGV[4])
+local redis_time = redis.call('TIME')
+local now = tonumber(redis_time[1]) + tonumber(redis_time[2]) / 1000000
 redis.call('ZREMRANGEBYSCORE', failures, '-inf', now - window)
 redis.call('ZADD', failures, now, member)
 redis.call('EXPIRE', failures, window + 1)
 local count = redis.call('ZCARD', failures)
 if count >= threshold then
-  redis.call('SET', open_until, now + open_seconds, 'EX', open_seconds + 1)
+  local proposed_deadline = now + open_seconds
+  local deadline = math.max(
+    tonumber(redis.call('GET', open_until) or '0'),
+    proposed_deadline
+  )
+  local retry_after = math.max(1, math.ceil(deadline - now))
+  redis.call('SET', open_until, deadline, 'EX', retry_after + 1)
+  return {count, retry_after}
 end
-return count
+return {count, 0}
 """
 
 _OPEN_SCRIPT = """-- hackagen-provider-open
-local now = tonumber(ARGV[1])
-local seconds = tonumber(ARGV[2])
-redis.call('SET', KEYS[1], now + seconds, 'EX', seconds + 1)
-return 1
+local seconds = tonumber(ARGV[1])
+local redis_time = redis.call('TIME')
+local now = tonumber(redis_time[1]) + tonumber(redis_time[2]) / 1000000
+local proposed_deadline = now + seconds
+local deadline = math.max(
+  tonumber(redis.call('GET', KEYS[1]) or '0'),
+  proposed_deadline
+)
+local retry_after = math.max(1, math.ceil(deadline - now))
+redis.call('SET', KEYS[1], deadline, 'EX', retry_after + 1)
+return retry_after
 """
 
 
@@ -204,23 +222,19 @@ class ProviderGuard:
 
     def acquire(self, kind: str) -> ProviderPermit:
         kind = self._validate_kind(kind)
-        now = float(self._clock())
         permit = ProviderPermit(kind=kind, permit_id=uuid.uuid4().hex)
-        minute = int(now // 60)
         if self._redis is not None:
             try:
                 result = self._redis.eval(
                     _ACQUIRE_SCRIPT,
                     3,
                     self._key(kind, "inflight"),
-                    self._key(kind, f"rpm:{minute}"),
+                    self._key(kind, "rpm:"),
                     self._key(kind, "open_until"),
                     permit.permit_id,
-                    now,
                     _PERMIT_TTL_SECONDS,
                     self._settings.OPENROUTER_MAX_IN_FLIGHT,
                     self._settings.OPENROUTER_RPM,
-                    max(1, 61 - int(now) % 60),
                 )
             except Exception as exc:
                 raise self._redis_error("acquire", exc) from exc
@@ -230,6 +244,8 @@ class ProviderGuard:
                 )
             return permit
 
+        now = float(self._clock())
+        minute = int(now // 60)
         with self._lock:
             open_until = self._local_open_until.get(kind, 0.0)
             if open_until > now:
@@ -282,23 +298,26 @@ class ProviderGuard:
         with self._lock:
             self._local_inflight.get(kind, {}).pop(permit.permit_id, None)
 
-    def _open(self, kind: str, seconds: int) -> None:
+    def _open(self, kind: str, seconds: int) -> int:
         seconds = max(1, min(300, int(seconds)))
-        now = float(self._clock())
         if self._redis is not None:
             try:
-                self._redis.eval(
+                retry_after = self._redis.eval(
                     _OPEN_SCRIPT,
                     1,
                     self._key(kind, "open_until"),
-                    now,
                     seconds,
                 )
             except Exception as exc:
                 raise self._redis_error("open", exc) from exc
-            return
+            return int(retry_after)
+        now = float(self._clock())
         with self._lock:
-            self._local_open_until[kind] = now + seconds
+            deadline = max(
+                self._local_open_until.get(kind, 0.0), now + seconds
+            )
+            self._local_open_until[kind] = deadline
+            return max(1, math.ceil(deadline - now))
 
     def record_failure(
         self,
@@ -315,8 +334,7 @@ class ProviderGuard:
             ProviderErrorCode.CREDITS_EXHAUSTED,
             ProviderErrorCode.ACCESS_DENIED,
         }:
-            self._open(kind, _PERMANENT_CIRCUIT_SECONDS)
-            return _PERMANENT_CIRCUIT_SECONDS
+            return self._open(kind, _PERMANENT_CIRCUIT_SECONDS)
         if code == ProviderErrorCode.RATE_LIMITED:
             requested = retry_after
             if requested is None:
@@ -328,30 +346,28 @@ class ProviderGuard:
                     int(requested or self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS),
                 ),
             )
-            self._open(kind, seconds)
-            return seconds
+            return self._open(kind, seconds)
         if code not in {ProviderErrorCode.UNAVAILABLE, ProviderErrorCode.TIMEOUT}:
             return None
 
-        now = float(self._clock())
         if self._redis is not None:
             try:
-                count = self._redis.eval(
+                result = self._redis.eval(
                     _FAILURE_SCRIPT,
                     2,
                     self._key(kind, "failures"),
                     self._key(kind, "open_until"),
                     uuid.uuid4().hex,
-                    now,
                     self._settings.OPENROUTER_CIRCUIT_WINDOW_SECONDS,
                     self._settings.OPENROUTER_CIRCUIT_FAILURES,
                     self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS,
                 )
             except Exception as exc:
                 raise self._redis_error("record failure", exc) from exc
-            if int(count) >= self._settings.OPENROUTER_CIRCUIT_FAILURES:
-                return self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS
+            if int(result[0]) >= self._settings.OPENROUTER_CIRCUIT_FAILURES:
+                return int(result[1])
             return None
+        now = float(self._clock())
         with self._lock:
             cutoff = now - self._settings.OPENROUTER_CIRCUIT_WINDOW_SECONDS
             failures = [
@@ -362,10 +378,12 @@ class ProviderGuard:
             failures.append(now)
             self._local_failures[kind] = failures
             if len(failures) >= self._settings.OPENROUTER_CIRCUIT_FAILURES:
-                self._local_open_until[kind] = (
-                    now + self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS
+                deadline = max(
+                    self._local_open_until.get(kind, 0.0),
+                    now + self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS,
                 )
-                return self._settings.OPENROUTER_CIRCUIT_OPEN_SECONDS
+                self._local_open_until[kind] = deadline
+                return max(1, math.ceil(deadline - now))
         return None
 
     def record_success(self, kind: str) -> None:

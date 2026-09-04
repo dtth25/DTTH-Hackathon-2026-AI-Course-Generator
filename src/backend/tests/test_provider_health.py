@@ -1,6 +1,7 @@
 """Tests for the cached, redacted OpenRouter provider preflight."""
 
 from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -232,7 +233,8 @@ def test_provider_health_endpoint_is_admin_only_and_serializes_only_safe_fields(
         content_model_available=True,
         embedding_model_available=True,
     )
-    monkeypatch.setattr("app.routers.admin.get_openrouter_health", lambda force=False: safe_health)
+    health_lookup = Mock(return_value=safe_health)
+    monkeypatch.setattr("app.routers.admin.get_openrouter_health", health_lookup)
     admin_token = _create_user_token("provider-admin@example.com", "admin")
 
     response = client.get(
@@ -240,6 +242,7 @@ def test_provider_health_endpoint_is_admin_only_and_serializes_only_safe_fields(
     )
 
     assert response.status_code == 200
+    health_lookup.assert_called_once_with(force=True, reset_circuit=True)
     body = response.json()
     assert set(body) == {
         "available",

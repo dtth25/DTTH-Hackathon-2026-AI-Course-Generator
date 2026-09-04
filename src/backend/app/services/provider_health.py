@@ -156,8 +156,10 @@ def _check_openrouter_health() -> ProviderHealth:
         return _unavailable_health(str(classify_openrouter_error(exc).code))
 
 
-def get_openrouter_health(force: bool = False) -> ProviderHealth:
-    """Return cached preflight state until the configured monotonic TTL expires."""
+def get_openrouter_health(
+    force: bool = False, *, reset_circuit: bool = False
+) -> ProviderHealth:
+    """Return cached state; reset circuits only on explicit admin-boundary intent."""
     global _cached_at, _cached_health
 
     with _cache_lock:
@@ -170,7 +172,7 @@ def get_openrouter_health(force: bool = False) -> ProviderHealth:
             return _cached_health
 
         _cached_health = _check_openrouter_health()
-        if force and _cached_health.available:
+        if reset_circuit and _cached_health.available:
             try:
                 get_provider_guard().reset_after_successful_preflight()
             except ProviderGuardUnavailable:

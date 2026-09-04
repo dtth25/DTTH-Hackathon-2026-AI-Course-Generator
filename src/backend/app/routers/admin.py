@@ -27,4 +27,7 @@ def provider_health(
     _: User = Depends(require_admin),
 ) -> dict:
     """Expose only cached, redacted provider capacity state to administrators."""
-    return get_openrouter_health(force=force).model_dump()
+    return get_openrouter_health(
+        force=force,
+        reset_circuit=force,
+    ).model_dump()
