@@ -14,11 +14,23 @@ from app.services.provider_guard import (
     retry_after_seconds,
 )
 from app.services.vector_client import (
+    ChromaConnectionError,
     build_chroma_client,
     chroma_client_ready,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _close_chroma_client(client: Any) -> None:
+    """Close an owned Chroma client without masking the active failure."""
+    close = getattr(client, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception as exc:
+        logger.warning("Failed to close Chroma client: %s", type(exc).__name__)
 
 
 class Document(BaseModel):
@@ -135,11 +147,29 @@ class VectorStore:
         self.persist_directory = persist_directory
 
         self.client = build_chroma_client(persist_directory=persist_directory)
-        ef = embedding_function if embedding_function is not None else _build_embedding_function()
-        if ef is not None:
-            self.collection = self.client.get_or_create_collection(name=self.collection_name, embedding_function=ef)
-        else:
-            self.collection = self.client.get_or_create_collection(name=self.collection_name)
+        try:
+            ef = embedding_function if embedding_function is not None else _build_embedding_function()
+            if ef is not None:
+                self.collection = self.client.get_or_create_collection(
+                    name=self.collection_name, embedding_function=ef
+                )
+            else:
+                self.collection = self.client.get_or_create_collection(
+                    name=self.collection_name
+                )
+        except Exception as exc:
+            _close_chroma_client(self.client)
+            if settings.CHROMA_MODE == "http":
+                if isinstance(exc, ChromaConnectionError):
+                    raise
+                raise ChromaConnectionError(
+                    "Chroma HTTP service is unavailable"
+                ) from exc
+            raise
+
+    def close(self) -> None:
+        """Release resources owned by this store's Chroma client."""
+        _close_chroma_client(self.client)
 
     def is_ready(self) -> bool:
         """Check that the configured Chroma backend is responding now."""
@@ -342,3 +372,12 @@ def get_vector_store() -> VectorStore:
             persist_directory=settings.CHROMA_PERSIST_DIR,
         )
     return _vector_store_instance
+
+
+def close_vector_store() -> None:
+    """Close and clear the process-wide VectorStore singleton."""
+    global _vector_store_instance
+    store = _vector_store_instance
+    _vector_store_instance = None
+    if store is not None:
+        store.close()

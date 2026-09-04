@@ -14,7 +14,7 @@ from app.services.admin_seed import seed_default_admin
 from app.services.database import SessionLocal
 from app.services.inline_job_recovery import reconcile_interrupted_inline_preprocess_jobs
 from app.services.job_dispatch_recovery import reconcile_undispatched_jobs
-from app.services.vector_store import get_vector_store
+from app.services.vector_store import close_vector_store, get_vector_store
 
 START_TIME = time.time()
 
@@ -24,7 +24,10 @@ async def lifespan(app: FastAPI):
     seed_default_admin()
     reconcile_interrupted_inline_preprocess_jobs()
     reconcile_undispatched_jobs()
-    yield
+    try:
+        yield
+    finally:
+        close_vector_store()
 
 
 app = FastAPI(

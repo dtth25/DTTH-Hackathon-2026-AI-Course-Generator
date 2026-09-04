@@ -1,5 +1,6 @@
 """Chroma embedded/server client selection and readiness contracts."""
 
+import asyncio
 import socket
 import threading
 import time
@@ -571,3 +572,70 @@ def test_health_endpoint_reports_http_heartbeat_failure(client, monkeypatch):
     assert response.json()["vector_db_ready"] is False
     assert response.json()["details"]["vector_db"] is False
     unavailable_store.is_ready.assert_called_once_with()
+
+
+def test_repeated_http_collection_init_failures_close_each_client_without_fallback(
+    monkeypatch, tmp_path
+):
+    failures = [
+        TimeoutError("collection request timed out"),
+        ConnectionError("collection endpoint unavailable"),
+        ValueError("invalid collection response"),
+    ]
+    clients = []
+    for failure in failures:
+        client = Mock()
+        client.get_or_create_collection.side_effect = failure
+        clients.append(client)
+
+    build_client = Mock(side_effect=clients)
+    persistent_client = Mock()
+    monkeypatch.setattr(vector_store, "build_chroma_client", build_client)
+    monkeypatch.setattr(vector_client.chromadb, "PersistentClient", persistent_client)
+    monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
+
+    for failure in failures:
+        with pytest.raises(vector_client.ChromaConnectionError) as exc_info:
+            vector_store.VectorStore(
+                collection_name="ai_course_chunks",
+                persist_directory=str(tmp_path / "must-not-exist"),
+                embedding_function=Mock(),
+            )
+
+        assert str(exc_info.value) == "Chroma HTTP service is unavailable"
+        assert exc_info.value.__cause__ is failure
+
+    assert build_client.call_count == 3
+    for client in clients:
+        client.close.assert_called_once_with()
+    persistent_client.assert_not_called()
+    assert not (tmp_path / "must-not-exist").exists()
+
+
+def test_close_vector_store_closes_and_clears_singleton(monkeypatch):
+    store = Mock()
+    monkeypatch.setattr(vector_store, "_vector_store_instance", store)
+
+    vector_store.close_vector_store()
+    vector_store.close_vector_store()
+
+    store.close.assert_called_once_with()
+    assert vector_store._vector_store_instance is None
+
+
+def test_application_lifespan_closes_vector_store_on_shutdown(monkeypatch):
+    import main
+
+    close_vector_store = Mock()
+    monkeypatch.setattr(main, "seed_default_admin", Mock())
+    monkeypatch.setattr(main, "reconcile_interrupted_inline_preprocess_jobs", Mock())
+    monkeypatch.setattr(main, "reconcile_undispatched_jobs", Mock())
+    monkeypatch.setattr(main, "close_vector_store", close_vector_store, raising=False)
+
+    async def exercise_lifespan():
+        async with main.lifespan(main.app):
+            close_vector_store.assert_not_called()
+
+    asyncio.run(exercise_lifespan())
+
+    close_vector_store.assert_called_once_with()
