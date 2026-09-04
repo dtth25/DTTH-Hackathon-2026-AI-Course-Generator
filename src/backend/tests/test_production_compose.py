@@ -158,21 +158,55 @@ def test_production_topology_is_private_and_queue_isolated(production_config):
         name for name, service in services.items() if service.get("ports")
     } == {"frontend"}
 
-    expected_queues = {
-        "worker-ingestion": ("ingestion", "2"),
-        "worker-generation": ("generation", "4"),
-        "worker-video": ("video", "1"),
+    expected_worker_commands = {
+        "worker-ingestion": [
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "celery",
+            "-A",
+            "app.jobs.celery_app:celery_app",
+            "worker",
+            "-Q",
+            "ingestion",
+            "-c",
+            "2",
+            "--loglevel=INFO",
+        ],
+        "worker-generation": [
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "celery",
+            "-A",
+            "app.jobs.celery_app:celery_app",
+            "worker",
+            "-Q",
+            "generation",
+            "-c",
+            "4",
+            "--loglevel=INFO",
+        ],
+        "worker-video": [
+            "uv",
+            "run",
+            "--project",
+            ".",
+            "celery",
+            "-A",
+            "app.jobs.celery_app:celery_app",
+            "worker",
+            "-Q",
+            "video",
+            "-c",
+            "1",
+            "--loglevel=INFO",
+        ],
     }
-    for service_name, (expected_queue, expected_concurrency) in expected_queues.items():
-        command = services[service_name]["command"]
-        queue_flags = [command[index + 1] for index, value in enumerate(command) if value == "-Q"]
-        assert queue_flags == [expected_queue]
-        concurrency_flags = [
-            command[index + 1]
-            for index, value in enumerate(command)
-            if value == "-c"
-        ]
-        assert concurrency_flags == [expected_concurrency]
+    for service_name, expected_command in expected_worker_commands.items():
+        assert services[service_name]["command"] == expected_command
 
     assert services["backend"]["command"] == [
         "sh",
@@ -197,6 +231,20 @@ def test_production_selects_distributed_postgres_redis_and_http_chroma(productio
         assert environment["CHROMA_MODE"] == "http"
         assert environment["CHROMA_HOST"] == "chroma"
         assert environment["OPENROUTER_BASE_URL"] == "https://openrouter.ai/api/v1"
+
+
+def test_external_chroma_host_override_cannot_change_production_config():
+    config = _compose_config(
+        "docker-compose.yml",
+        "docker-compose.production.yml",
+        environment=_compose_environment(
+            PRODUCTION_CHROMA_HOST="external-chroma.invalid",
+            CHROMA_HOST="external-chroma.invalid",
+        ),
+    )
+
+    for service_name in BACKEND_RUNTIMES:
+        assert config["services"][service_name]["environment"]["CHROMA_HOST"] == "chroma"
 
 
 def test_durable_services_are_pinned_health_checked_and_not_published(production_config):

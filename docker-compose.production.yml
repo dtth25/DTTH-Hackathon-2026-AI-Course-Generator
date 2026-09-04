@@ -18,7 +18,7 @@ x-backend-runtime: &backend-runtime
     INLINE_PROCESSING_RECOVERY_ENABLED: "false"
     REDIS_URL: redis://redis:6379/0
     CHROMA_MODE: http
-    CHROMA_HOST: ${PRODUCTION_CHROMA_HOST:-chroma}
+    CHROMA_HOST: chroma
     CHROMA_PORT: "8000"
     CHROMA_SSL: "false"
     UPLOAD_DIR: /app/backend/uploads
