@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import List, Literal, Union
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 logger = logging.getLogger("api")
 logging.basicConfig(
@@ -138,6 +140,10 @@ class Settings(BaseSettings):
     )
     JOB_QUEUE_PROVIDER: str = Field(default="inline", pattern="^(inline|celery)$")
     REDIS_URL: str = Field(default="redis://localhost:6379/0")
+    DB_POOL_SIZE: int = Field(default=10, ge=2, le=50)
+    DB_MAX_OVERFLOW: int = Field(default=20, ge=0, le=100)
+    DB_POOL_TIMEOUT_SECONDS: int = Field(default=30, ge=5, le=120)
+    DB_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=300, le=7200)
     MAX_PENDING_JOBS_PER_USER: int = Field(default=4, ge=1, le=20)
     MAX_PENDING_JOBS_GLOBAL: int = Field(default=200, ge=10, le=2000)
     JOB_LEASE_SECONDS: int = Field(default=3600, ge=60, le=7200)
@@ -233,6 +239,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 "A non-official OPENROUTER_BASE_URL is allowed only in loadtest"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_database(self) -> "Settings":
+        if self.ENVIRONMENT == "production":
+            try:
+                database_backend = make_url(self.DATABASE_URL).get_backend_name()
+            except ArgumentError as exc:
+                raise ValueError(
+                    "ENVIRONMENT=production requires a valid PostgreSQL DATABASE_URL"
+                ) from exc
+            if database_backend != "postgresql":
+                raise ValueError(
+                    "ENVIRONMENT=production requires a PostgreSQL DATABASE_URL"
+                )
         return self
 
 

@@ -28,7 +28,8 @@ def upgrade() -> None:
         batch_op.alter_column('filenames',
                existing_type=sa.TEXT(),
                type_=sa.JSON(),
-               existing_nullable=True)
+               existing_nullable=True,
+               postgresql_using='filenames::json')
         batch_op.create_index(batch_op.f('ix_courses_is_deleted'), ['is_deleted'], unique=False)
 
     # ### end Alembic commands ###
@@ -42,7 +43,8 @@ def downgrade() -> None:
         batch_op.alter_column('filenames',
                existing_type=sa.JSON(),
                type_=sa.TEXT(),
-               existing_nullable=True)
+               existing_nullable=True,
+               postgresql_using='filenames::text')
         batch_op.drop_column('is_deleted')
         batch_op.drop_column('progress')
         batch_op.drop_column('stage')
