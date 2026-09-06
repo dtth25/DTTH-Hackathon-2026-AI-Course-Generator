@@ -14,12 +14,12 @@ class _FakeStatusError(Exception):
 
 
 class _FakeCompletion:
-    def __init__(self, content):
+    def __init__(self, content, finish_reason=None):
         self.choices = [
             type(
                 "Choice",
                 (),
-                {"message": type("Message", (), {"content": content})()},
+                {"message": type("Message", (), {"content": content})(), "finish_reason": finish_reason},
             )()
         ]
 
@@ -34,7 +34,7 @@ class _FakeCompletions:
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
-        return _FakeCompletion(response)
+        return _FakeCompletion(*response) if isinstance(response, tuple) else _FakeCompletion(response)
 
 
 def _llm_with_fake_client(responses, model=None):
@@ -171,6 +171,17 @@ def test_ocr_empty_success_is_genuine_no_text_without_retry():
     llm, completions = _llm_with_fake_client([None, None])
 
     assert llm.ocr_page_image(b"fake-png") == ""
+    assert len(completions.calls) == 1
+
+
+def test_ocr_finish_reason_length_returns_retained_incomplete_result():
+    llm, completions = _llm_with_fake_client([("partial OCR", "length")])
+
+    result = llm.ocr_page_image(b"fake-png")
+
+    assert result.text == "partial OCR"
+    assert result.finish_reason == "length"
+    assert result.complete is False
     assert len(completions.calls) == 1
 
 

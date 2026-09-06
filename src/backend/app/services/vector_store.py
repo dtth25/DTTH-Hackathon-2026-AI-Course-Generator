@@ -1,10 +1,16 @@
 """Vector Store service wrapper around ChromaDB."""
 
 import logging
-import os
+import math
 import time
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from app.services.embedding_cache import EmbeddingCache, embedding_key
+from app.services.provider_usage import (
+    BudgetLimitError,
+    dispatch_provider,
+    mark_response_outcome,
+)
 from app.core.config import settings
 from app.services.provider_errors import ProviderRequestError, classify_openrouter_error
 from app.services.provider_guard import (
@@ -39,10 +45,25 @@ class Document(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class OpenRouterEmbeddingFunction:
-    """Chroma embedding function backed by OpenRouter."""
+class CollectionIdentityError(RuntimeError):
+    """The existing vector collection cannot prove its embedding identity."""
 
-    def __init__(self, api_key: str, model: str, max_retries: int = 3, max_retry_delay: float = 60):
+
+class OpenRouterEmbeddingFunction:
+    """Explicit cached OpenRouter embedding service used outside Chroma."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        dimensions: int = 1536,
+        normalization_version: str = "exact-v1",
+        cache_directory: str | None = None,
+        batch_size: int = 32,
+        batch_delay: float = 0,
+        max_retries: int = 2,
+        max_retry_delay: float = 60,
+    ):
         from openai import OpenAI
 
         self._client = OpenAI(
@@ -51,7 +72,12 @@ class OpenRouterEmbeddingFunction:
             max_retries=0,
         )
         self._model = model
-        self._max_retries = max(1, max_retries)
+        self._dimensions = dimensions
+        self._normalization_version = normalization_version
+        self._cache = EmbeddingCache(cache_directory or settings.EMBEDDING_CACHE_DIR)
+        self._batch_size = max(1, int(batch_size))
+        self._batch_delay = max(0.0, batch_delay)
+        self._max_retries = max(1, int(max_retries))
         self._max_retry_delay = max(0.0, max_retry_delay)
         self._provider_guard = get_provider_guard()
 
@@ -59,12 +85,57 @@ class OpenRouterEmbeddingFunction:
         return "openrouter"
 
     def __call__(self, input: List[str]) -> List[List[float]]:
-        return self._embed(list(input))
+        return self.embed_texts(
+            list(input),
+            model=self._model,
+            dimensions=self._dimensions,
+            cache_scope="chroma-callback-forbidden",
+        )
 
     def embed_query(self, input: List[str]) -> List[List[float]]:
-        return self._embed(list(input))
+        return self.__call__(input)
 
-    def _embed(self, texts: List[str]) -> List[List[float]]:
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
+
+    @property
+    def normalization_version(self) -> str:
+        return self._normalization_version
+
+    @staticmethod
+    def _response_item(item: Any, name: str) -> Any:
+        return item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+
+    def _validate_response(self, response: Any, count: int, dimensions: int) -> list[list[float]]:
+        data = getattr(response, "data", None)
+        if not isinstance(data, (list, tuple)) or len(data) != count:
+            raise ValueError("Provider embedding response count did not match input")
+        by_index: dict[int, list[float]] = {}
+        for item in data:
+            index = self._response_item(item, "index")
+            vector = self._response_item(item, "embedding")
+            if isinstance(index, bool) or not isinstance(index, int) or index in by_index:
+                raise ValueError("Provider embedding response contained invalid or duplicate indices")
+            if not isinstance(vector, (list, tuple)) or len(vector) != dimensions:
+                raise ValueError("Provider embedding response dimension did not match request")
+            clean: list[float] = []
+            for value in vector:
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError("Provider embedding response contained a non-finite numeric value")
+                clean.append(float(value))
+            by_index[index] = clean
+        if set(by_index) != set(range(count)):
+            raise ValueError("Provider embedding response indices did not exactly cover the request")
+        return [by_index[index] for index in range(count)]
+
+    def _embed(self, texts: List[str], *, model: str | None = None, dimensions: int | None = None) -> List[List[float]]:
+        requested_model = model or self._model
+        requested_dimensions = dimensions or getattr(self, "_dimensions", settings.EMBEDDING_DIMENSIONS)
         delay = 1.0
         last_failure = None
         for attempt in range(1, self._max_retries + 1):
@@ -73,16 +144,25 @@ class OpenRouterEmbeddingFunction:
                 guard = ProviderGuard(settings_obj=settings)
             permit = guard.acquire("embedding")
             try:
-                response = self._client.embeddings.create(model=self._model, input=texts)
-                embeddings = [item.embedding for item in response.data]
-                if len(embeddings) != len(texts):
-                    raise ValueError("Provider embedding response length did not match input")
+                response = dispatch_provider(
+                    self._client.embeddings.create,
+                    model=requested_model,
+                    request={"input": texts, "dimensions": requested_dimensions},
+                    feature="embedding",
+                    attempt=attempt,
+                )
+                try:
+                    embeddings = self._validate_response(response, len(texts), requested_dimensions)
+                except Exception:
+                    mark_response_outcome("schema_invalid")
+                    raise
+                mark_response_outcome("valid")
                 guard.record_success("embedding")
                 return embeddings
-            except ProviderCircuitOpen:
+            except (ProviderCircuitOpen, BudgetLimitError):
                 raise
             except Exception as exc:
-                failure = classify_openrouter_error(exc)
+                failure = exc.failure if isinstance(exc, ProviderRequestError) else classify_openrouter_error(exc)
                 last_failure = failure
                 opened_for = guard.record_failure(
                     "embedding",
@@ -114,24 +194,70 @@ class OpenRouterEmbeddingFunction:
                 guard.release(permit)
         raise ProviderRequestError(last_failure)
 
+    def embed_texts(
+        self,
+        texts: list[str],
+        *,
+        model: str,
+        dimensions: int,
+        cache_scope: str,
+    ) -> list[list[float]]:
+        """Resolve cache hits and checkpoint fully validated provider batches."""
+        if not texts:
+            return []
+        if not model.strip() or dimensions <= 0 or not cache_scope:
+            raise ValueError("Embedding model, dimensions, and cache scope are required")
+        normalization_version = self._normalization_version
+        keys = [embedding_key(text, model, dimensions, normalization_version) for text in texts]
+        results: list[list[float] | None] = [None] * len(texts)
+        missing: dict[str, tuple[str, list[int]]] = {}
+        for position, (text, key) in enumerate(zip(texts, keys)):
+            cached = self._cache.get(cache_scope, key, dimensions)
+            if cached is not None:
+                results[position] = cached
+                continue
+            if key in missing:
+                missing[key][1].append(position)
+            else:
+                missing[key] = (text, [position])
 
-def _build_embedding_function() -> Optional[OpenRouterEmbeddingFunction]:
-    """Build the OpenRouter embedding function, or use Chroma's test-only default."""
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return None
+        misses = list(missing.items())
+        for offset in range(0, len(misses), self._batch_size):
+            batch = misses[offset : offset + self._batch_size]
+            vectors = self._embed(
+                [entry[1][0] for entry in batch],
+                model=model,
+                dimensions=dimensions,
+            )
+            for (key, (_, positions)), vector in zip(batch, vectors):
+                self._cache.put(cache_scope, key, vector, dimensions)
+                for position in positions:
+                    results[position] = vector
+            if self._batch_delay and offset + self._batch_size < len(misses):
+                time.sleep(self._batch_delay)
+        if any(vector is None for vector in results):
+            raise RuntimeError("Embedding pipeline did not resolve every input")
+        return [vector for vector in results if vector is not None]
+
+
+def _build_embedding_function() -> OpenRouterEmbeddingFunction:
+    """Build the configured OpenRouter service or fail before Chroma can embed."""
     api_key = getattr(settings, "OPENROUTER_API_KEY", "")
     if not api_key:
-        return None
-    try:
-        return OpenRouterEmbeddingFunction(
-            api_key=api_key,
-            model=settings.OPENROUTER_EMBEDDING_MODEL,
-            max_retries=settings.EMBEDDING_MAX_RETRIES,
-            max_retry_delay=settings.EMBEDDING_MAX_RETRY_DELAY,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to initialize OpenRouter embedding function: {e}")
-        return None
+        raise ValueError("OPENROUTER_API_KEY is required for explicit embeddings")
+    if not settings.OPENROUTER_EMBEDDING_MODEL:
+        raise ValueError("OPENROUTER_EMBEDDING_MODEL is required for explicit embeddings")
+    return OpenRouterEmbeddingFunction(
+        api_key=api_key,
+        model=settings.OPENROUTER_EMBEDDING_MODEL,
+        dimensions=settings.EMBEDDING_DIMENSIONS,
+        normalization_version=settings.EMBEDDING_NORMALIZATION_VERSION,
+        cache_directory=settings.EMBEDDING_CACHE_DIR,
+        batch_size=settings.EMBEDDING_BATCH_SIZE,
+        batch_delay=settings.EMBEDDING_BATCH_DELAY,
+        max_retries=settings.EMBEDDING_MAX_RETRIES,
+        max_retry_delay=settings.EMBEDDING_MAX_RETRY_DELAY,
+    )
 
 
 class VectorStore:
@@ -141,31 +267,87 @@ class VectorStore:
     legacy source while old courses are re-embedded lazily.
     """
 
-    def __init__(self, collection_name: str, persist_directory: str, embedding_function: Optional[Any] = None):
+    def __init__(
+        self,
+        collection_name: str,
+        persist_directory: str,
+        embedding_function: Optional[Any] = None,
+        *,
+        embedding_service: Optional[Any] = None,
+        embedding_model: str | None = None,
+        embedding_dimensions: int | None = None,
+        normalization_version: str | None = None,
+        distance_metric: str = "cosine",
+    ):
         self.legacy_collection_name = collection_name
         self.collection_name = f"{collection_name}_openrouter"
         self.persist_directory = persist_directory
 
+        service = embedding_service or embedding_function or _build_embedding_function()
+        self._embedding_service = service
+        service_model = getattr(service, "model", None)
+        service_dimensions = getattr(service, "dimensions", None)
+        service_version = getattr(service, "normalization_version", None)
+        self.embedding_model = embedding_model if embedding_model is not None else (
+            service_model if isinstance(service_model, str) else settings.OPENROUTER_EMBEDDING_MODEL
+        )
+        self.embedding_dimensions = embedding_dimensions if embedding_dimensions is not None else (
+            service_dimensions
+            if isinstance(service_dimensions, int) and not isinstance(service_dimensions, bool)
+            else settings.EMBEDDING_DIMENSIONS
+        )
+        self.normalization_version = normalization_version if normalization_version is not None else (
+            service_version if isinstance(service_version, str) else settings.EMBEDDING_NORMALIZATION_VERSION
+        )
+        if (
+            not self.embedding_model.strip()
+            or self.embedding_dimensions <= 0
+            or not self.normalization_version.strip()
+        ):
+            raise ValueError("Complete explicit embedding identity is required")
+        if distance_metric not in {"cosine", "l2", "ip"}:
+            raise ValueError("Unsupported Chroma distance metric")
+        self.distance_metric = distance_metric
+        self.collection_identity = {
+            "embedding_provider": "openrouter",
+            "embedding_model": self.embedding_model,
+            "embedding_dimensions": self.embedding_dimensions,
+            "embedding_normalization_version": self.normalization_version,
+            "distance_metric": self.distance_metric,
+            "hnsw:space": self.distance_metric,
+        }
+
         self.client = build_chroma_client(persist_directory=persist_directory)
         try:
-            ef = embedding_function if embedding_function is not None else _build_embedding_function()
-            if ef is not None:
-                self.collection = self.client.get_or_create_collection(
-                    name=self.collection_name, embedding_function=ef
-                )
-            else:
-                self.collection = self.client.get_or_create_collection(
-                    name=self.collection_name
-                )
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                embedding_function=None,
+                metadata=self.collection_identity,
+            )
+            self._verify_collection_identity()
         except Exception as exc:
             _close_chroma_client(self.client)
-            if settings.CHROMA_MODE == "http":
+            if settings.CHROMA_MODE == "http" and not isinstance(exc, CollectionIdentityError):
                 if isinstance(exc, ChromaConnectionError):
                     raise
                 raise ChromaConnectionError(
                     "Chroma HTTP service is unavailable"
                 ) from exc
             raise
+
+    def _verify_collection_identity(self) -> None:
+        metadata = getattr(self.collection, "metadata", None) or {}
+        mismatches = {
+            key: (metadata.get(key), expected)
+            for key, expected in self.collection_identity.items()
+            if metadata.get(key) != expected
+        }
+        if not mismatches:
+            return
+        raise CollectionIdentityError(
+            f"Collection {self.collection_name!r} has missing or mismatched embedding identity; "
+            "preserve it and perform an explicit new-index migration"
+        )
 
     def close(self) -> None:
         """Release resources owned by this store's Chroma client."""
@@ -215,7 +397,13 @@ class VectorStore:
         self._collection_for(provider).upsert(
             ids=ids,
             documents=contents,
-            metadatas=metadatas
+            metadatas=metadatas,
+            embeddings=self._embedding_service.embed_texts(
+                contents,
+                model=self.embedding_model,
+                dimensions=self.embedding_dimensions,
+                cache_scope=str(course_id),
+            ),
         )
         logger.info(
             f"Added {len(documents)} chunks for course {course_id} to collection "
@@ -244,7 +432,12 @@ class VectorStore:
             return []
 
         results = collection.query(
-            query_texts=[query],
+            query_embeddings=self._embedding_service.embed_texts(
+                [query],
+                model=self.embedding_model,
+                dimensions=self.embedding_dimensions,
+                cache_scope=str(course_id),
+            ),
             n_results=n_results,
             where={"course_id": str(course_id)}
         )
@@ -320,11 +513,31 @@ class VectorStore:
             }
 
     def get_course_chunks(
-        self, course_id: str, chunk_ids: Optional[List[str]] = None, provider: str = "openrouter"
+        self,
+        course_id: str,
+        chunk_ids: Optional[List[str]] = None,
+        provider: str = "openrouter",
+        *,
+        source_file: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
     ) -> List[Document]:
         """Get all stored chunks for a course, optionally filtered by chunk_ids."""
         try:
-            res = self._collection_for(provider).get(where={"course_id": str(course_id)})
+            where: Dict[str, Any] = {"course_id": str(course_id)}
+            if source_file is not None:
+                where = {
+                    "$and": [
+                        {"course_id": str(course_id)},
+                        {"source_file": str(source_file)},
+                    ]
+                }
+            get_kwargs: Dict[str, Any] = {"where": where}
+            if limit is not None:
+                get_kwargs["limit"] = max(0, int(limit))
+            if offset is not None:
+                get_kwargs["offset"] = max(0, int(offset))
+            res = self._collection_for(provider).get(**get_kwargs)
             documents = []
             if res and "ids" in res and res["ids"]:
                 ids_list = res["ids"]

@@ -236,6 +236,7 @@ export function QuizTab({ courseId, documentProcessing = false }: QuizTabProps) 
     <JobProgress
       key={activeJob.jobId}
       jobId={activeJob.jobId}
+      onUpdate={(job) => setProgress(job.progress)}
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {

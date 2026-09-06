@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiRequestError } from "@/lib/api";
 import type { ArtifactVersion } from "@/lib/types";
 import { normalizePublicError } from "@/lib/types";
 
@@ -9,6 +10,10 @@ import { normalizePublicError } from "@/lib/types";
  * course/[id]/page.tsx, which poll a plain status field rather than an artifact-generation
  * state machine and so don't fit this hook's shape). */
 export const DEFAULT_POLL_MS = 3000;
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+}
 
 /** Common shape of the 4 artifact status responses (Book/Slide/Quiz/Vid). */
 export interface ArtifactStatusLike<T> {
@@ -20,6 +25,8 @@ export interface ArtifactStatusLike<T> {
   version_id?: string | null;
   active_version?: string | null;
   versions?: ArtifactVersion[];
+  job_id?: string | null;
+  active_job?: { job_id: string; version_id?: string | null } | null;
 }
 
 export interface ActiveArtifactJob {
@@ -29,7 +36,7 @@ export interface ActiveArtifactJob {
 
 interface UsePollingArtifactOptions<T> {
   courseId: string;
-  fetchFn: (courseId: string, version?: string | null) => Promise<ArtifactStatusLike<T>>;
+  fetchFn: (courseId: string, version?: string | null, init?: RequestInit) => Promise<ArtifactStatusLike<T>>;
   /** True once `data` actually has renderable content (e.g. chapters.length > 0) — a
    * "ready" status with an empty payload is treated as not-ready-yet. */
   isReady: (data: T) => boolean;
@@ -67,11 +74,20 @@ export function usePollingArtifact<T>({
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
   const [viewedVersion, setViewedVersion] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<ActiveArtifactJob | null>(null);
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingVersionRef = useRef<string | null>(null);
   const viewedVersionRef = useRef<string | null>(null);
   const jobRetryVersionRef = useRef<string | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const requestGenerationRef = useRef(0);
+  const immediatePollRef = useRef<(() => Promise<void>) | null>(null);
+  const discoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const pollEpochRef = useRef(0);
+  const pollInFlightRef = useRef(false);
+  const pollStoppedRef = useRef(false);
 
   // Keep the latest callbacks in refs so `startPolling`'s recursive closure always calls
   // the current version without needing to be recreated (and without going in the
@@ -87,9 +103,27 @@ export function usePollingArtifact<T>({
     viewedVersionRef.current = viewedVersion;
   });
 
+  const fetchStatus = useCallback(async (version: string | null | undefined, generation: number) => {
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
+    const deadline = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetchFnRef.current(courseId, version, { signal: controller.signal });
+      if (generation !== requestGenerationRef.current) throw new DOMException("Stale request", "AbortError");
+      return response;
+    } finally {
+      clearTimeout(deadline);
+      if (requestAbortRef.current === controller) requestAbortRef.current = null;
+    }
+  }, [courseId]);
+
   const startPolling = useCallback(
-    (startedAt: number, versionId?: string | null) => {
+    (startedAt: number, versionId?: string | null, immediate = false) => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
+      const epoch = ++pollEpochRef.current;
+      pollAbortRef.current?.abort();
+      pollInFlightRef.current = false;
+      pollStoppedRef.current = false;
       pollingVersionRef.current = versionId ?? viewedVersion;
       if (pollingVersionRef.current) {
         const invalidated = pollingVersionRef.current;
@@ -100,9 +134,16 @@ export function usePollingArtifact<T>({
         });
       }
       const poll = async () => {
+        if (pollStoppedRef.current || pollInFlightRef.current || pollEpochRef.current !== epoch) return;
         const pollingVersion = pollingVersionRef.current;
+        pollInFlightRef.current = true;
+        const controller = new AbortController();
+        pollAbortRef.current = controller;
+        const deadline = setTimeout(() => controller.abort(), 10_000);
+        let transientFailure = false;
         try {
-          const res = await fetchFnRef.current(courseId, pollingVersion);
+          const res = await fetchFnRef.current(courseId, pollingVersion, { signal: controller.signal });
+          if (pollEpochRef.current !== epoch || pollStoppedRef.current) return;
           if (res.versions) setVersions(res.versions);
           if (res.active_version !== undefined) setActiveVersion(res.active_version ?? null);
           if (res.status === "ready" && res.data && isReadyRef.current(res.data)) {
@@ -119,6 +160,7 @@ export function usePollingArtifact<T>({
             setGenerating(false);
             setProgress(100);
             pollingVersionRef.current = null;
+            pollStoppedRef.current = true;
             return;
           }
           if (res.status === "error") {
@@ -127,24 +169,38 @@ export function usePollingArtifact<T>({
             }
             setGenerating(false);
             pollingVersionRef.current = null;
+            pollStoppedRef.current = true;
             return;
           }
           if (typeof res.progress === "number") setProgress(res.progress);
-        } catch {
-          // Ignore transient errors while the background job is still running.
+        } catch (pollError) {
+          if (pollEpochRef.current !== epoch || pollStoppedRef.current) return;
+          if (pollError instanceof ApiRequestError && (pollError.status === 401 || pollError.status === 403)) {
+            pollStoppedRef.current = true;
+            setGenerating(false);
+            setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+            return;
+          }
+          transientFailure = true;
+        } finally {
+          clearTimeout(deadline);
+          if (pollEpochRef.current === epoch) pollInFlightRef.current = false;
+          if (pollAbortRef.current === controller) pollAbortRef.current = null;
         }
-        if (pollingVersionRef.current !== pollingVersion) return;
+        if (pollEpochRef.current !== epoch || pollStoppedRef.current || pollingVersionRef.current !== pollingVersion) return;
         if (Date.now() - startedAt > timeoutMs) {
           if (!viewedVersionRef.current || viewedVersionRef.current === pollingVersion) {
             setError(timeoutMessage);
           }
-          setGenerating(false);
-          pollingVersionRef.current = null;
-          return;
         }
-        pollTimer.current = setTimeout(poll, pollMs);
+        pollTimer.current = setTimeout(
+          poll,
+          pollMs + (transientFailure ? Math.floor(Math.random() * 2_001) : 0)
+        );
       };
-      pollTimer.current = setTimeout(poll, pollMs);
+      immediatePollRef.current = poll;
+      if (immediate) void poll();
+      else pollTimer.current = setTimeout(poll, pollMs);
     },
     [courseId, timeoutMs, timeoutMessage, defaultErrorMessage, pollMs, viewedVersion]
   );
@@ -156,6 +212,9 @@ export function usePollingArtifact<T>({
       return;
     }
     if (pollTimer.current) clearTimeout(pollTimer.current);
+    pollStoppedRef.current = true;
+    pollEpochRef.current += 1;
+    pollAbortRef.current?.abort();
     pollingVersionRef.current = null;
     setError(null);
     setGenerating(true);
@@ -195,23 +254,43 @@ export function usePollingArtifact<T>({
   useEffect(() => {
     return () => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
+      if (discoveryTimerRef.current) clearTimeout(discoveryTimerRef.current);
       pollingVersionRef.current = null;
+      immediatePollRef.current = null;
+      requestGenerationRef.current += 1;
+      requestAbortRef.current?.abort();
+      requestAbortRef.current = null;
+      pollStoppedRef.current = true;
+      pollEpochRef.current += 1;
+      pollAbortRef.current?.abort();
+      pollAbortRef.current = null;
     };
   }, [courseId]);
 
   useEffect(() => {
     if (hasFetched) return;
-    fetchFnRef
-      .current(courseId, viewedVersion)
+    const generation = ++requestGenerationRef.current;
+    requestAbortRef.current?.abort();
+    let shouldRetry = false;
+    fetchStatus(viewedVersion, generation)
       .then((res) => {
+        setError(null);
         if (res.versions) setVersions(res.versions);
         if (res.active_version !== undefined) setActiveVersion(res.active_version ?? null);
         if (res.version_id && !viewedVersion) setViewedVersion(res.version_id);
+        const recoverableJob = res.active_job ?? (
+          res.status === "processing" && res.job_id
+            ? { job_id: res.job_id, version_id: res.version_id }
+            : null
+        );
+        if (recoverableJob) {
+          startJob(recoverableJob.job_id, recoverableJob.version_id);
+        }
         if (res.status === "ready" && res.data && isReadyRef.current(res.data)) {
           setData(res.data);
           if (res.version_id) setDataByVersion((cache) => ({ ...cache, [res.version_id as string]: res.data as T }));
           onReadyRef.current?.(res.data);
-        } else if (res.status === "processing") {
+        } else if (res.status === "processing" && !recoverableJob) {
           setGenerating(true);
           setProgress(res.progress ?? 5);
           startPolling(Date.now(), res.version_id ?? viewedVersion);
@@ -219,14 +298,56 @@ export function usePollingArtifact<T>({
           setError(normalizePublicError(res.error_code, defaultErrorMessage));
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : defaultErrorMessage))
-      .finally(() => setHasFetched(true));
+      .catch((err) => {
+        if (generation !== requestGenerationRef.current) return;
+        if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
+          setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+          return;
+        }
+        shouldRetry = true;
+        if (!isAbortError(err)) setError(err instanceof Error ? err.message : defaultErrorMessage);
+      })
+      .finally(() => {
+        if (generation !== requestGenerationRef.current) return;
+        if (shouldRetry) {
+          discoveryTimerRef.current = setTimeout(
+            () => setDiscoveryAttempt((attempt) => attempt + 1),
+            pollMs + Math.floor(Math.random() * 2_001)
+          );
+        } else {
+          setHasFetched(true);
+        }
+      });
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, hasFetched, viewedVersion]);
+  }, [courseId, hasFetched, viewedVersion, fetchStatus, discoveryAttempt, pollMs]);
+
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState === "hidden") return;
+      if (!hasFetched) {
+        requestGenerationRef.current += 1;
+        requestAbortRef.current?.abort();
+        if (discoveryTimerRef.current) clearTimeout(discoveryTimerRef.current);
+        setDiscoveryAttempt((attempt) => attempt + 1);
+      }
+      if (!pollStoppedRef.current && pollingVersionRef.current) {
+        startPolling(Date.now(), pollingVersionRef.current, true);
+      }
+    };
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  }, [hasFetched, startPolling]);
 
   const switchVersion = useCallback((versionId: string) => {
     if (versionId === viewedVersion) return;
+    requestGenerationRef.current += 1;
+    requestAbortRef.current?.abort();
+    requestAbortRef.current = null;
     setViewedVersion(versionId);
     const cached = dataByVersion[versionId];
     setData(cached ?? null);

@@ -1,0 +1,4 @@
+Page 1 | Grouped ratio
+The grouped ratio is \frac{a+b}{c+d}. Variable A is distinct from variable a.
+Page 2 | Kinematics
+Constant acceleration obeys v = v_0 + at and s = v_0t + \frac{1}{2}at^2.

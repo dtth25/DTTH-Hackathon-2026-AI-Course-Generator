@@ -216,6 +216,7 @@ export function BookTab({ courseId, documentProcessing = false }: BookTabProps) 
     <JobProgress
       key={activeJob.jobId}
       jobId={activeJob.jobId}
+      onUpdate={(job) => setProgress(job.progress)}
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {

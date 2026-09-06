@@ -17,6 +17,7 @@ from app.schemas.course import JobResponse
 from app.services.job_service import cancel_job
 from app.services.job_resource_state import terminalize_dispatch_failure
 from app.services.public_errors import public_error
+from app.services.provider_usage import SAFE_STAGES
 
 
 router = APIRouter(prefix="/api", tags=["jobs"])
@@ -157,6 +158,14 @@ def job_response(db: Session, job: ProcessingJob) -> dict[str, Any]:
         job.error_code,
         _FAILURE_CODE_BY_TYPE.get(job.job_type, "DOCUMENT_PROCESSING_FAILED"),
     )
+    stage_by_status = {
+        JobStatus.QUEUED.value: "queued",
+        JobStatus.RUNNING.value: "generating",
+        JobStatus.RETRY_SCHEDULED.value: "waiting_to_retry",
+        JobStatus.SUCCEEDED.value: "completed",
+        JobStatus.FAILED.value: "failed",
+        JobStatus.CANCELLED.value: "cancelled",
+    }
     return {
         "id": job.id,
         "document_id": job.course_id,
@@ -171,6 +180,19 @@ def job_response(db: Session, job: ProcessingJob) -> dict[str, Any]:
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "completed_at": job.completed_at,
+        "next_attempt_at": job.next_attempt_at,
+        "stage": (
+            job.product_stage
+            if (
+                job.product_stage in SAFE_STAGES
+                and job.status
+                in {
+                    JobStatus.RUNNING.value,
+                    JobStatus.RETRY_SCHEDULED.value,
+                }
+            )
+            else stage_by_status.get(job.status, "generating")
+        ),
     }
 
 

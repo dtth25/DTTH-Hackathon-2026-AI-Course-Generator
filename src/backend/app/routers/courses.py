@@ -1,5 +1,6 @@
 """Courses router for CRUD operations and status tracking."""
 
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -179,6 +180,12 @@ def get_course_status(
     else:
         message = "Đang phân tích và xử lý tài liệu..."
 
+    quality_report = (
+        json.loads(course.extraction_coverage_json)
+        if course.extraction_coverage_json
+        else ({"coverage": "unknown", "faithfulness": None, "faithfulness_status": "not_evaluated"}
+              if course.status == "ready" else None)
+    )
     return {
         "course_id": course.id,
         "name": course.name,
@@ -188,6 +195,7 @@ def get_course_status(
         "chunk_count": course.chunk_count,
         "embedding_status": course.embedding_status,
         "quality_score": course.quality_score,
+        "quality_score_label": "structural/coverage checks compatibility",
         "message": message,
         "filenames": filenames,
         "file_count": len(filenames),
@@ -197,11 +205,6 @@ def get_course_status(
         "can_retry": course.can_retry,
         "recommended_action": course.recommended_action,
         "job_id": latest_job.id if latest_job else None,
-        "document_quality_report": {
-            "score": course.quality_score,
-            "summary": "Tài liệu rõ ràng, cấu trúc tốt." if course.quality_score >= 70 else "Chất lượng tài liệu trung bình, có thể ảnh hưởng đến nội dung sinh ra.",
-        }
-        if course.status == "ready" and course.quality_score > 0
-        else None,
+        "document_quality_report": quality_report,
     }
 

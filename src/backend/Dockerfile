@@ -9,12 +9,24 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /usr/local/bin/uv
 # DejaVu, which has full Vietnamese coverage and lands at exactly the path already listed
 # in pdf_utils._FONT_CANDIDATES (/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-noto-cjk fonts-wqy-zenhei \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-noto-cjk fonts-wqy-zenhei nodejs chromium \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# The renderer is a private child process of the backend.  Install its pinned local
+# parser packages here; Chromium comes from Debian and is selected explicitly below
+# so Playwright never downloads a browser at runtime.
+COPY frontend/package.json frontend/package-lock.json ./rich-text/
+WORKDIR /app/rich-text
+RUN npm ci --omit=dev
+COPY frontend/scripts/rich-text-renderer.mjs ./scripts/rich-text-renderer.mjs
+ENV RICH_TEXT_RENDERER_SCRIPT=/app/rich-text/scripts/rich-text-renderer.mjs
+ENV RICH_TEXT_FONT_DIR=/app/rich-text/node_modules/katex/dist/fonts
+ENV RICH_TEXT_CHROMIUM_PATH=/usr/bin/chromium
+
 # Compose builds with context ./src so backend remains importable as package `backend`.
+WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./backend/
 
 WORKDIR /app/backend

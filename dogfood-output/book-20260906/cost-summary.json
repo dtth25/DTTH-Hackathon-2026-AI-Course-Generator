@@ -1,0 +1,14 @@
+{
+  "currency": "USD",
+  "before_utc": "2026-09-06T05:24:32.878164+00:00",
+  "after_utc": "2026-09-06T05:47:53.067697+00:00",
+  "account_usage_before": 499.911309499,
+  "account_usage_after": 501.294669859,
+  "account_delta": "1.383360360",
+  "key_usage_before": 0.97829638,
+  "key_usage_after": 2.36165674,
+  "key_delta": "1.38336036",
+  "account_credit_remaining": "518.705330141",
+  "key_allowance_remaining": 7.63834326,
+  "caveat": "Shared-account/key counters include concurrent use if any; matching observed deltas are not per-request billing attribution."
+}

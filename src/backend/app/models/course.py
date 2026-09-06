@@ -29,6 +29,7 @@ class Course(Base):
     stage = Column(String, default="extracting", nullable=False)
     progress = Column(Integer, default=30, nullable=False)
     metadata_json = Column(Text, nullable=True)  # JSON encoded metadata
+    extraction_coverage_json = Column(Text, nullable=True)  # Versioned safe aggregate; NULL means legacy/unknown
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
     chunk_count = Column(Integer, default=0, nullable=False)

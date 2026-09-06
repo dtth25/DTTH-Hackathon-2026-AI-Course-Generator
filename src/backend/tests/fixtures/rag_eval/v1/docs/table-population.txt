@@ -1,0 +1,5 @@
+Page 1 | Population table
+City | 2020 | 2025
+An Bình | 120 | 150
+Bình Minh | 80 | 92
+Units: thousands of people.

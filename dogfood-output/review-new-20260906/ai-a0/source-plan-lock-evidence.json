@@ -1,0 +1,43 @@
+{
+  "network": "socket connect disabled; fake provider only",
+  "database": "D:\\HackaGen-appearance-worktree\\dogfood-output\\review-new-20260906\\ai-a0\\source-plan-lock-probe.db",
+  "engine": "real create_database_engine(settings), default file-SQLite timeout and pool",
+  "outside_transaction_control": {
+    "fake_calls": 1,
+    "provider_calls": 1,
+    "source_plans": 0
+  },
+  "cold_plan": {
+    "elapsed_seconds": 5.496,
+    "exception_chain": [
+      {
+        "type": "AccountingError",
+        "message": "Provider accounting unavailable"
+      },
+      {
+        "type": "OperationalError",
+        "message": "(sqlite3.OperationalError) database is locked\n[SQL: INSERT INTO provider_calls (call_id, job_id, job_attempt, course_id, user_id, feature, stage, reserved, state, provider_attempt, created_at) SELECT ? AS anon_1, ? AS anon_2, ? AS anon_3, ? AS anon_4, ? AS anon_5, ? AS anon_6, ? AS anon_7, ? AS anon_8, ? AS anon_9, ? AS anon_10, ? AS anon_11 \nFROM processing_jobs JOIN courses ON courses.id = processing_jobs.course_id \nWHERE processing_jobs.id = ? AND processing_jobs.worker_id = ? AND processing_jobs.attempts = ? AND processing_jobs.status = ? AND processing_jobs.cancel_requested IS 0 AND processing_jobs.lease_expires_at > ? AND courses.is_deleted IS 0 AND courses.user_id = processing_jobs.user_id]\n[parameters: ('be7505db-9b0c-4341-a3f5-6dc6466e42e8', 'probe-job', 1, 'probe-course', 'probe-user', 'slide', 'generating', 0, 'reserved', 1, '2026-09-06 08:49:29.015403', 'probe-job', 'probe-worker', 1, 'running', '2026-09-06 08:49:29.015754')]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+      },
+      {
+        "type": "OperationalError",
+        "message": "database is locked"
+      }
+    ],
+    "fake_calls": 1,
+    "builder_calls": 1,
+    "provider_calls": 1,
+    "source_plans": 0
+  },
+  "after_rollback_control": {
+    "fake_calls": 2,
+    "provider_calls": 2,
+    "source_plans": 0
+  },
+  "warm_plan_control": {
+    "revision": 1,
+    "fake_calls": 2,
+    "builder_calls": 1,
+    "provider_calls": 2,
+    "source_plans": 1
+  }
+}

@@ -17,6 +17,7 @@ from app.core.security import (
 from app.models.course import Course
 from app.models.email_otp import EmailOtpCode
 from app.models.processing_job import ProcessingJob
+from app.models.source_plan import SourcePlanRecord
 from app.models.user import User
 from app.schemas.user import (
     DeleteAccountRequest,
@@ -301,6 +302,8 @@ def delete_account(
 
     courses = db.query(Course).filter(Course.user_id == current_user.id).all()
     course_ids = [course.id for course in courses]
+    from app.services.provider_usage import anonymize_account
+    anonymize_account(db, current_user.id, course_ids)
     db.query(ProcessingJob).filter(
         or_(
             ProcessingJob.user_id == current_user.id,
@@ -314,6 +317,10 @@ def delete_account(
         for course in courses:
             processor.purge_course_storage(course.id)
             db.delete(course)
+
+    db.query(SourcePlanRecord).filter(SourcePlanRecord.owner_id == current_user.id).delete(
+        synchronize_session=False
+    )
 
     db.query(EmailOtpCode).filter(EmailOtpCode.user_id == current_user.id).delete()
     db.delete(current_user)

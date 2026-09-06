@@ -1,7 +1,9 @@
 """Pydantic schemas for Generation Service Skeleton."""
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+from app.schemas.generator_output import QualityReport
 
 
 class GenerateRequest(BaseModel):
@@ -19,6 +21,7 @@ class BookGenerateRequest(BaseModel):
     user_prompt: Optional[str] = ""
     detail_level: Optional[str] = "Tiêu chuẩn"
     retry_version_id: Optional[str] = None
+    new_variant: bool = False
 
 
 class SlideGenerateRequest(BaseModel):
@@ -73,7 +76,7 @@ class ReadinessData(BaseModel):
 
 
 class QualityScoresData(BaseModel):
-    """Study pack artifact quality scores."""
+    """Legacy structural-check scores retained for stored-artifact compatibility."""
 
     study_guide_pdf: int = 0
     slides: int = 0
@@ -82,10 +85,13 @@ class QualityScoresData(BaseModel):
 
 
 class GroundingData(BaseModel):
-    """Grounding metrics and warnings."""
+    """Legacy grounding envelope with an explicit non-factual score label."""
 
     num_chunks: int = 0
     quality_score: int = 0
+    quality_score_label: str = "structural checks compatibility"
+    faithfulness: Optional[int] = None
+    faithfulness_status: str = "not_evaluated"
     warnings: List[str] = []
 
 
@@ -99,6 +105,7 @@ class StudyPackData(BaseModel):
     vid: Optional[Any] = None
     readiness: ReadinessData
     quality_scores: QualityScoresData
+    quality_reports: Dict[str, QualityReport] = Field(default_factory=dict)
     grounding: GroundingData
 
 
@@ -115,6 +122,7 @@ class StudyPackStats(BaseModel):
     has_quiz_answer_key: bool = False
     has_vid: bool = False
     quality_score: int = 0
+    quality_score_label: str = "structural checks compatibility"
     num_chunks: int = 0
 
 

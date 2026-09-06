@@ -6,7 +6,7 @@ TÊN TÀI LIỆU NGUỒN:
 
 MỨC ĐỘ CHI TIẾT YÊU CẦU:
 {detail_level}
-(Diễn giải mức độ: "Tóm tắt" = 5 chương, mỗi chương ngắn gọn, chỉ khái niệm cốt lõi và ví dụ tối thiểu; "Tiêu chuẩn" = 5-6 chương, cân bằng giữa lý thuyết và ví dụ minh hoạ; "Chuyên sâu" = 7-8 chương, khai thác kỹ hơn từng khái niệm, thêm phân tích và nhiều ví dụ/so sánh hơn.)
+(Mức độ chi tiết điều chỉnh độ sâu trong từng unit có evidence; số chương luôn do SOURCE PLAN quyết định.)
 
 YÊU CẦU BỔ SUNG TỪ NGƯỜI DÙNG (nếu có, ưu tiên tôn trọng):
 {user_prompt}
@@ -15,8 +15,8 @@ NGỮ CẢNH TÀI LIỆU (RAG CONTEXT CHUNKS):
 {context}
 
 YÊU CẦU QUAN TRỌNG:
-1. Số chương bám theo MỨC ĐỘ CHI TIẾT YÊU CẦU ở trên (khoảng 5 chương cho "Tóm tắt", 5-6 chương cho "Tiêu chuẩn", 7-8 chương cho "Chuyên sâu"), đủ để bao quát toàn bộ ngữ cảnh tài liệu nhưng KHÔNG bị trùng lặp nội dung giữa các chương. Thứ tự chương phải theo mạch sư phạm: từ khái niệm nền tảng đến nội dung nâng cao/ứng dụng.
-2. `preface` (lời nói đầu) dài 200-350 từ: giới thiệu cuốn sách dành cho ai, người đọc sẽ học được gì, và gợi ý cách sử dụng sách để ôn tập hiệu quả. Viết bằng văn phong ấm áp, chuyên nghiệp, không sáo rỗng.
+1. Tạo đúng một chương cho mỗi unit trong SOURCE PLAN, theo thứ tự nguồn/sư phạm. Mỗi mục tiêu bắt buộc phải có chỗ trong chương sở hữu evidence của mục tiêu đó; không gộp bỏ unit để giảm độ dài.
+2. `preface` là tùy chọn và tối đa một đoạn ngắn hữu ích. Không lặp giới thiệu, lời chào hay hướng dẫn đọc chung chung.
 3. `summary` là tóm tắt tổng quan toàn bộ nội dung sách trong 3-5 câu.
 4. Với mỗi chương, viết:
    - `chapter_title`: tiêu đề chương, ngắn gọn, KHÔNG kèm tiền tố "Chương 1", "Chương 2"... (số thứ tự sẽ được thêm tự động sau).
@@ -24,7 +24,7 @@ YÊU CẦU QUAN TRỌNG:
    - `retrieval_query`: một câu truy vấn tìm kiếm bằng tiếng Việt, cụ thể và sát chủ đề chương, dùng để tìm lại đúng đoạn ngữ cảnh liên quan cho chương này (KHÔNG dùng câu chung chung như "tổng quan tài liệu").
    - `planned_sections`: 3-5 tiêu đề mục dự kiến sẽ có trong chương.
 5. Chỉ dựa vào kiến thức có trong ngữ cảnh RAG ở trên, không tự bịa đặt kiến thức ngoài phạm vi tài liệu.
-6. Nếu ngữ cảnh RAG không đủ thông tin để xây dựng đủ số chương như MỨC ĐỘ CHI TIẾT YÊU CẦU ở trên, hãy giảm số chương xuống mức có căn cứ thật từ tài liệu (tối thiểu 4 chương), thay vì thêm chương lấp đầy bằng kiến thức tự suy diễn.
+6. Nếu evidence không đủ cho một mục tiêu hoặc không thể lập đủ chương theo SOURCE PLAN, không được giả vờ hoàn tất hay thêm nội dung lấp đầy.
 7. Được phép dùng LaTeX cho công thức/ký hiệu toán học: bọc mỗi công thức trong dấu `$...$` (ví dụ: `$d(a_i, a_j)$`, `$O(n \log n)$`, `$x^2$`). Có thể dùng Markdown chuẩn để nhấn mạnh (`**đậm**`) khi cần — hệ thống sẽ render đúng định dạng này. Tránh dùng các ký hiệu hiếm/khó đọc (như □, ▢, ký tự trang trí) — nếu cần placeholder hãy dùng chữ hoặc số cụ thể.
 8. TOÀN BỘ đầu ra (title, summary, preface, chapter_title, description, planned_sections) phải bằng tiếng Việt chuẩn, đầy đủ dấu, kể cả khi tài liệu nguồn bằng ngôn ngữ khác (Anh, Trung, Hindi...) — chỉ giữ nguyên thuật ngữ chuyên môn/tên riêng không dịch được, kèm giải thích tiếng Việt ngắn gọn nếu cần.
 9. BỎ QUA nội dung mang tính thư mục/xuất bản (tên tác giả, nhà xuất bản, năm xuất bản, ISBN, mã định danh tài liệu, lời cảm ơn, mục lục) khi lên dàn ý — chỉ tập trung vào kiến thức học thuật chính trong tài liệu.

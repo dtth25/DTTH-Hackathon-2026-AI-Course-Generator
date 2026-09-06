@@ -536,20 +536,20 @@ export async function apiDeleteArtifactVersion(courseId: string, artifact: strin
   await apiFetch(`/api/course/${courseId}/artifacts/${artifact}/versions/${versionId}`, { method: "DELETE" });
 }
 
-export async function apiGetBook(courseId: string, version?: string | null): Promise<BookArtifactStatus> {
-  return apiFetch<BookArtifactStatus>(`/api/course/${courseId}/book${versionQuery(version)}`);
+export async function apiGetBook(courseId: string, version?: string | null, init?: RequestInit): Promise<BookArtifactStatus> {
+  return apiFetch<BookArtifactStatus>(`/api/course/${courseId}/book${versionQuery(version)}`, init);
 }
 
-export async function apiGetSlide(courseId: string, version?: string | null): Promise<SlideArtifactStatus> {
-  return apiFetch<SlideArtifactStatus>(`/api/course/${courseId}/slide${versionQuery(version)}`);
+export async function apiGetSlide(courseId: string, version?: string | null, init?: RequestInit): Promise<SlideArtifactStatus> {
+  return apiFetch<SlideArtifactStatus>(`/api/course/${courseId}/slide${versionQuery(version)}`, init);
 }
 
-export async function apiGetQuiz(courseId: string, version?: string | null): Promise<QuizArtifactStatus> {
-  return apiFetch<QuizArtifactStatus>(`/api/course/${courseId}/quiz${versionQuery(version)}`);
+export async function apiGetQuiz(courseId: string, version?: string | null, init?: RequestInit): Promise<QuizArtifactStatus> {
+  return apiFetch<QuizArtifactStatus>(`/api/course/${courseId}/quiz${versionQuery(version)}`, init);
 }
 
-export async function apiGetVid(courseId: string, version?: string | null): Promise<VidArtifactStatus> {
-  return apiFetch<VidArtifactStatus>(`/api/course/${courseId}/vid${versionQuery(version)}`);
+export async function apiGetVid(courseId: string, version?: string | null, init?: RequestInit): Promise<VidArtifactStatus> {
+  return apiFetch<VidArtifactStatus>(`/api/course/${courseId}/vid${versionQuery(version)}`, init);
 }
 
 // ============================================================

@@ -291,6 +291,7 @@ for (const viewport of PRODUCT_VIEWPORTS) {
           message: "provider diagnostic must remain private",
           created_at: "2026-09-05T00:00:00Z",
           updated_at: "2026-09-05T00:00:00Z",
+          next_attempt_at: "2026-09-05T00:02:00Z",
         },
       })
     );
@@ -299,8 +300,8 @@ for (const viewport of PRODUCT_VIEWPORTS) {
     await page.getByRole("tab", { name: "Video" }).click();
     await page.getByRole("button", { name: "Tạo video bài giảng" }).click();
     await expect(page.getByText("Đang chờ thử lại")).toBeVisible();
-    await expect(page.getByText("Thử lại sau 3 giây")).toBeVisible();
-    await expect(page.getByText("Thử lại sau 2 giây")).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByText(/Dự kiến thử lại lúc/u)).toBeVisible();
+    await expect(page.getByText(/Thử lại sau 3 giây/u)).toHaveCount(0);
     await expect(page.getByText(/provider diagnostic/iu)).toHaveCount(0);
   });
 

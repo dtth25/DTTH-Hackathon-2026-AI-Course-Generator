@@ -1,0 +1,66 @@
+{
+  "Dijkstra": [],
+  "segment": [],
+  "Fenwick": [],
+  "Z-algorithm": [],
+  "Kruskal": [],
+  "Bellman": [],
+  "d\u00f2ng ch\u1ea3y": [],
+  "trie": [],
+  "chu\u1ed7i": [
+    {
+      "pdf_page": 11,
+      "excerpt": "\u1ea1t \u0111\u1ed9ng \u1edf giai \u0111o\u1ea1n ti\u1ec1n x\u1eed l\u00fd, t\u1ee9c l\u00e0 n\u00f3 s\u1ebd\nt\u00ecm v\u00e0 thay th\u1ebf m\u1ed9t chu\u1ed7i k\u00fd t\u1ef1 n\u00e0y b\u1eb1ng m\u1ed9t chu\u1ed7i k\u00fd t\u1ef1 kh\u00e1c tr\u01b0\u1edbc khi m\u00e3 \u0111\u01b0\u1ee3c\nbi\u00ean d\u1ecbch. V\u00ed d\u1ee5, b\u1ea1n c\u00f3 th\u1ec3 \u0111\u1ecbnh ngh\u0129a #define PB pushback \u0111\u1ec3 thay th\u1ebf cho l\u1eddi g\u1ecdi\nh\u00e0m v.pushback(...) b\u1eb1ng v.PB(...). "
+    },
+    {
+      "pdf_page": 14,
+      "excerpt": "m\u1ed9t m\u1ea3ng c\u00e1c s\u1ed1, n s\u1ebd l\u00e0 k\u00edch\nth\u01b0\u1edbc c\u1ee7a m\u1ea3ng; n\u1ebfu \u0111\u1ea7u v\u00e0o l\u00e0 m\u1ed9t chu\u1ed7i, n s\u1ebd l\u00e0 \u0111\u1ed9 d\u00e0i c\u1ee7a chu\u1ed7i. K\u00fd hi\u1ec7u Big O\nkh\u00f4ng cho ch\u00fang ta bi\u1ebft ch\u00ednh x\u00e1c s\u1ed1 l\u01b0\u1ee3ng ph\u00e9p t\u00ednh m\u00e0 thu\u1eadt to\u00e1n s\u1ebd th\u1ef1c hi\u1ec7n, m\u00e0\nn\u00f3 ch\u1ec9 ra b\u1eadc t\u0103ng tr\u01b0\u1edfng (order of magnitude) c\u1ee7"
+    },
+    {
+      "pdf_page": 15,
+      "excerpt": "\u1ed1n l\u1eddi g\u1ecdi g(n-2), v\u00e0 c\u1ee9 th\u1ebf ti\u1ebfp t\u1ee5c. T\u1ed5ng s\u1ed1 l\u1eddi\ng\u1ecdi s\u1ebd l\u00e0 m\u1ed9t chu\u1ed7i c\u1ea5p s\u1ed1 nh\u00e2n: 1 + 2 + 4 + ... + 2\u207f\u207b\u00b9 = 2\u207f - 1. Do \u0111\u00f3, \u0111\u1ed9 ph\u1ee9c t\u1ea1p\nc\u1ee7a h\u00e0m n\u00e0y l\u00e0 O(2\u207f). \u0110i\u1ec1u n\u00e0y cho th\u1ea5y c\u00e1c thu\u1eadt to\u00e1n \u0111\u1ec7 quy ph\u00e2n nh\u00e1nh c\u00f3 th\u1ec3\nnhanh ch\u00f3ng d\u1eabn \u0111\u1ebfn \u0111\u1ed9 ph\u1ee9c t"
+    },
+    {
+      "pdf_page": 19,
+      "excerpt": "t\u1eadp h\u1ee3p con c\u1ee7a m\u1ed9t t\u1eadp h\u1ee3p n\nph\u1ea7n t\u1eed c\u00f3 th\u1ec3 \u0111\u01b0\u1ee3c \u00e1nh x\u1ea1 t\u1edbi m\u1ed9t chu\u1ed7i n bit, t\u01b0\u01a1ng \u1ee9ng v\u1edbi m\u1ed9t s\u1ed1 nguy\u00ean trong\nkho\u1ea3ng t\u1eeb 0 \u0111\u1ebfn 2\u207f - 1. Trong chu\u1ed7i bit n\u00e0y, bit th\u1ee9 i (t\u00ednh t\u1eeb ph\u1ea3i sang tr\u00e1i, b\u1eaft \u0111\u1ea7u t\u1eeb\n0) b\u1eb1ng 1 c\u00f3 ngh\u0129a l\u00e0 ph\u1ea7n t\u1eed th\u1ee9 i c\u1ee7a t\u1ead"
+    }
+  ],
+  "\\frac": [],
+  "\\sum": [],
+  "sync": [
+    {
+      "pdf_page": 6,
+      "excerpt": ".h>\nusing namespace std;\nint main()\n// T\u1ed1i \u01b0u h\u00f3a nh\u1eadp xu\u1ea5t\nios::syncwith\u209btdio(0);\ncin.tie(0);\n// Ph\u1ea7n gi\u1ea3i thu\u1eadt to\u00e1n\n`\nD\u00f2ng #include <bits/stdc++.h> l\u00e0 m\u1ed9t t\u00ednh n\u0103ng c\u1ee7a tr\u00ecnh bi\u00ean d\u1ecbch g++ cho ph\u00e9p\nbao g\u1ed3m to\u00e0n b\u1ed9 th\u01b0 vi\u1ec7n chu\u1ea9n, gi\u00fap b\u1ea1n kh\u00f4"
+    }
+  ],
+  "kh\u00f4ng ch\u1ee9a": [
+    {
+      "pdf_page": 20,
+      "excerpt": " thi \u0111\u1ea5u.\nC\u00e1c h\u00e0m _builtin \u0111\u1ec3 \u0111\u1ebfm bit\nC\u00e1c t\u00e0i li\u1ec7u \u0111\u01b0\u1ee3c cung c\u1ea5p kh\u00f4ng ch\u1ee9a th\u00f4ng tin chi ti\u1ebft v\u1ec1 c\u00e1c h\u00e0m _builtin c\u1ee7a tr\u00ecnh\nbi\u00ean d\u1ecbch GCC/Clang, ch\u1eb3ng h\u1ea1n nh\u01b0 _builtin\u209aopcount (\u0111\u1ebfm s\u1ed1 bit 1), _builtinclz (\u0111\u1ebfm\ns\u1ed1 bit 0 \u1edf \u0111\u1ea7u), hay _builtinctz (\u0111"
+    },
+    {
+      "pdf_page": 22,
+      "excerpt": " trong 0, ..., k)\nc\u00f3 th\u1ec3 \u0111\u01b0\u1ee3c chia th\u00e0nh hai nh\u00f3m: nh\u1eefng t\u1eadp con kh\u00f4ng ch\u1ee9a k v\u00e0 nh\u1eefng t\u1eadp con\nch\u1ee9a** k. Nh\u00f3m kh\u00f4ng ch\u1ee9a k th\u1ef1c ch\u1ea5t l\u00e0 c\u00e1c t\u1eadp con c\u1ee7a S ext extbackslash k v\u1edbi\n\u0111i\u1ec1u ki\u1ec7n lo\u1ea1i b\u1ecf trong 0, ..., k-1, t\u1ed5ng gi\u00e1 tr\u1ecb c\u1ee7a ch\u00fang l\u00e0 dp[S "
+    }
+  ],
+  "kh\u00f4ng \u0111\u01b0\u1ee3c": [
+    {
+      "pdf_page": 5,
+      "excerpt": "\u0111\u00fang m\u00e0 c\u00f2n ph\u1ea3i hi\u1ec7u qu\u1ea3. M\u1ed9t thu\u1eadt to\u00e1n \u0111\u00fang nh\u01b0ng qu\u00e1\nch\u1eadm s\u1ebd kh\u00f4ng \u0111\u01b0\u1ee3c ch\u1ea5p nh\u1eadn. Do \u0111\u00f3, c\u1ed1t l\u00f5i c\u1ee7a vi\u1ec7c thi\u1ebft k\u1ebf th\u01b0\u1eddng xoay quanh\nvi\u1ec7c ph\u00e1t minh ra m\u1ed9t thu\u1eadt to\u00e1n \u0111\u1ee7 nhanh \u0111\u1ec3 x\u1eed l\u00fd c\u00e1c b\u1ed9 d\u1eef li\u1ec7u l\u1edbn. Ki\u1ebfn th\u1ee9c l\u00fd\nthuy\u1ebft v\u1ec1 thu\u1eadt to\u00e1n l\u00e0"
+    },
+    {
+      "pdf_page": 17,
+      "excerpt": "\u00e1n \u0111a th\u1ee9c? T\u1ea1i sao c\u00e1c thu\u1eadt to\u00e1n c\u00f3 \u0111\u1ed9 ph\u1ee9c t\u1ea1p O(2\u207f) v\u00e0\nO(n!) kh\u00f4ng \u0111\u01b0\u1ee3c coi l\u00e0 thu\u1eadt to\u00e1n \u0111a th\u1ee9c?\n"
+    },
+    {
+      "pdf_page": 20,
+      "excerpt": "\u1edf c\u1ea5p \u0111\u1ed9 ph\u1ea7n c\u1ee9ng v\u00e0 r\u1ea5t h\u1eefu \u00edch trong l\u1eadp tr\u00ecnh thi \u0111\u1ea5u, nh\u01b0ng kh\u00f4ng \u0111\u01b0\u1ee3c\n\u0111\u1ec1 c\u1eadp trong ph\u1ea1m vi ng\u1eef c\u1ea3nh n\u00e0y.\nM\u1edf r\u1ed9ng t\u00ecm ki\u1ebfm nh\u1ecb ph\u00e2n: T\u00ecm gi\u00e1 tr\u1ecb l\u1edbn nh\u1ea5t\nN\u1ed9i dung v\u1ec1 k\u1ef9 thu\u1eadt t\u00ecm ki\u1ebfm nh\u1ecb ph\u00e2n, \u0111\u1eb7c bi\u1ec7t l\u00e0 \u1ee9ng d\u1ee5ng m\u1edf r\u1ed9ng c\u1ee7a n\u00f3 \u0111\u1ec3 t\u00ecm\nki\u1ebf"
+    }
+  ],
+  "ngo\u00e0i ph\u1ea1m vi": [
+    {
+      "pdf_page": 20,
+      "excerpt": " (binary search on the answer), l\u00e0 m\u1ed9t\nc\u00f4ng c\u1ee5 m\u1ea1nh m\u1ebd nh\u01b0ng n\u1eb1m ngo\u00e0i ph\u1ea1m vi c\u1ee7a t\u00e0i li\u1ec7u tham kh\u1ea3o cho ch\u01b0\u01a1ng n\u00e0y.\n\u0110i\u1ec3m c\u1ed1t l\u00f5i\n\u203a T\u00ecm ki\u1ebfm v\u00e9t c\u1ea1n l\u00e0 m\u1ed9t ph\u01b0\u01a1ng ph\u00e1p t\u1ed5ng qu\u00e1t, duy\u1ec7t qua m\u1ecdi kh\u1ea3 n\u0103ng \u0111\u1ec3 t\u00ecm ra\nl\u1eddi gi\u1ea3i, \u0111\u1ea3m b\u1ea3o t\u00ednh \u0111\u00fang \u0111\u1eafn "
+    }
+  ]
+}

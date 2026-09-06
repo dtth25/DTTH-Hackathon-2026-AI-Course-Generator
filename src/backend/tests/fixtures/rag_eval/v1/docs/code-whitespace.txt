@@ -1,0 +1,7 @@
+Page 1 | Python blocks
+Four-space indentation:
+if ready:
+    publish()
+Two-space indentation is a distinct source sample:
+if ready:
+  publish()

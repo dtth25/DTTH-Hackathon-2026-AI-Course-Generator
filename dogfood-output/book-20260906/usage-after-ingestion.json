@@ -1,0 +1,16 @@
+{
+  "timestamp_utc": "2026-09-06T05:25:48.435684+00:00",
+  "key": {
+    "limit": 10,
+    "limit_remaining": 9.02170362,
+    "usage": 0.97829638,
+    "usage_daily": 0,
+    "usage_weekly": 0.97829638,
+    "usage_monthly": 0.97829638,
+    "is_free_tier": false
+  },
+  "credits": {
+    "total_credits": 1020,
+    "total_usage": 499.926398899
+  }
+}

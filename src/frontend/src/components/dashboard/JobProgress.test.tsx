@@ -6,10 +6,14 @@ import { apiCancelJob, apiGetJob } from "@/lib/api";
 import type { JobStatusResponse } from "@/lib/types";
 import { JobProgress } from "./JobProgress";
 
-vi.mock("@/lib/api", () => ({
-  apiGetJob: vi.fn(),
-  apiCancelJob: vi.fn(),
-}));
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    apiGetJob: vi.fn(),
+    apiCancelJob: vi.fn(),
+  };
+});
 
 const storageValues = new Map<string, string>();
 const testStorage: Storage = {
@@ -68,19 +72,91 @@ describe("JobProgress", () => {
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "64");
   });
 
-  it("counts down to the next retry status check", async () => {
+  it("shows live generation stages from the backend instead of a generic reload-only status", async () => {
+    vi.mocked(apiGetJob).mockResolvedValue(job({ status: "running", progress: 7, stage: "capacity_wait" }));
+
+    render(<JobProgress jobId="job-1" />);
+
+    expect(await screen.findByText("Đang chờ lượt xử lý AI · đã chạy 0 giây")).toBeInTheDocument();
+  });
+
+  it("renders the worker retry schedule returned by the server", async () => {
     vi.useFakeTimers();
-    vi.mocked(apiGetJob).mockResolvedValue(job({ status: "retry_scheduled", progress: 31 }));
+    vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
+    vi.mocked(apiGetJob).mockResolvedValue(job({
+      status: "retry_scheduled",
+      progress: 31,
+      next_attempt_at: "2026-09-05T00:02:00Z",
+    }));
 
     render(<JobProgress jobId="job-1" allowCancel />);
     await act(async () => Promise.resolve());
-    expect(screen.getByText("Thử lại sau 3 giây")).toBeInTheDocument();
+    expect(screen.getByText(/Dự kiến thử lại lúc/u)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Yêu cầu hủy" })).not.toBeInTheDocument();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
-    });
-    expect(screen.getByText("Thử lại sau 2 giây")).toBeInTheDocument();
+    expect(screen.queryByText(/Thử lại sau 3 giây/u)).not.toBeInTheDocument();
+  });
+
+  it("shows capacity wait copy for a retry-scheduled capacity continuation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
+    vi.mocked(apiGetJob).mockResolvedValue(job({
+      status: "retry_scheduled",
+      progress: 57,
+      stage: "capacity_wait",
+      next_attempt_at: "2026-09-05T00:00:04Z",
+    }));
+
+    render(<JobProgress jobId="job-1" />);
+    await act(async () => Promise.resolve());
+
+    expect(screen.getByText("Đang chờ lượt xử lý AI")).toBeInTheDocument();
+    expect(screen.getByText(/Hệ thống sẽ tự tiếp tục khi có lượt/u)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "57");
+  });
+
+  it("streams progress observations and reaches success", async () => {
+    vi.useFakeTimers();
+    const onSucceeded = vi.fn();
+    const onUpdate = vi.fn();
+    vi.mocked(apiGetJob)
+      .mockResolvedValueOnce(job({ status: "running", progress: 15 }))
+      .mockResolvedValueOnce(job({ status: "running", progress: 52 }))
+      .mockResolvedValueOnce(job({ status: "succeeded", progress: 100 }));
+
+    render(<JobProgress jobId="job-1" onSucceeded={onSucceeded} onUpdate={onUpdate} />);
+    await act(async () => Promise.resolve());
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "52");
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(onSucceeded).toHaveBeenCalledOnce();
+    expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ progress: 100 }));
+  });
+
+  it("does not revive terminal observation on online or visibility events", async () => {
+    vi.mocked(apiGetJob).mockResolvedValue(job({ status: "succeeded", progress: 100 }));
+    render(<JobProgress jobId="job-1" />);
+    await waitFor(() => expect(apiGetJob).toHaveBeenCalledOnce());
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => Promise.resolve());
+    expect(apiGetJob).toHaveBeenCalledOnce();
+  });
+
+  it("supersedes an aborted recheck without scheduling a concurrent third read", async () => {
+    vi.useFakeTimers();
+    let secondResolve!: (value: JobStatusResponse) => void;
+    vi.mocked(apiGetJob)
+      .mockImplementationOnce((_id, init) => new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))))
+      .mockImplementationOnce(() => new Promise((resolve) => { secondResolve = resolve; }));
+    render(<JobProgress jobId="job-1" />);
+    await act(async () => Promise.resolve());
+    window.dispatchEvent(new Event("online"));
+    await act(async () => Promise.resolve());
+    expect(apiGetJob).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(apiGetJob).toHaveBeenCalledTimes(2);
+    await act(async () => secondResolve(job({ status: "succeeded", progress: 100 })));
   });
 
   it("stops polling after cancellation", async () => {
@@ -151,6 +227,26 @@ describe("JobProgress", () => {
       await vi.advanceTimersByTimeAsync(6_000);
     });
     expect(apiGetJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancellation supersedes a pending status read and ignores later events", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolvePending!: (value: JobStatusResponse) => void;
+    vi.mocked(apiGetJob)
+      .mockResolvedValueOnce(job({ status: "queued" }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePending = resolve; }));
+    vi.mocked(apiCancelJob).mockResolvedValue(job({ status: "cancelled" }));
+    render(<JobProgress jobId="job-1" allowCancel />);
+    await screen.findByText("Đang chờ");
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    await userEvent.click(screen.getByRole("button", { name: "Yêu cầu hủy" }));
+    expect(screen.getByText("Đã hủy")).toBeInTheDocument();
+    await act(async () => resolvePending(job({ status: "running", progress: 80 })));
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByText("Đã hủy")).toBeInTheDocument();
+    expect(apiGetJob).toHaveBeenCalledTimes(2);
   });
 
   it("aborts an in-flight status request when unmounted", () => {

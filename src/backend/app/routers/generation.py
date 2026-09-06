@@ -1,5 +1,6 @@
 """Generation Service router for HackaGen."""
 
+import json
 import os
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user, get_db
 from app.jobs.admission import enforce_job_admission
 from app.models.course import Course
+from app.models.processing_job import JobStatus, ProcessingJob
 from app.models.user import User
 from app.routers.jobs import dispatch_persisted_job
 from app.schemas.generation import (
@@ -21,7 +23,7 @@ from app.schemas.generation import (
     StudyPackResponse,
     VidGenerateRequest,
 )
-from app.services.generator import Generator
+from app.services.generator import Generator, _quality_report_payload
 from app.services.job_service import create_job
 from app.services.llm import LLMService
 from app.services.public_errors import public_error, sanitize_public_payload
@@ -47,6 +49,78 @@ ARTIFACT_FAILURE_CODES = {
     "vid": "VIDEO_GENERATION_FAILED",
 }
 
+ACTIVE_JOB_STATUSES = {
+    JobStatus.QUEUED.value,
+    JobStatus.RUNNING.value,
+    JobStatus.RETRY_SCHEDULED.value,
+}
+
+JOB_TYPE_BY_ARTIFACT = {"book": "book", "slides": "slides", "quiz": "quiz", "vid": "video"}
+
+
+def artifact_job_fields(
+    db: Session,
+    *,
+    course: Course,
+    artifact: str,
+    selected_version: Optional[str],
+    valid_versions: set[str],
+) -> tuple[Optional[str], Optional[Dict[str, Optional[str]]]]:
+    """Resolve only owner/course/version-matched job identities for a status envelope."""
+    jobs = (
+        db.query(ProcessingJob)
+        .filter(
+            ProcessingJob.course_id == course.id,
+            ProcessingJob.user_id == course.user_id,
+            ProcessingJob.job_type == JOB_TYPE_BY_ARTIFACT[artifact],
+        )
+        .order_by(ProcessingJob.created_at.desc())
+        .all()
+    )
+    matching = [
+        job for job in jobs
+        if isinstance(job.payload_json, dict)
+        and job.payload_json.get("artifact") == artifact
+    ]
+    selected_job = next(
+        (job for job in matching if selected_version and job.payload_json.get("version_id") == selected_version),
+        None,
+    )
+    active_job = next(
+        (
+            job
+            for job in matching
+            if job.status in ACTIVE_JOB_STATUSES
+            and isinstance(job.payload_json.get("version_id"), str)
+            and job.payload_json["version_id"] in valid_versions
+        ),
+        None,
+    )
+    active = None
+    if active_job is not None:
+        active = {
+            "job_id": active_job.id,
+            "version_id": active_job.payload_json.get("version_id"),
+        }
+    return (selected_job.id if selected_job else None), active
+
+
+def artifact_envelope_jobs(
+    db: Session,
+    course: Course,
+    artifact: str,
+    version_id: Optional[str],
+    versions: list[Dict[str, Any]],
+) -> Dict[str, Any]:
+    job_id, active_job = artifact_job_fields(
+        db,
+        course=course,
+        artifact=artifact,
+        selected_version=version_id,
+        valid_versions={item["version_id"] for item in versions if isinstance(item.get("version_id"), str)},
+    )
+    return {"job_id": job_id, "active_job": active_job}
+
 
 def public_artifact_error(info: Dict[str, Any], artifact: str) -> tuple[Optional[str], Optional[str]]:
     """Return only a closed code and fixed copy for failed artifact envelopes."""
@@ -66,7 +140,6 @@ def get_generator() -> Generator:
     """
     global _generator_instance
     if _generator_instance is None:
-        vs = get_vector_store()
         default_llm = LLMService()
         overrides = {
             "book": settings.OPENROUTER_BOOK_MODEL,
@@ -78,7 +151,9 @@ def get_generator() -> Generator:
             feature: LLMService(model=model) if model else default_llm
             for feature, model in overrides.items()
         }
-        _generator_instance = Generator(vs, default_llm, feature_llms)
+        # Artifact metadata/download paths remain available even when a legacy vector
+        # collection requires explicit migration. Retrieval resolves the store lazily.
+        _generator_instance = Generator(None, default_llm, feature_llms)
     return _generator_instance
 
 
@@ -164,6 +239,8 @@ def enqueue_generation_job(
     **reservation_options: Any,
 ):
     """Admit, reserve, persist, then dispatch one durable artifact job."""
+    from app.services.provider_usage import ensure_book_budget
+
     enforce_job_admission(db, course.user_id)
     try:
         version_id = reserve_version_or_raise(
@@ -174,6 +251,31 @@ def enqueue_generation_job(
             db_session=db,
             **reservation_options,
         )
+        effective_payload_options = dict(payload_options)
+        if reservation_options.get("retry_version_id"):
+            raw_meta = course.metadata_json or "{}"
+            if isinstance(raw_meta, str):
+                raw_meta = json.loads(raw_meta)
+            stored = (
+                raw_meta.get("study_pack", {})
+                .get("artifacts", {})
+                .get(artifact, {})
+                .get("versions", {})
+                .get(version_id, {})
+            )
+            stored_options = stored.get("options", {})
+            if artifact == "book":
+                effective_payload_options = {
+                    "detail_level": stored_options.get("detail_level", "Tiêu chuẩn"),
+                    "user_prompt": stored.get("user_prompt", ""),
+                }
+            else:
+                effective_payload_options.update(stored_options)
+                if "topic" in effective_payload_options:
+                    effective_payload_options["topic"] = stored.get("topic")
+                if "user_prompt" in effective_payload_options:
+                    effective_payload_options["user_prompt"] = stored.get("user_prompt", "")
+        budget_id = ensure_book_budget(db, course, version_id, retry=bool(reservation_options.get("retry_version_id"))) if artifact == "book" else None
         job = create_job(
             db,
             course_id=course.id,
@@ -183,7 +285,8 @@ def enqueue_generation_job(
                 "course_id": course.id,
                 "artifact": artifact,
                 "version_id": version_id,
-                **payload_options,
+                **({"budget_id": budget_id} if budget_id else {}),
+                **effective_payload_options,
             },
             queue_name="video" if job_type == "video" else "generation",
             commit=False,
@@ -227,6 +330,7 @@ def generate_book(
     user_prompt: Optional[str] = Query(None),
     detail_level: Optional[str] = Query(None),
     retry_version_id: Optional[str] = Query(None),
+    new_variant: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
@@ -235,6 +339,23 @@ def generate_book(
     prompt = (req and req.user_prompt) or user_prompt or ""
     detail = (req and req.detail_level) or detail_level or "Tiêu chuẩn"
     generator = get_generator()
+    retry_id = (req and req.retry_version_id) or retry_version_id
+    force_new = bool((req and req.new_variant) or new_variant)
+    if not retry_id and not force_new:
+        cached_version = generator.find_ready_book_version(
+            course.id,
+            {"detail_level": detail},
+            prompt,
+            db_session=db,
+        )
+        if cached_version:
+            return GenerateResponse(
+                course_id=course.id,
+                version_id=cached_version,
+                job_id=None,
+                status="ready",
+                message="Generation already available.",
+            )
     job, version_id = enqueue_generation_job(
         background_tasks=background_tasks,
         db=db,
@@ -245,7 +366,7 @@ def generate_book(
         options={"detail_level": detail},
         payload_options={"detail_level": detail, "user_prompt": prompt},
         user_prompt=prompt,
-        retry_version_id=(req and req.retry_version_id) or retry_version_id,
+        retry_version_id=retry_id,
     )
     return GenerateResponse(course_id=course.id, version_id=version_id, job_id=job.id)
 
@@ -426,7 +547,7 @@ def get_book(
     status is one of "empty" | "processing" | "ready" | "error". `data` never leaks
     raw source_chunk_ids (grounding metadata), matching the no-raw-metadata invariant.
     """
-    get_valid_course(course_id, current_user, db)
+    course = get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "book", version)
     data = sanitize_public_payload(generator._load_artifact_json(course_id, "book.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "book", version_id))) if version_id else None
@@ -440,10 +561,12 @@ def get_book(
         "error": error_message,
         "error_code": error_code,
         "progress": info.get("progress"),
+        "quality_report": _quality_report_payload(info.get("quality_report")),
         "data": data,
         "version_id": version_id,
         "active_version": active_version,
         "versions": versions,
+        **artifact_envelope_jobs(db, course, "book", version_id, versions),
     }
 
 
@@ -460,7 +583,7 @@ def get_slide(
     status is one of "empty" | "processing" | "ready" | "error". `data` never leaks
     raw source_chunk_ids (grounding metadata), matching the no-raw-metadata invariant.
     """
-    get_valid_course(course_id, current_user, db)
+    course = get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "slides", version)
     data = sanitize_public_payload(generator._load_artifact_json(course_id, "slides.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "slides", version_id))) if version_id else None
@@ -474,10 +597,12 @@ def get_slide(
         "error": error_message,
         "error_code": error_code,
         "progress": info.get("progress"),
+        "quality_report": _quality_report_payload(info.get("quality_report")),
         "data": data,
         "version_id": version_id,
         "active_version": active_version,
         "versions": versions,
+        **artifact_envelope_jobs(db, course, "slides", version_id, versions),
     }
 
 
@@ -494,7 +619,7 @@ def get_quiz(
     status is one of "empty" | "processing" | "ready" | "error". `data` is the list of
     questions (or null) and never leaks raw source_chunk_ids (grounding metadata).
     """
-    get_valid_course(course_id, current_user, db)
+    course = get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "quiz", version)
     raw = sanitize_public_payload(generator._load_artifact_json(course_id, "quiz.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "quiz", version_id))) if version_id else None
@@ -509,10 +634,12 @@ def get_quiz(
         "error": error_message,
         "error_code": error_code,
         "progress": info.get("progress"),
+        "quality_report": _quality_report_payload(info.get("quality_report")),
         "data": questions,
         "version_id": version_id,
         "active_version": active_version,
         "versions": versions,
+        **artifact_envelope_jobs(db, course, "quiz", version_id, versions),
     }
 
 
@@ -529,7 +656,7 @@ def get_vid(
     status is one of "empty" | "processing" | "ready" | "error". `data` never leaks
     raw source_chunk_ids (grounding metadata), matching the no-raw-metadata invariant.
     """
-    get_valid_course(course_id, current_user, db)
+    course = get_valid_course(course_id, current_user, db)
     generator = get_generator()
     version_id, active_version, versions = version_fields(generator, course_id, "vid", version)
     data = sanitize_public_payload(generator._load_artifact_json(course_id, "vid.json", artifact_directory_path(settings.UPLOAD_DIR, course_id, "vid", version_id))) if version_id else None
@@ -543,10 +670,12 @@ def get_vid(
         "error": error_message,
         "error_code": error_code,
         "progress": info.get("progress"),
+        "quality_report": _quality_report_payload(info.get("quality_report")),
         "data": data,
         "version_id": version_id,
         "active_version": active_version,
         "versions": versions,
+        **artifact_envelope_jobs(db, course, "vid", version_id, versions),
     }
 
 

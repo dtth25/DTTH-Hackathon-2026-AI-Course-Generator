@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.services.provider_errors import ProviderRequestError, classify_openrouter_error
 from app.services.provider_guard import (
+    ProviderCapacityWait,
     ProviderCircuitOpen,
     ProviderGuard,
     ProviderGuardUnavailable,
@@ -91,6 +92,110 @@ class FakeRedis:
             self.strings[rpm] = str(rpm_count + 1)
             self.expiry[rpm] = now + int(rpm_ttl)
             return [1, "ok", 0]
+        if operation == "-- hackagen-provider-fair-generation-acquire":
+            (
+                inflight,
+                rpm_prefix,
+                open_until,
+                waiters,
+                sequence,
+                last_owner,
+                last_job,
+                waiter_prefix,
+            ) = values[:8]
+            (
+                permit_id,
+                lease_seconds,
+                max_inflight,
+                rpm_limit,
+                owner,
+                job,
+                request_id,
+                waiter_ttl,
+            ) = values[8:]
+            now = float(self.clock())
+            delimiter = "\x1f"
+            queue = self.zsets.setdefault(waiters, {})
+            for queued_request in list(queue):
+                record_key = f"{waiter_prefix}{queued_request}"
+                record = self.strings.get(record_key)
+                if record is None:
+                    queue.pop(queued_request, None)
+                    continue
+                _queued_owner, _queued_job, expires_at = record.split(delimiter, 2)
+                if float(expires_at) <= now:
+                    queue.pop(queued_request, None)
+                    self.strings.pop(record_key, None)
+                    self.expiry.pop(record_key, None)
+            record_key = f"{waiter_prefix}{request_id}"
+            if record_key not in self.strings:
+                position = int(self.strings.get(sequence, "0")) + 1
+                self.strings[sequence] = str(position)
+                queue[str(request_id)] = float(position)
+            self.strings[record_key] = delimiter.join((str(owner), str(job), str(now + int(waiter_ttl))))
+            self.expiry[record_key] = now + int(waiter_ttl) + 1
+            self.expiry[waiters] = now + int(waiter_ttl) + 1
+            open_value = float(self.strings.get(open_until, "0"))
+            if open_value > now:
+                return [0, "circuit", max(1, int(open_value - now + 0.999))]
+            leases = self.zsets.setdefault(inflight, {})
+            for member, expires_at in list(leases.items()):
+                if expires_at <= now:
+                    del leases[member]
+            if len(leases) >= int(max_inflight):
+                return [0, "inflight", 1]
+            rpm = f"{rpm_prefix}{int(now // 60)}"
+            rpm_count = int(self.strings.get(rpm, "0"))
+            if rpm_count >= int(rpm_limit):
+                return [0, "rpm", max(1, 60 - int(now) % 60)]
+            ordered = [item[0] for item in sorted(queue.items(), key=lambda item: item[1])]
+            previous_owner = self.strings.get(last_owner)
+            previous_job = self.strings.get(last_job)
+            first_request = ordered[0] if ordered else None
+            alternate_owner = next(
+                (
+                    queued_request
+                    for queued_request in ordered
+                    if previous_owner is not None
+                    and self.strings[f"{waiter_prefix}{queued_request}"].split(delimiter, 2)[0] != previous_owner
+                ),
+                None,
+            )
+            alternate_job = next(
+                (
+                    queued_request
+                    for queued_request in ordered
+                    if previous_job is not None
+                    and self.strings[f"{waiter_prefix}{queued_request}"].split(delimiter, 2)[1] != previous_job
+                ),
+                None,
+            )
+            if (alternate_owner or alternate_job or first_request) != str(request_id):
+                return [0, "fairness", 1]
+            queue.pop(str(request_id), None)
+            self.strings.pop(record_key, None)
+            self.expiry.pop(record_key, None)
+            self.strings[last_owner] = str(owner)
+            self.expiry[last_owner] = now + int(waiter_ttl) + 1
+            self.strings[last_job] = str(job)
+            self.expiry[last_job] = now + int(waiter_ttl) + 1
+            leases[str(permit_id)] = now + int(lease_seconds)
+            self.expiry[inflight] = now + int(lease_seconds) + 1
+            self.strings[rpm] = str(rpm_count + 1)
+            self.expiry[rpm] = now + max(1, 61 - int(now) % 60)
+            return [1, "ok", 0]
+        if operation == "-- hackagen-provider-fair-generation-cancel":
+            waiters, waiter_prefix, request_id = values
+            queue = self.zsets.get(waiters, {})
+            removed = int(str(request_id) in queue)
+            queue.pop(str(request_id), None)
+            record_key = f"{waiter_prefix}{request_id}"
+            self.strings.pop(record_key, None)
+            self.expiry.pop(record_key, None)
+            if not queue:
+                self.zsets.pop(waiters, None)
+                self.expiry.pop(waiters, None)
+            return removed
         if operation == "-- hackagen-provider-release":
             inflight, permit_id = values
             leases = self.zsets.get(inflight, {})
@@ -357,6 +462,88 @@ def test_redis_time_keeps_skewed_workers_in_one_rpm_bucket():
     assert rpm_keys == ["hackagen:provider:ocr:rpm:30000000"]
 
 
+def test_redis_generation_waiters_admit_the_waiting_owner_before_a_reacquirer():
+    """A released owner cannot bypass a queued owner in another worker process."""
+    clock = FakeClock()
+    redis = FakeRedis(clock)
+    config = guard_settings(OPENROUTER_MAX_IN_FLIGHT=1)
+    first_process = ProviderGuard(redis_client=redis, settings_obj=config, clock=clock)
+    second_process = ProviderGuard(redis_client=redis, settings_obj=config, clock=clock)
+
+    first = first_process.acquire(
+        "generation", owner_key="user-1", job_key="book-1", request_id="user-1-first"
+    )
+    with pytest.raises(ProviderCapacityWait) as waiting:
+        second_process.acquire(
+            "generation", owner_key="user-2", job_key="book-2", request_id="user-2-first"
+        )
+    assert waiting.value.reason == "inflight"
+
+    first_process.release(first)
+    with pytest.raises(ProviderCapacityWait) as fairness:
+        first_process.acquire(
+            "generation", owner_key="user-1", job_key="book-1", request_id="user-1-second"
+        )
+    assert fairness.value.reason == "fairness"
+    second = second_process.acquire(
+        "generation", owner_key="user-2", job_key="book-2", request_id="user-2-first"
+    )
+    assert isinstance(second, ProviderPermit)
+    second_process.release(second)
+    assert isinstance(
+        first_process.acquire(
+            "generation", owner_key="user-1", job_key="book-1", request_id="user-1-second"
+        ),
+        ProviderPermit,
+    )
+
+
+def test_redis_rpm_waiters_survive_the_bounded_durable_backoff():
+    """A 60-second RPM reply cannot discard a queued owner before redelivery."""
+    clock = FakeClock()
+    redis = FakeRedis(clock)
+    guard = ProviderGuard(
+        redis_client=redis,
+        settings_obj=guard_settings(OPENROUTER_MAX_IN_FLIGHT=2, OPENROUTER_RPM=1),
+        clock=clock,
+    )
+    seed = guard.acquire(
+        "generation", owner_key="seed", job_key="seed-book", request_id="seed-request"
+    )
+    guard.release(seed)
+
+    for owner, request_id in (("user-1", "user-1-rpm"), ("user-2", "user-2-rpm")):
+        with pytest.raises(ProviderCapacityWait) as waiting:
+            guard.acquire("generation", owner_key=owner, job_key=f"{owner}-book", request_id=request_id)
+        assert waiting.value.reason == "rpm"
+        assert waiting.value.retry_after == 60
+
+    clock.advance(30)
+    assert redis.get("hackagen:provider:generation:waiter:user-1-rpm") is not None
+    assert redis.get("hackagen:provider:generation:waiter:user-2-rpm") is not None
+    with pytest.raises(ProviderCapacityWait) as waiting_again:
+        guard.acquire("generation", owner_key="user-1", job_key="user-1-book", request_id="user-1-rpm")
+    assert waiting_again.value.reason == "rpm"
+
+    clock.advance(30)
+    first = guard.acquire(
+        "generation", owner_key="user-1", job_key="user-1-book", request_id="user-1-rpm"
+    )
+    guard.release(first)
+    with pytest.raises(ProviderCapacityWait) as final_window:
+        guard.acquire(
+            "generation", owner_key="user-2", job_key="user-2-book", request_id="user-2-rpm"
+        )
+    assert final_window.value.reason == "rpm"
+    clock.advance(60)
+    assert isinstance(
+        guard.acquire(
+            "generation", owner_key="user-2", job_key="user-2-book", request_id="user-2-rpm"
+        ),
+        ProviderPermit,
+    )
+
+
 def test_success_clears_transient_failure_count():
     clock = FakeClock()
     guard = ProviderGuard(redis_client=FakeRedis(clock), settings_obj=guard_settings(), clock=clock)
@@ -528,7 +715,16 @@ def test_llm_calls_are_guarded_and_release_their_exact_permit(method, kind, payl
     else:
         assert llm.ocr_page_image(b"png") == "Văn bản"
 
-    guard.acquire.assert_called_once_with(kind)
+    if kind == "generation":
+        guard.acquire.assert_called_once()
+        acquire_args, acquire_kwargs = guard.acquire.call_args
+        assert acquire_args == ("generation",)
+        assert acquire_kwargs["owner_key"] == "anonymous"
+        assert acquire_kwargs["job_key"] == "standalone:generation"
+        assert isinstance(acquire_kwargs["request_id"], str)
+        assert acquire_kwargs["request_id"]
+    else:
+        guard.acquire.assert_called_once_with(kind)
     guard.record_success.assert_called_once_with(kind)
     guard.release.assert_called_once_with(permit)
 

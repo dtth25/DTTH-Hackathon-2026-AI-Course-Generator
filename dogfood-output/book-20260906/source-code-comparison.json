@@ -1,0 +1,45 @@
+{
+  "sync_with_stdio": [
+    {
+      "pdf_page": 15,
+      "excerpt": "ng\nlines at the beginning of the code make input and output more ef\ufb01cient:\nios::sync_with_stdio(0);\ncin.tie(0);\nNote that the newline \"\\n\" works faster than endl, because endl always\ncauses a \ufb02ush operation.\nThe C functions scanf and printf are an alternative "
+    }
+  ],
+  "push_back": [
+    {
+      "pdf_page": 19,
+      "excerpt": " we can de\ufb01ne the following macros:\n#define F first\n#define S second\n#define PB push_back\n#define MP make_pair\nAfter this, the code\nv.push_back(make_pair(y1,x1));\nv.push_back(make_pair(y2,x2));\nint d = v[i].first+v[i].second;\ncan be shortened as follows:\nv.PB("
+    },
+    {
+      "pdf_page": 40,
+      "excerpt": " sorted according to\ntheir second elements (second):\nvector<pair<int,int>> v;\nv.push_back({1,5});\nv.push_back({2,3});\nv.push_back({1,2});\nsort(v.begin(), v.end());\nAfter this, the order of the pairs is (1,2), (1,5) and (2,3).\nIn a similar way, tuples (tuple) a"
+    }
+  ],
+  "unordered_set": [
+    {
+      "pdf_page": 47,
+      "excerpt": "n a balanced binary tree and its operations work in O(logn) time.\nThe structure unordered_set uses hashing, and its operations work in O(1) time\non average.\nThe choice of which set implementation to use is often a matter of taste. The\nbene\ufb01t of the set structu"
+    },
+    {
+      "pdf_page": 48,
+      "excerpt": "e structures multiset and unordered_multiset that other-\nwise work like set and unordered_set but they can contain multiple instances of\nan element. For example, in the following code all three instances of the number\n5 are added to a multiset:\nmultiset<int> s"
+    }
+  ],
+  "priority_queue": [
+    {
+      "pdf_page": 53,
+      "excerpt": "d remove the largest element in the queue. The\nfollowing code illustrates this:\npriority_queue<int> q;\nq.push(3);\nq.push(5);\nq.push(7);\nq.push(2);\ncout << q.top() << \"\\n\"; // 7\nq.pop();\ncout << q.top() << \"\\n\"; // 5\nq.pop();\nq.push(6);\ncout << q.top() << \"\\n\";"
+    }
+  ],
+  "Prufer": [],
+  "Pr\u00fcfer": [
+    {
+      "pdf_page": 225,
+      "excerpt": "\n1\n3\n3\n1\n2\n4\n3\n2\n1\n4\nNext we will see how Cayley\u2019s formula can be derived using Pr\u00fcfer codes.\n215\n"
+    },
+    {
+      "pdf_page": 226,
+      "excerpt": "Pr\u00fcfer code\nA Pr\u00fcfer code is a sequence of n\u22122 numbers that describes a labeled tree. The\ncode is constructed by following a process that removes n\u22122 leaves from the tree.\nAt each "
+    }
+  ]
+}

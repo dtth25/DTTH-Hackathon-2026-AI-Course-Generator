@@ -466,7 +466,13 @@ def test_ocr_provider_failure_survives_extraction_and_reaches_public_status(
             fitz.Rect(72, 72, 520, 760),
             " ".join(["Nội dung văn bản có thể đọc được"] * 30),
         )
-    pdf.new_page()
+    scan_source = fitz.open()
+    scan_page = scan_source.new_page()
+    scan_page.insert_text((72, 72), "Rendered scan page requiring OCR")
+    scan_png = scan_page.get_pixmap().tobytes("png")
+    scan_source.close()
+    scanned_page = pdf.new_page()
+    scanned_page.insert_image(scanned_page.rect, stream=scan_png)
     pdf.save(pdf_path)
     pdf.close()
 

@@ -4,6 +4,7 @@ instead so it reads correctly everywhere without a rich-text/LaTeX renderer.
 """
 
 import re
+import unicodedata
 
 _SUPERSCRIPT_MAP = {
     "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
@@ -73,6 +74,7 @@ _EXTRA_SPACE_RE = re.compile(r"[ \t]{2,}")
 _ARITHMETIC_ONLY_RE = re.compile(r"^[\d\s+\-*/.,]+$")
 _SIMPLE_BRACE_CONTENT_RE = re.compile(r"^[A-Za-z0-9+\-=]{1,6}$")
 _UNICODE_ESCAPE_RE = re.compile(r"\\u([0-9a-fA-F]{4})")
+_DISPLAY_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _to_superscript(s: str) -> str:
@@ -136,3 +138,21 @@ def clean_text(text: str) -> str:
 
     s = _EXTRA_SPACE_RE.sub(" ", s)
     return s.strip()
+
+
+def normalize_display_text(text: str | None) -> str:
+    """Remove unsafe control characters without changing authored Markdown, LaTeX or Unicode.
+
+    This is the only normalization permitted before an artifact is persisted or
+    displayed.  Rich renderers need the original braces, backslashes, delimiters,
+    code spans and mathematical Unicode to render faithfully.
+    """
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFC", str(text)).replace("\r\n", "\n").replace("\r", "\n")
+    return _DISPLAY_CONTROL_RE.sub("", normalized).strip()
+
+
+def normalize_narration(text: str | None) -> str:
+    """Produce speech-only plain text; callers must never persist it as display text."""
+    return clean_text(normalize_display_text(text))

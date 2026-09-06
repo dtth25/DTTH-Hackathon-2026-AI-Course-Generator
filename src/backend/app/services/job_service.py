@@ -178,7 +178,16 @@ def _dead_letter_exhausted_job(
             ProcessingJob.id == job_id,
             abandoned,
             ProcessingJob.cancel_requested.is_(False),
-            ProcessingJob.attempts >= ProcessingJob.max_attempts,
+            or_(
+                ProcessingJob.failure_attempts >= ProcessingJob.max_attempts,
+                and_(
+                    or_(
+                        ProcessingJob.product_stage.is_(None),
+                        ProcessingJob.product_stage != "capacity_wait",
+                    ),
+                    ProcessingJob.attempts >= ProcessingJob.max_attempts,
+                ),
+            ),
         )
         .values(
             status=JobStatus.FAILED.value,
@@ -264,17 +273,36 @@ def claim_job(db: Session, job_id: str, worker_id: str, lease_seconds: int) -> b
             ProcessingJob.lease_expires_at < now,
         ),
     )
+    progress_value = case(
+        (
+            and_(
+                ProcessingJob.status == JobStatus.RETRY_SCHEDULED.value,
+                ProcessingJob.product_stage == "capacity_wait",
+            ),
+            ProcessingJob.progress,
+        ),
+        else_=0,
+    )
     result = db.execute(
         update(ProcessingJob)
         .where(
             ProcessingJob.id == job_id,
             claimable,
             ProcessingJob.cancel_requested.is_(False),
-            ProcessingJob.attempts < ProcessingJob.max_attempts,
+            or_(
+                ProcessingJob.attempts < ProcessingJob.max_attempts,
+                and_(
+                    ProcessingJob.status == JobStatus.RETRY_SCHEDULED.value,
+                    ProcessingJob.product_stage == "capacity_wait",
+                    ProcessingJob.failure_attempts < ProcessingJob.max_attempts,
+                ),
+            ),
         )
         .values(
             status=JobStatus.RUNNING.value,
             attempts=ProcessingJob.attempts + 1,
+            product_stage="generating",
+            progress=progress_value,
             worker_id=worker_id,
             lease_expires_at=now + timedelta(seconds=lease_seconds),
             next_attempt_at=None,
@@ -336,6 +364,9 @@ def schedule_job_retry(
     message: str = "Đang chờ thử lại",
     *,
     expected_attempt: int | None = None,
+    consume_failure_attempt: bool = True,
+    product_stage: str | None = None,
+    reset_progress: bool = True,
 ) -> bool:
     """Release a running attempt for a delayed retry when attempts remain."""
     now = datetime.utcnow()
@@ -344,6 +375,12 @@ def schedule_job_retry(
         if expected_attempt is not None
         else True
     )
+    if consume_failure_attempt:
+        retry_budget_guard = ProcessingJob.failure_attempts + 1 < ProcessingJob.max_attempts
+        failure_attempt_value = ProcessingJob.failure_attempts + 1
+    else:
+        retry_budget_guard = True
+        failure_attempt_value = ProcessingJob.failure_attempts
     result = db.execute(
         update(ProcessingJob)
         .where(
@@ -351,20 +388,46 @@ def schedule_job_retry(
             ProcessingJob.worker_id == worker_id,
             ProcessingJob.status == JobStatus.RUNNING.value,
             ProcessingJob.cancel_requested.is_(False),
-            ProcessingJob.attempts < ProcessingJob.max_attempts,
+            retry_budget_guard,
             attempt_guard,
         )
         .values(
             status=JobStatus.RETRY_SCHEDULED.value,
+            progress=0 if reset_progress else ProcessingJob.progress,
+            failure_attempts=failure_attempt_value,
             worker_id=None,
             lease_expires_at=None,
             next_attempt_at=next_attempt_at,
             message=message,
+            product_stage=product_stage,
             updated_at=now,
         )
     )
     db.commit()
     return result.rowcount == 1
+
+
+def schedule_capacity_continuation(
+    db: Session,
+    job_id: str,
+    worker_id: str,
+    next_attempt_at: datetime,
+    *,
+    expected_attempt: int | None = None,
+) -> bool:
+    """Relinquish a worker for temporary provider capacity without spending failure retries."""
+
+    return schedule_job_retry(
+        db,
+        job_id,
+        worker_id,
+        next_attempt_at,
+        message="Đang chờ lượt xử lý AI",
+        expected_attempt=expected_attempt,
+        consume_failure_attempt=False,
+        product_stage="capacity_wait",
+        reset_progress=False,
+    )
 
 
 def cancel_job(db: Session, job_id: str) -> bool:
@@ -485,6 +548,7 @@ def mark_job_failed(
     message: str,
     worker_id: str | None = None,
     expected_attempt: int | None = None,
+    consume_failure_attempt: bool = False,
 ) -> bool:
     """Transition the current running attempt to a user-safe final failure."""
     now = datetime.utcnow()
@@ -507,6 +571,11 @@ def mark_job_failed(
             active_key=None,
             worker_id=None,
             lease_expires_at=None,
+            failure_attempts=(
+                ProcessingJob.failure_attempts + 1
+                if consume_failure_attempt
+                else ProcessingJob.failure_attempts
+            ),
             error_code=error_code,
             error_message=message,
             message=message,

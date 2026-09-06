@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 from pydantic import BaseModel
 import fitz  # PyMuPDF
-import docx
 from sqlalchemy import select, update
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
@@ -24,6 +23,8 @@ from app.services.provider_errors import (
 from app.services.provider_health import get_openrouter_health
 from app.services.provider_guard import ProviderCircuitOpen
 from app.services.vector_store import Document, VectorStore
+from app.schemas.source_document import ExtractionReport, SourceBlock
+from app.services.extraction_quality import OCRResult, extract_source
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,12 @@ def _is_front_matter(text: str) -> bool:
     # A strong colophon marker is enough; a generic edition/publisher hint needs a second
     # signal to avoid discarding an academic discussion that happens to mention publishing.
     return matches >= 2 or any(marker in normalized for marker in ("isbn", "thẩm định", "审定", "出版社", "版权"))
+
+
+def _legacy_extraction_compatibility_score(reports: List[ExtractionReport]) -> int:
+    """Binary legacy field: extraction completion only, independent of chunk count."""
+
+    return 100 if reports and all(report.complete for report in reports) else 0
 
 
 def _evenly_spaced_indices(indices: List[int], limit: int) -> List[int]:
@@ -83,6 +90,20 @@ def _find_split_position(text: str, start: int, end: int, chunk_size: int) -> in
         return split_pos
 
     return -1
+
+
+def _extraction_failure_details(exc: Exception) -> tuple[str, str, str]:
+    if isinstance(exc, UnicodeDecodeError):
+        return (
+            "Không thể đọc tệp văn bản. Vui lòng lưu lại tệp ở định dạng UTF-8 rồi tải lên lại.",
+            "DOCUMENT_TEXT_ENCODING_UNSUPPORTED",
+            "resave_utf8",
+        )
+    return (
+        "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn.",
+        "DOCUMENT_TEXT_EXTRACTION_FAILED",
+        "upload_clearer_pdf",
+    )
 
 
 class ProcessingResult(BaseModel):
@@ -348,7 +369,7 @@ class DocumentProcessor:
         for field in ("chunk_count", "quality_score"):
             if course_fields.get(field, 0) > 0:
                 course_values[field] = course_fields[field]
-        for field in ("name", "embedding_provider"):
+        for field in ("name", "embedding_provider", "extraction_coverage_json"):
             if course_fields.get(field):
                 course_values[field] = course_fields[field]
         return course_values
@@ -843,139 +864,42 @@ class DocumentProcessor:
         return file_paths
 
     def extract_text_from_file(self, file_path: str) -> List[dict]:
-        """Extract text from PDF/DOCX/TXT file. Returns list of dicts with content and page number."""
+        """Compatibility projection of canonical source blocks for legacy callers."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
+        blocks, _ = self.extract_source(file_path)
+        return [
+            {
+                "content": block.math_latex or block.text or "",
+                **({"page": block.page} if block.page is not None else {}),
+                "source_file": block.source_file,
+                "block_kind": block.kind,
+                "document_location": block.location,
+                **({"math_latex": block.math_latex} if block.math_latex else {}),
+            }
+            for block in blocks
+            if block.math_latex or block.text
+        ]
 
-        ext = os.path.splitext(file_path)[1].lower()
-        filename = os.path.basename(file_path)
-        # Strip timestamp prefix if present (e.g. 1234567890_test.pdf -> test.pdf)
-        parts = filename.split("_", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            clean_filename = parts[1]
-        else:
-            clean_filename = filename
+    def extract_source(self, file_path: str) -> tuple[List[SourceBlock], ExtractionReport]:
+        from app.core.config import settings
 
-        pages = []
+        ocr = None
+        if Path(file_path).suffix.lower() == ".pdf" and settings.PDF_ENABLE_OCR:
+            def ocr(image: bytes, page_number: int) -> OCRResult:
+                result = self._ocr_image(image)
+                return result if isinstance(result, OCRResult) else OCRResult(text=result or "", complete=True)
+        return extract_source(
+            Path(file_path), ocr_page=ocr,
+            ocr_max_pages=settings.PDF_OCR_MAX_PAGES,
+            ocr_dpi=settings.PDF_OCR_DPI,
+            min_chars=settings.PDF_TEXT_MIN_CHARS_PER_PAGE,
+        )
 
-        if ext == ".pdf":
-            try:
-                from app.core.config import settings
+    def _ocr_image(self, image_bytes: bytes) -> OCRResult:
+        from app.services.llm import LLMService
 
-                with fitz.open(file_path) as doc:
-                    page_texts = [(page.get_text() or "").strip() for page in doc]
-
-                    scan_mode = False
-                    if settings.PDF_ENABLE_OCR and page_texts:
-                        sample_n = min(settings.PDF_SCAN_SAMPLE_PAGES, len(page_texts))
-                        sample_indices = _evenly_spaced_indices(list(range(len(page_texts))), sample_n)
-                        low_text_count = sum(
-                            1 for idx in sample_indices if len(page_texts[idx]) < settings.PDF_TEXT_MIN_CHARS_PER_PAGE
-                        )
-                        scan_mode = low_text_count >= max(1, sample_n // 2)
-
-                    ocr_candidates = [
-                        idx for idx, text in enumerate(page_texts)
-                        if len(text) < settings.PDF_TEXT_MIN_CHARS_PER_PAGE
-                    ]
-                    ocr_page_indices = set(
-                        _evenly_spaced_indices(ocr_candidates, settings.PDF_OCR_MAX_PAGES)
-                        if scan_mode else []
-                    )
-                    for idx, text in enumerate(page_texts):
-                        if idx in ocr_page_indices:
-                            ocr_text = self._ocr_page(doc, idx, settings.PDF_OCR_DPI)
-                            if ocr_text and len(ocr_text) > len(text):
-                                text = ocr_text
-                        if text:
-                            pages.append(
-                                {
-                                    "content": text,
-                                    "page": idx + 1,
-                                    "source_file": clean_filename,
-                                }
-                            )
-            except ProviderRequestError:
-                raise
-            except Exception as e:
-                # Fallback for dummy/test PDF files in unit tests that contain plain text
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                    if text and text.strip():
-                        logger.warning(
-                            f"PDF open failed for {file_path}, fallback to plain text read for testing."
-                        )
-                        pages.append(
-                            {
-                                "content": text.strip(),
-                                "page": 1,
-                                "source_file": clean_filename,
-                            }
-                        )
-                    else:
-                        raise e
-                except Exception:
-                    logger.error(f"Error reading PDF {file_path}: {e}")
-                    raise e
-
-        elif ext == ".docx":
-            try:
-                doc = docx.Document(file_path)
-                full_text = []
-                for para in doc.paragraphs:
-                    if para.text and para.text.strip():
-                        full_text.append(para.text.strip())
-                if full_text:
-                    pages.append(
-                        {
-                            "content": "\n".join(full_text),
-                            "page": 1,
-                            "source_file": clean_filename,
-                        }
-                    )
-            except Exception as e:
-                # Fallback for dummy/test DOCX files in unit tests that contain plain text
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                    if text and text.strip():
-                        logger.warning(
-                            f"DOCX open failed for {file_path}, fallback to plain text read for testing."
-                        )
-                        pages.append(
-                            {
-                                "content": text.strip(),
-                                "page": 1,
-                                "source_file": clean_filename,
-                            }
-                        )
-                    else:
-                        raise e
-                except Exception:
-                    logger.error(f"Error reading DOCX {file_path}: {e}")
-                    raise e
-
-        elif ext == ".txt":
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
-                if text and text.strip():
-                    pages.append(
-                        {
-                            "content": text.strip(),
-                            "page": 1,
-                            "source_file": clean_filename,
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error reading TXT {file_path}: {e}")
-                raise
-
-        else:
-            raise ValueError(f"Unsupported file extension: {ext}")
-
-        return pages
+        return LLMService().ocr_page_image(image_bytes)
 
     def _ocr_page(self, doc: "fitz.Document", page_index: int, dpi: int) -> Optional[str]:
         """Render a PDF page to an image and ask OpenRouter vision to transcribe its text.
@@ -989,7 +913,8 @@ class DocumentProcessor:
 
             from app.services.llm import LLMService
 
-            return LLMService().ocr_page_image(image_bytes) or None
+            result = LLMService().ocr_page_image(image_bytes)
+            return result.text or None
         except (ProviderRequestError, ProviderCircuitOpen):
             raise
         except Exception as e:
@@ -1115,52 +1040,81 @@ class DocumentProcessor:
         alnum_count = sum(1 for c in stripped if c.isalnum())
         return len(stripped) > 0 and (alnum_count / len(stripped)) < 0.5
 
-    def extract_and_chunk_file(self, path: str, course_id: str) -> List[Document]:
-        """Extract, clean, dedup headers/footers, cross-page chunk, and low-info-prune a
-        single file. Shared by process_course() and the standalone re-embed migration
-        script (scripts/reembed_courses.py) so both stay in sync with chunking changes."""
-        extracted_pages = self.extract_text_from_file(path)
-        cleaned_pages = []
-        for page_data in extracted_pages:
-            cleaned = self.clean_text(page_data["content"])
-            if cleaned:
-                cleaned_pages.append({**page_data, "content": cleaned})
-        cleaned_pages = self._strip_repeated_headers_footers(cleaned_pages)
-
-        # Concatenate every page of this document into one string with an
-        # offset->page map, so a chunk never gets cut off just because it
-        # happens to straddle a page boundary.
-        combined_parts: List[str] = []
-        page_offsets: List[Tuple[int, int, int]] = []
-        offset = 0
-        source_file = None
-        for page_data in cleaned_pages:
-            content = page_data["content"]
+    def extract_and_chunk_file(
+        self, path: str, course_id: str, report_sink: Optional[List[ExtractionReport]] = None
+    ) -> List[Document]:
+        """Extract canonical blocks, remove repeated page noise, and create grounded chunks."""
+        blocks, report = self.extract_source(path)
+        if report_sink is not None:
+            report_sink.append(report)
+        pdf_paragraphs = [block for block in blocks if block.page is not None and block.kind == "paragraph"]
+        if pdf_paragraphs:
+            page_rows = [
+                {"content": block.text or "", "page": block.page, "source_file": block.source_file}
+                for block in pdf_paragraphs
+            ]
+            cleaned_by_page = {
+                row["page"]: row["content"] for row in self._strip_repeated_headers_footers(page_rows)
+            }
+            blocks = [
+                block.model_copy(update={"text": cleaned_by_page.get(block.page, block.text)})
+                if block.page is not None and block.kind == "paragraph"
+                else block
+                for block in blocks
+            ]
+        cleaned_content = {
+            id(block): self.clean_text(block.math_latex or block.text or "") for block in blocks
+        }
+        inline_math_roots = {
+            block.location.split("/fragment[", 1)[0]
+            for block in blocks
+            if block.kind == "math" and "/fragment[" in block.location
+        }
+        ordinary_usable = [
+            content for block in blocks
+            if block.kind == "paragraph"
+            and (content := cleaned_content[id(block)])
+            and (not self._is_low_information(content) or len(content.split()) >= 5)
+        ]
+        has_structured = any(block.kind in {"table", "math"} for block in blocks)
+        documents: List[Document] = []
+        import hashlib
+        for block_order, block in enumerate(blocks):
+            content = cleaned_content[id(block)]
             if not content:
                 continue
-            source_file = page_data["source_file"]
-            combined_parts.append(content)
-            page_offsets.append((offset, offset + len(content), page_data["page"]))
-            offset += len(content)
-            combined_parts.append("\n\n")
-            offset += 2
-
-        if not combined_parts:
-            return []
-
-        combined_text = "".join(combined_parts)
-        page_meta = {"page": page_offsets[0][2], "source_file": source_file}
-        doc_chunks = self.chunk_text(combined_text, page_meta, course_id, page_offsets=page_offsets)
-        front_matter_pages = {
-            page_data["page"] for page_data in cleaned_pages if _is_front_matter(page_data["content"])
-        }
-        for chunk in doc_chunks:
-            chunk.metadata["is_front_matter"] = chunk.metadata.get("page") in front_matter_pages
-        filtered_chunks = [c for c in doc_chunks if not self._is_low_information(c.content)]
-        # Pruning noise should never zero out a whole document's contribution —
-        # a genuinely tiny document (or a chunk_size small enough to slice below
-        # the word-count floor) should still upload, not silently disappear.
-        return filtered_chunks or doc_chunks
+            paragraph_root = block.location.split("/fragment[", 1)[0]
+            weak_paragraph = (
+                block.kind == "paragraph"
+                and self._is_low_information(content)
+                and len(content.split()) < 5
+                and paragraph_root not in inline_math_roots
+            )
+            if weak_paragraph and (ordinary_usable or has_structured):
+                continue
+            metadata = {
+                "source_file": block.source_file,
+                "block_kind": block.kind,
+                "document_location": block.location,
+                "block_order": block_order,
+            }
+            if block.page is not None:
+                metadata["page"] = block.page
+            if block.math_latex:
+                metadata["math_latex"] = block.math_latex
+            chunks = self.chunk_text(content, metadata, course_id)
+            digest = hashlib.sha256(block.location.encode("utf-8")).hexdigest()[:12]
+            for ordinal, chunk in enumerate(chunks):
+                chunk_id = f"{course_id}_{block.source_file}_{digest}_c{ordinal}"
+                chunk.metadata.update(metadata)
+                chunk.metadata["is_front_matter"] = _is_front_matter(content)
+                chunk.metadata["within_block_order"] = ordinal
+                if block.page is None:
+                    chunk.metadata.pop("page", None)
+                chunk.metadata["chunk_id"] = chunk_id
+                chunk.metadata["source_chunk_id"] = chunk_id
+            documents.extend(chunks)
+        return documents
 
     def process_course(
         self,
@@ -1212,23 +1166,25 @@ class DocumentProcessor:
                 )
             _require_provider_preflight()
             all_documents: List[Document] = []
+            extraction_reports: List[ExtractionReport] = []
             try:
                 for path in file_paths:
-                    all_documents.extend(self.extract_and_chunk_file(path, course_id))
+                    all_documents.extend(self.extract_and_chunk_file(path, course_id, extraction_reports))
                 if not all_documents:
                     raise ValueError("No valid text could be extracted from uploaded files.")
             except (ProviderRequestError, ProviderCircuitOpen):
                 raise
             except Exception as exc:
-                user_message = "Không thể đọc tài liệu. Vui lòng tải lên bản PDF rõ hơn."
+                user_message, extraction_code, recommended_action = _extraction_failure_details(exc)
                 terminal_outcome = self._persist_terminal_state(
                     course_id, status="failed", stage="failed", progress=0, embedding_status="failed",
                     job_id=job_id, job_succeeded=False,
-                    job_error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", job_message=user_message,
+                    job_error_code=extraction_code, job_message=user_message,
                     worker_id=worker_id, attempt_number=attempt_number,
                     error_message=user_message, failure_stage="extraction_failed",
-                    error_code="DOCUMENT_TEXT_EXTRACTION_FAILED", can_retry=True,
-                    recommended_action="upload_clearer_pdf", technical_error=str(exc)[:1000],
+                    error_code=extraction_code, can_retry=True,
+                    recommended_action=recommended_action,
+                    technical_error=str(exc)[:1000],
                     db_session_factory=db_session_factory,
                 )
                 if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
@@ -1294,13 +1250,38 @@ class DocumentProcessor:
                 attempt_number=attempt_number,
             ):
                 return self._resolve_inactive_attempt(course_id, job_id, db_session_factory, True)
-            quality_score = min(100, max(50, len(all_documents) * 5 + 60))
             course_title = self._generate_course_title(all_documents) or self._filename_fallback_title(file_paths[0])
+            import json
+            aggregate_total = (
+                sum(report.total_pages for report in extraction_reports)
+                if extraction_reports and all(report.total_pages is not None for report in extraction_reports)
+                else None
+            )
+            extraction_coverage = {
+                "version": 2,
+                "document_count": len(extraction_reports),
+                "total_pages": aggregate_total,
+                "extracted_pages": sum(len(report.extracted_pages) for report in extraction_reports),
+                "ocr_pages": sum(len(report.ocr_pages) for report in extraction_reports),
+                "skipped_pages": sum(len(report.skipped_pages) for report in extraction_reports),
+                "damaged_pages": sum(len(report.damaged_pages) for report in extraction_reports),
+                "blank_pages": sum(len(report.blank_pages) for report in extraction_reports),
+                "warning_count": sum(len(report.warnings) for report in extraction_reports),
+                "complete": all(report.complete for report in extraction_reports),
+                "extraction_complete": all(report.complete for report in extraction_reports),
+                "indexed_chunk_count": len(all_documents),
+                "faithfulness": None,
+                "faithfulness_status": "not_evaluated",
+                "legacy_quality_score_label": "extraction completeness compatibility",
+            }
+            # Compatibility only: this binary value reflects extraction completion, never factual accuracy.
+            quality_score = _legacy_extraction_compatibility_score(extraction_reports)
             terminal_outcome = self._persist_terminal_state(
                 course_id, status="ready", stage="completed", progress=100, embedding_status="completed",
                 job_id=job_id, job_succeeded=True, chunk_count=len(all_documents), quality_score=quality_score,
                 worker_id=worker_id, attempt_number=attempt_number,
-                name=course_title, embedding_provider=embedding_provider, db_session_factory=db_session_factory,
+                name=course_title, embedding_provider=embedding_provider,
+                extraction_coverage_json=json.dumps(extraction_coverage), db_session_factory=db_session_factory,
             )
             if terminal_outcome != TerminalPersistenceOutcome.PERSISTED:
                 return self._resolve_terminal_outcome(

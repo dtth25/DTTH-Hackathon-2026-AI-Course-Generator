@@ -1,19 +1,32 @@
 """Generation Service responsible for RAG retrieval, LLM generation, scoring, and artifact storage."""
 
-import hashlib
 import json
+import hashlib
 import logging
 import os
 import re
 import random
+import inspect
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from sqlalchemy import update
+from sqlalchemy import case, text, update
 from sqlalchemy.orm import Session
+from billiard.exceptions import SoftTimeLimitExceeded
+from app.services.provider_usage import BudgetLimitError, current_provider_context, stage_timer, book_usage, usage_context
+from app.services.book_content_budget import (
+    BookCoverageInfeasible,
+    allocate_book_budget,
+    outline_output_allowance,
+)
 from app.core.config import settings
 from app.models.course import Course
 from app.models.processing_job import JobStatus, ProcessingJob
+from app.models.source_plan import SourcePlanRecord
 from app.schemas.generation import (
     GroundingData,
     QualityScoresData,
@@ -24,18 +37,39 @@ from app.schemas.generation import (
 )
 from app.schemas.generator_output import (
     BookChapter,
+    BookChapterContent,
+    BookChapterPlan,
+    BookOutline,
     BookOutput,
     QuizOutput,
+    QualityReport,
     SlidesOutput,
     VidOutput,
     validate_and_score_output,
 )
-from app.services.llm import LLMService
+from app.schemas.source_plan import SourceObjective, SourcePlan, SourcePlanUnit
+from app.services.llm import (
+    BookIncompleteError,
+    LLMService,
+    validate_book_chapter_completion,
+)
+from app.services.book_checkpoint import (
+    BOOK_PROMPT_REVISION,
+    BookCheckpointStore,
+    CheckpointIdentity,
+    canonical_digest,
+    checkpoint_write_fence,
+    options_digest as book_options_digest,
+    plan_digest as checkpoint_plan_digest,
+    remove_book_checkpoints,
+)
 from app.services.public_errors import sanitize_public_payload
+from app.services.retrieval import retrieve_evidence
+from app.services.source_plan import get_or_create_source_plan, source_plan_request_revision
 from app.services.provider_guard import ProviderCircuitOpen
 from app.services.pdf_book import build_book_pdf
-from app.services.text_format import clean_text
-from app.services.vector_store import Document, VectorStore
+from app.services.text_format import normalize_display_text, normalize_narration
+from app.services.vector_store import VectorStore
 from app.services.versioning import (
     AtomicArtifactDirectory,
     GenerationInFlightError,
@@ -50,9 +84,76 @@ from app.services.versioning import (
 
 logger = logging.getLogger(__name__)
 
+SOURCE_PLAN_PROMPT_REVISION = "source-plan-v1"
+
+_PUBLIC_QUALITY_REPORT_FIELDS = {
+    "structural_validity",
+    "citation_validity",
+    "source_coverage",
+    "extraction_complete",
+    "faithfulness",
+    "indexed_chunk_count",
+    "invalid_citation_count",
+    "missing_citation_count",
+    "labels",
+}
+
+
+def _quality_report_payload(report: QualityReport | Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
+    """Return only aggregate quality fields; never persist or expose raw evidence IDs."""
+
+    if report is None:
+        return None
+    raw = report.model_dump() if isinstance(report, QualityReport) else report
+    if not isinstance(raw, dict):
+        return None
+    return {key: raw[key] for key in _PUBLIC_QUALITY_REPORT_FIELDS if key in raw}
+
+
+def _quality_report_key(artifact: str) -> str:
+    return "study_guide_pdf" if artifact == "book" else artifact
+
+
+def _active_quality_report_payloads(study_pack: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Derive report caches from active versions so removed artifacts cannot leak stale checks."""
+
+    reports: Dict[str, Dict[str, Any]] = {}
+    artifacts = study_pack.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        return reports
+    for artifact, entry in artifacts.items():
+        if not isinstance(entry, dict):
+            continue
+        versions = entry.get("versions", {})
+        active = entry.get("active")
+        if not isinstance(versions, dict) or active not in versions:
+            continue
+        version = versions.get(active)
+        if not isinstance(version, dict):
+            continue
+        payload = _quality_report_payload(version.get("quality_report"))
+        if payload is not None:
+            reports[_quality_report_key(artifact)] = payload
+    return reports
+
 
 class _GenerationInterrupted(Exception):
     """The durable worker lost its lease or observed cancellation."""
+
+
+@dataclass(frozen=True)
+class _BookChapterTask:
+    index: int
+    book_title: str
+    plan: BookChapterPlan
+    total: int
+    context: str
+    valid_chunk_ids: tuple[str, ...]
+    detail_level: str
+    max_output_tokens: int | None
+    reasoning_tokens: int | None
+    required_objectives: dict[str, str]
+
 
 _LEADING_ID_TOKEN_RE = re.compile(r"^([A-Za-z0-9-]+)[_\s]+")
 _ARRAY_INDEX_RE = re.compile(r"\b([A-Za-z][A-Za-z0-9]*)(\[[A-Za-z0-9, ]+\](?:\[[A-Za-z0-9, ]+\])*)")
@@ -73,15 +174,11 @@ def _strip_leading_id_token(text: str) -> str:
 
 
 def _clean_slides_output(deck: SlidesOutput) -> SlidesOutput:
-    """Normalize LLM-authored prose (strip LaTeX/Markdown) in-place across a slide deck.
-    Slides are always rasterized to images for the reader (no live-text consumer), so this
-    stays the only artifact type cleaned before persistence; Book/Quiz keep their raw
-    LLM Markdown/LaTeX in storage and clean it only at PDF-build time (see pdf_utils.prepare_pdf_text)
-    so the frontend's real Markdown+KaTeX renderer gets full fidelity."""
-    deck.title = clean_text(deck.title)
+    """Apply only safe display normalization before persisting a slide deck."""
+    deck.title = normalize_display_text(deck.title)
     for sl in deck.slides:
-        sl.title = clean_text(sl.title)
-        sl.bullet_points = [clean_text(b) for b in sl.bullet_points]
+        sl.title = normalize_display_text(sl.title)
+        sl.bullet_points = [normalize_display_text(b) for b in sl.bullet_points]
     return deck
 
 
@@ -120,19 +217,18 @@ def _repair_flattened_array_indices(data: Any, source_context: str, artifact_typ
 
 
 def _clean_vid_output(vid: VidOutput) -> VidOutput:
-    """Normalize LLM-authored prose (strip LaTeX/Markdown) in-place across a video script.
-    Frames are rasterized (like Slides), so this stays the only cleanup pass before render."""
-    vid.title = clean_text(vid.title)
+    """Keep screen text canonical; normalize only narration for the TTS boundary."""
+    vid.title = normalize_display_text(vid.title)
     for sc in vid.scenes:
-        sc.title = clean_text(sc.title)
-        sc.on_screen_text = clean_text(sc.on_screen_text or "")
-        sc.key_points = [clean_text(kp) for kp in sc.key_points]
+        sc.title = normalize_display_text(sc.title)
+        sc.on_screen_text = normalize_display_text(sc.on_screen_text)
+        sc.key_points = [normalize_display_text(kp) for kp in sc.key_points]
         if sc.diagram:
-            sc.diagram.title = clean_text(sc.diagram.title or "") or None
+            sc.diagram.title = normalize_display_text(sc.diagram.title) or None
             for item in sc.diagram.items:
-                item.label = clean_text(item.label)
-                item.detail = clean_text(item.detail or "") or None
-        sc.narration = clean_text(sc.narration)
+                item.label = normalize_display_text(item.label)
+                item.detail = normalize_display_text(item.detail) or None
+        sc.narration = normalize_narration(sc.narration)
     return vid
 
 
@@ -164,15 +260,527 @@ def _balance_quiz_answers(quiz: QuizOutput, version_id: str) -> QuizOutput:
 class Generator:
     """Orchestrates RAG retrieval, AI generation, validation, and file storage."""
 
-    def __init__(self, vector_store: VectorStore, llm: LLMService, feature_llms: Optional[Dict[str, LLMService]] = None):
-        self.vector_store = vector_store
+    def __init__(self, vector_store: VectorStore | None, llm: LLMService, feature_llms: Optional[Dict[str, LLMService]] = None):
+        self._vector_store = vector_store
         self.llm = llm
         # Kept injectable for tests; production uses a single OpenRouter service.
         self.feature_llms = feature_llms or {}
         self._generation_versions: Dict[tuple[str, str], str] = {}
+        self._source_plan_contexts: Dict[tuple[str, str], Tuple[str, List[str]]] = {}
+        self._source_plan_models: Dict[tuple[str, str, int], str] = {}
+
+    @property
+    def vector_store(self) -> VectorStore:
+        """Initialize retrieval storage only when a retrieval operation needs it."""
+        if self._vector_store is None:
+            from app.services.vector_store import get_vector_store
+
+            self._vector_store = get_vector_store()
+        return self._vector_store
+
+    @vector_store.setter
+    def vector_store(self, value: VectorStore | None) -> None:
+        self._vector_store = value
 
     def _llm_for(self, feature: str) -> LLMService:
         return self.feature_llms.get(feature, self.llm)
+
+    def _source_plan_inputs(self, course_id: str, db_session_factory=None):
+        """Read only this course's indexed content and derive a stable source digest."""
+        provider = self._get_embedding_provider(course_id, db_session_factory)
+        source_names = self._get_doc_name_list(course_id, db_session_factory)
+        context, evidence_ids = self._retrieve_context(
+            course_id,
+            k=80,
+            db_session_factory=db_session_factory,
+            coverage_sources=source_names,
+        )
+        self._require_context(context)
+        chunks = (
+            self.vector_store.get_course_chunks(course_id, provider=provider)
+            if isinstance(self.vector_store, VectorStore)
+            else []
+        )
+        ordered = sorted(chunks, key=lambda item: str(item.metadata.get("chunk_id", "")))
+        digest = hashlib.sha256()
+        if ordered:
+            for chunk in ordered:
+                digest.update(str(chunk.metadata.get("chunk_id", "")).encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(chunk.content.encode("utf-8"))
+                digest.update(b"\0")
+        else:
+            # Compatibility for bounded/fake stores that expose only the retrieval API.
+            digest.update(context.encode("utf-8"))
+        return digest.hexdigest(), context, evidence_ids
+
+    @staticmethod
+    def _validated_source_plan(
+        plan: SourcePlan, revision: int, source_digest: str, valid_ids: List[str]
+    ) -> SourcePlan:
+        """Reject invented evidence and normalize stable internal unit/objective IDs."""
+        allowed = set(valid_ids)
+        plan = plan.model_copy(
+            update={"revision": revision, "source_digest": source_digest}, deep=True
+        )
+        objective_id_map = {
+            objective.id: f"objective-{index + 1}"
+            for index, objective in enumerate(plan.objectives)
+        }
+        for objective in plan.objectives:
+            objective.id = objective_id_map[objective.id]
+        objective_ids = {objective.id for objective in plan.objectives}
+        for index, unit in enumerate(plan.units):
+            unit.id = f"unit-{index + 1}"
+            unit.objective_ids = [
+                objective_id_map[value]
+                for value in unit.objective_ids
+                if objective_id_map.get(value) in objective_ids
+            ]
+        evidenced = [*plan.objectives, *plan.glossary, *plan.equations, *plan.units]
+        if any(not set(item.evidence_ids) or not set(item.evidence_ids).issubset(allowed) for item in evidenced):
+            raise ValueError("Source plan cited evidence outside the owned retrieved source")
+        return SourcePlan.model_validate(plan.model_dump())
+
+    def _get_source_plan(
+        self,
+        course_id: str,
+        feature: Optional[str] = None,
+        db_session_factory=None,
+        *,
+        selected_llm=None,
+    ) -> SourcePlan:
+        source_digest, context, evidence_ids = self._source_plan_inputs(
+            course_id, db_session_factory
+        )
+        self._source_plan_contexts[(course_id, source_digest)] = (context, evidence_ids)
+        selected_llm = selected_llm or (self._llm_for(feature) if feature else self.llm)
+        model = getattr(selected_llm, "model", settings.OPENROUTER_MODEL)
+
+        def build(revision: int) -> SourcePlan:
+            generate = getattr(selected_llm, "generate_source_plan", None)
+            if generate is None:
+                raw = self._fallback_source_plan(revision, source_digest, evidence_ids)
+            elif isinstance(selected_llm, LLMService) and getattr(
+                selected_llm, "book_policy", None
+            ) is not None:
+                source_plan_output = min(4_000, 1_800 + 200 * len(evidence_ids))
+                parameters = inspect.signature(generate).parameters.values()
+                supports_budget = any(
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD
+                    or parameter.name == "max_output_tokens"
+                    for parameter in parameters
+                )
+                if supports_budget:
+                    raw = generate(
+                        context,
+                        source_digest,
+                        revision,
+                        evidence_ids,
+                        max_output_tokens=source_plan_output,
+                        reasoning_tokens=selected_llm.book_policy.reasoning_budget,
+                    )
+                else:
+                    raw = generate(context, source_digest, revision, evidence_ids)
+            else:
+                raw = generate(context, source_digest, revision, evidence_ids)
+            return self._validated_source_plan(raw, revision, source_digest, evidence_ids)
+
+        plan = get_or_create_source_plan(
+            course_id,
+            source_digest,
+            model,
+            SOURCE_PLAN_PROMPT_REVISION,
+            db_session_factory=(db_session_factory or None),
+            create=build,
+        )
+        provenance_db = self._get_db(db_session_factory)
+        try:
+            record = provenance_db.query(SourcePlanRecord).filter_by(
+                course_id=course_id, revision=plan.revision
+            ).one()
+            self._source_plan_models[
+                (course_id, plan.source_digest, plan.revision)
+            ] = record.model
+        finally:
+            provenance_db.close()
+        return plan
+
+    @staticmethod
+    def _fallback_source_plan(
+        revision: int, source_digest: str, evidence_ids: List[str]
+    ) -> SourcePlan:
+        """Compatibility plan for injected legacy test doubles without a plan method."""
+        # The compatibility plan must preserve the same targeted-context invariant
+        # as a generated plan. Repeating every source block in all four units would
+        # make the uncached Book input grow fourfold.
+        buckets = [[] for _ in range(4)]
+        for index, evidence_id in enumerate(evidence_ids):
+            buckets[index % len(buckets)].append(evidence_id)
+        fallback_id = evidence_ids[0] if evidence_ids else "chunk_1"
+        buckets = [bucket or [fallback_id] for bucket in buckets]
+        objectives = [
+            SourceObjective(
+                id=f"objective-{index}",
+                text=f"Giải thích nội dung học tập {index}",
+                evidence_ids=buckets[index - 1],
+            )
+            for index in range(1, 5)
+        ]
+        return SourcePlan(
+            revision=revision,
+            source_digest=source_digest,
+            objectives=objectives,
+            glossary=[],
+            equations=[],
+            units=[
+                SourcePlanUnit(
+                    id=f"unit-{index}",
+                    title=f"Nội dung học tập {index}",
+                    objective_ids=[f"objective-{index}"],
+                    evidence_ids=buckets[index - 1],
+                )
+                for index in range(1, 5)
+            ],
+        )
+
+    def _plan_context(
+        self,
+        course_id: str,
+        plan: SourcePlan,
+        topic: str = "",
+        *,
+        all_units: bool = False,
+        unit_ids: Optional[List[str]] = None,
+        evidence_ids_override: Optional[List[str]] = None,
+    ) -> Tuple[str, List[str], List[Any]]:
+        """Provide prompts only the plan units and owned evidence relevant to this request."""
+        terms = {token for token in re.findall(r"\w+", topic.casefold()) if len(token) > 2}
+        if unit_ids is not None:
+            wanted = set(unit_ids)
+            selected = [unit for unit in plan.units if unit.id in wanted]
+            if len(selected) != len(wanted):
+                raise ValueError("Unknown source-plan unit assignment")
+        else:
+            selected = list(plan.units) if all_units else [
+                unit for unit in plan.units if terms & set(re.findall(r"\w+", unit.title.casefold()))
+            ]
+        if not selected:
+            selected = list(plan.units[: min(4, len(plan.units))])
+        evidence_ids = list(dict.fromkeys(cid for unit in selected for cid in unit.evidence_ids))
+        if evidence_ids_override is not None:
+            known_evidence = {
+                evidence_id
+                for item in [*plan.objectives, *plan.glossary, *plan.equations, *plan.units]
+                for evidence_id in item.evidence_ids
+            }
+            requested = list(dict.fromkeys(evidence_ids_override))
+            if not set(requested).issubset(known_evidence):
+                raise ValueError("Chapter allocation requested evidence outside the source plan")
+            evidence_ids = requested
+        cached = self._source_plan_contexts.get((course_id, plan.source_digest))
+        if cached and set(evidence_ids) == set(cached[1]):
+            chunks = []
+            fallback_context = cached[0]
+        else:
+            try:
+                chunks = self.vector_store.get_course_chunks(course_id, evidence_ids)
+            except (KeyError, TypeError):
+                fallback_context, fallback_ids = self._retrieve_context(
+                    course_id,
+                    query=topic,
+                    k=80,
+                    coverage_sources=self._get_doc_name_list(course_id),
+                )
+                chunks = []
+                evidence_ids = fallback_ids
+            else:
+                fallback_context = ""
+        by_id = {str(chunk.metadata.get("chunk_id")): chunk for chunk in chunks}
+        evidence = "\n\n".join(
+            f"[Chunk ID: {cid}]:\n{by_id[cid].content}" for cid in evidence_ids if cid in by_id
+        ) or fallback_context
+        selected_ids = {unit.id for unit in selected}
+        selected_objectives = [
+            item.model_dump() for item in plan.objectives
+            if any(item.id in unit.objective_ids for unit in selected)
+        ]
+        relevant_evidence = set(evidence_ids)
+        plan_payload = {
+            "revision": plan.revision,
+            "objectives": selected_objectives,
+            "glossary": [item.model_dump() for item in plan.glossary if relevant_evidence & set(item.evidence_ids)],
+            "equations": [item.model_dump() for item in plan.equations if relevant_evidence & set(item.evidence_ids)],
+            "units": [item.model_dump() for item in plan.units if item.id in selected_ids],
+        }
+        return (
+            "SOURCE PLAN (ràng buộc dùng chung; giữ nguyên định nghĩa và LaTeX):\n"
+            + json.dumps(plan_payload, ensure_ascii=False)
+            + "\nOUTPUT ASSIGNMENT: output item N must cite only the evidence of unit "
+            + "((N-1) modulo selected unit count)."
+            + "\n\nOWNED UNIT EVIDENCE:\n"
+            + evidence,
+            evidence_ids,
+            selected,
+        )
+
+    def _bind_version_to_plan(
+        self, course_id: str, artifact: str, version_id: Optional[str], plan: SourcePlan,
+        db_session_factory=None, selected_model: Optional[str] = None,
+    ) -> None:
+        if not version_id:
+            return
+        db = self._get_db(db_session_factory)
+        try:
+            course = db.get(Course, course_id)
+            if course is None:
+                raise ValueError("Course not found")
+            meta, _ = migrate_legacy_artifact_metadata(self._metadata_dict(course))
+            version = meta["study_pack"]["artifacts"][artifact]["versions"][version_id]
+            version["source_plan_revision"] = plan.revision
+            version["source_plan_digest"] = plan.source_digest
+            version["source_plan_model"] = self._source_plan_models.get(
+                (course_id, plan.source_digest, plan.revision),
+                selected_model or settings.OPENROUTER_MODEL,
+            )
+            version["source_plan_prompt_revision"] = SOURCE_PLAN_PROMPT_REVISION
+            course.metadata_json = json.dumps(meta, ensure_ascii=False)
+            db.commit()
+        finally:
+            db.close()
+
+    @staticmethod
+    def _artifact_with_plan(data: Any, plan: SourcePlan, unit_ids: List[str]) -> Dict[str, Any]:
+        payload = data.model_dump() if hasattr(data, "model_dump") else dict(data)
+        payload["source_plan"] = {
+            "revision": plan.revision,
+            "source_digest": plan.source_digest,
+            "unit_ids": unit_ids,
+            "canonical_equations": [item.model_dump() for item in plan.equations],
+            "glossary": [item.model_dump() for item in plan.glossary],
+        }
+        return payload
+
+    @staticmethod
+    def _top_level_visible_fields(data: Any, artifact: str) -> List[str]:
+        values = [data.title]
+        if artifact == "book":
+            values.extend([data.summary, data.preface])
+        return [str(value) for value in values if value]
+
+    @staticmethod
+    def _visible_item_fields(data: Any, artifact: str, index: int) -> List[str]:
+        """Return learner-visible text fields without merging their claim boundaries."""
+        values: List[Any] = []
+        if artifact == "book":
+            chapter = data.chapters[index]
+            values.extend([chapter.chapter_title, chapter.introduction, *chapter.objectives])
+            for section in chapter.sections:
+                values.extend([section.title, section.content])
+            values.extend(chapter.key_points + chapter.review_questions)
+        elif artifact == "slides":
+            slide = data.slides[index]
+            values.extend([slide.title, *slide.bullet_points])
+        elif artifact == "quiz":
+            question = data.questions[index]
+            selected = next(
+                (option.text for option in question.options if option.key == question.correct_answer),
+                "",
+            )
+            # Distractors are intentionally false. Only the selected answer participates
+            # in the truth-bearing canonical contract.
+            values.extend([question.question_text, selected, question.explanation])
+        else:
+            scene = data.scenes[index]
+            values.extend([scene.title, scene.on_screen_text or "", scene.narration, *scene.key_points])
+            if scene.diagram:
+                values.append(scene.diagram.title or "")
+                for item in scene.diagram.items:
+                    values.extend([item.label, item.detail or ""])
+        return [str(value) for value in values if value]
+
+    @classmethod
+    def _visible_item_text(cls, data: Any, artifact: str, index: int) -> str:
+        fields = cls._visible_item_fields(data, artifact, index)
+        if index == 0:
+            fields = [*cls._top_level_visible_fields(data, artifact), *fields]
+        return "\n".join(fields)
+
+    @staticmethod
+    def _normalized_canonical_text(value: str) -> str:
+        """Normalize presentation whitespace while preserving semantic punctuation."""
+        # An exclamation mark may be factorial (including repeated factorials).
+        # Never discard it, even when it occurs at the end of an answer.
+        return re.sub(r"\s+", " ", value.casefold()).strip().rstrip(".?;").strip()
+
+    @classmethod
+    def _named_claim_values(
+        cls, fields: List[str], name: str, *, equation_only: bool = False
+    ) -> List[str]:
+        """Extract every explicit value asserted for a named definition/equation."""
+        escaped_name = re.escape(name)
+        connectors = r"=" if equation_only else (
+            r":|=|means?|is(?:\s+defined\s+as)?|has\s+the\s+meaning|"
+            r"là|có\s+nghĩa\s+là|được\s+định\s+nghĩa\s+là"
+        )
+        prefix = rf"(?<!\w){escaped_name}(?!\w)\s*(?:{connectors})\s*"
+        next_claim = (
+            rf"(?:(?:,\s*|\s+)(?:but|and|nhưng|và)\s+)?"
+            rf"(?<!\w){escaped_name}(?!\w)\s*(?:{connectors})"
+        )
+        # A period followed by a digit belongs to a number (0.5 or .5),
+        # while factorial must remain part of the asserted mathematical value.
+        sentence_end = r"\.(?=\s|$)|[?;\n]"
+        pattern = re.compile(
+            rf"{prefix}(.*?)(?={next_claim}|{sentence_end}|$)",
+            flags=re.IGNORECASE,
+        )
+        return [match.group(1).strip(" ,") for field in fields for match in pattern.finditer(field)]
+
+    @classmethod
+    def _reject_conflicting_named_claims(
+        cls,
+        fields: List[str],
+        name: str,
+        allowed_values: List[str],
+        *,
+        equation_only: bool = False,
+    ) -> None:
+        """Reject explicit claims about a named plan item that disagree with its canon.
+
+        This deliberately recognizes only explicit definition/equation syntax. It does
+        not attempt general factual verification, which remains outside CP6 scoring.
+        """
+        normalized_allowed = {
+            cls._normalized_canonical_text(value) for value in allowed_values if value
+        }
+        for value in cls._named_claim_values(fields, name, equation_only=equation_only):
+            claim = cls._normalized_canonical_text(value)
+            if claim and claim not in normalized_allowed:
+                raise ValueError("Visible output contains a conflicting canonical claim")
+
+    @classmethod
+    def _reject_incorrect_quiz_answer(
+        cls, data: Any, index: int, name: str, canonical: str, *, equation: bool
+    ) -> None:
+        question = data.questions[index]
+        prompt = question.question_text.casefold()
+        if name.casefold() not in prompt:
+            return
+        if equation:
+            asks_for_canonical = bool(re.search(r"formula|equation|công\s*thức|phương\s*trình", prompt))
+        else:
+            asks_for_canonical = bool(re.search(
+                r"what\s+is|what\s+does|meaning|means|definition|là\s+gì|định\s+nghĩa|nghĩa\s+là\s+gì",
+                prompt,
+            ))
+        if not asks_for_canonical:
+            return
+        selected = next(
+            (option.text for option in question.options if option.key == question.correct_answer),
+            "",
+        )
+        expected = cls._normalized_canonical_text(canonical)
+        if cls._normalized_canonical_text(selected) == expected:
+            return
+        selected_claims = cls._named_claim_values([selected], name, equation_only=equation)
+        if selected_claims and all(
+            cls._normalized_canonical_text(claim) == expected for claim in selected_claims
+        ):
+            return
+        raise ValueError("Quiz correct answer conflicts with the canonical plan")
+
+    @staticmethod
+    def _append_visible_canonical(data: Any, artifact: str, index: int, statement: str) -> None:
+        if artifact == "book" and data.chapters[index].sections:
+            data.chapters[index].sections[0].content += f"\n\n{statement}"
+        elif artifact == "slides":
+            data.slides[index].bullet_points.append(statement)
+        elif artifact == "quiz":
+            data.questions[index].explanation += f" {statement}"
+        elif artifact == "vid":
+            data.scenes[index].narration += f" {statement}"
+        else:
+            raise ValueError("Generated artifact has no visible canonical-content target")
+
+    def _enforce_canonical_consistency(
+        self, data: Any, artifact: str, plan: SourcePlan, assigned_units: List[Any]
+    ) -> None:
+        """Reject visible contradictions and add omitted assigned canonical facts.
+
+        This checks cross-artifact wording only. It deliberately does not claim source
+        faithfulness; CP6's factual evaluation remains unevaluated.
+        """
+        initial_visible = [
+            self._visible_item_text(data, artifact, index)
+            for index in range(len(assigned_units))
+        ]
+        visible_fields = [
+            self._visible_item_fields(data, artifact, index)
+            for index in range(len(assigned_units))
+        ]
+        top_level_fields = self._top_level_visible_fields(data, artifact)
+        for entry in plan.glossary:
+            indexes = [
+                index for index, unit in enumerate(assigned_units)
+                if set(unit.evidence_ids).intersection(entry.evidence_ids)
+            ]
+            if not indexes:
+                continue
+            same_name_equations = [
+                equation.latex for equation in plan.equations
+                if equation.name.casefold() == entry.term.casefold()
+            ]
+            for index in indexes:
+                self._reject_conflicting_named_claims(
+                    [*top_level_fields, *visible_fields[index]],
+                    entry.term,
+                    [entry.definition, *same_name_equations],
+                )
+                if artifact == "quiz":
+                    self._reject_incorrect_quiz_answer(
+                        data, index, entry.term, entry.definition, equation=False
+                    )
+            mentions = [
+                index for index in indexes
+                if entry.term.casefold() in initial_visible[index].casefold()
+            ]
+            if mentions:
+                if any(entry.definition not in initial_visible[index] for index in mentions):
+                    raise ValueError("Visible output contradicts or omits a canonical definition")
+            else:
+                self._append_visible_canonical(
+                    data, artifact, indexes[0], f"{entry.term}: {entry.definition}"
+                )
+        for equation in plan.equations:
+            indexes = [
+                index for index, unit in enumerate(assigned_units)
+                if set(unit.evidence_ids).intersection(equation.evidence_ids)
+            ]
+            if not indexes:
+                continue
+            for index in indexes:
+                self._reject_conflicting_named_claims(
+                    [*top_level_fields, *visible_fields[index]],
+                    equation.name,
+                    [equation.latex],
+                    equation_only=True,
+                )
+                if artifact == "quiz":
+                    self._reject_incorrect_quiz_answer(
+                        data, index, equation.name, equation.latex, equation=True
+                    )
+            mentions = [
+                index for index in indexes
+                if equation.name.casefold() in initial_visible[index].casefold()
+            ]
+            if mentions:
+                if any(equation.latex not in initial_visible[index] for index in mentions):
+                    raise ValueError("Visible output contradicts or omits a canonical equation")
+            else:
+                self._append_visible_canonical(
+                    data, artifact, indexes[0], f"{equation.name}: {equation.latex}"
+                )
 
     def _get_db(self, db_session_factory=None):
         if db_session_factory is None:
@@ -204,49 +812,31 @@ class Generator:
             db.close()
 
     def _retrieve_context(
-        self, course_id: str, query: str = "", k: int = 20, db_session_factory=None
+        self,
+        course_id: str,
+        query: str = "",
+        k: int = 20,
+        db_session_factory=None,
+        coverage_sources: Optional[List[str]] = None,
     ) -> Tuple[str, List[str]]:
-        """Retrieve relevant chunks from Chroma vector store, drop near-duplicate chunks
-        (retrieval overlap / re-retrieval across Book chapters), and order the survivors
-        by (source_file, page) so the LLM sees document-coherent context instead of chunks
-        shuffled by raw similarity rank."""
+        """Retrieve usable owned evidence, then present it in coherent source order."""
         search_query = query or "tổng quan kiến thức khóa học các chương quan trọng"
         provider = self._get_embedding_provider(course_id, db_session_factory)
-        # Ask for a small buffer so front-matter chunks can be excluded without starving a
-        # short course. If every chunk is front matter we retain it as a last resort.
-        chunks = self.vector_store.search(query=search_query, course_id=course_id, k=k + 5, provider=provider)
-        content_chunks = [doc for doc in chunks if not doc.metadata.get("is_front_matter", False)]
-        if content_chunks:
-            chunks = content_chunks[:k]
-        else:
-            chunks = chunks[:k]
+        chunks = retrieve_evidence(
+            course_id,
+            search_query,
+            k,
+            vector_store=self.vector_store,
+            provider=provider,
+            coverage_sources=coverage_sources,
+        )
         if not chunks:
-            logger.warning(f"No vector chunks found for course {course_id}. RAG context will be empty.")
+            logger.warning("No usable source evidence found for course %s.", course_id)
             return "", []
-
-        seen_hashes = set()
-        deduped = []
-        for doc in chunks:
-            normalized = " ".join(doc.content.strip().lower().split())[:150]
-            digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()
-            if digest in seen_hashes:
-                continue
-            seen_hashes.add(digest)
-            deduped.append(doc)
-
-        def _sort_key(doc: Document):
-            page = doc.metadata.get("page", 0)
-            try:
-                page = int(page)
-            except (TypeError, ValueError):
-                page = 0
-            return (str(doc.metadata.get("source_file", "")), page)
-
-        deduped.sort(key=_sort_key)
 
         context_lines = []
         valid_chunk_ids = []
-        for i, doc in enumerate(deduped):
+        for i, doc in enumerate(chunks):
             cid = doc.metadata.get("chunk_id") or f"chunk_{i+1}"
             valid_chunk_ids.append(cid)
             file_name = doc.metadata.get("source_file", "unknown")
@@ -362,6 +952,7 @@ class Generator:
         worker_id: Optional[str] = None,
         attempt_number: Optional[int] = None,
         score: Optional[int] = None,
+        quality_report: QualityReport | Dict[str, Any] | None = None,
         db_session_factory=None,
     ) -> bool:
         """Atomically fence job ownership, publish files, and mark both records ready."""
@@ -373,6 +964,7 @@ class Generator:
                 "ready",
                 progress=100,
                 version_id=version_id,
+                quality_report=quality_report,
                 db_session_factory=db_session_factory,
             )
             return True
@@ -396,7 +988,10 @@ class Generator:
             if guard.rowcount != 1:
                 db.rollback()
                 return False
-            course = db.get(Course, course_id)
+            course_query = db.query(Course).filter(Course.id == course_id)
+            if db.bind is not None and db.bind.dialect.name == "postgresql":
+                course_query = course_query.with_for_update()
+            course = course_query.first()
             if course is None or course.is_deleted:
                 db.rollback()
                 return False
@@ -405,7 +1000,31 @@ class Generator:
             artifacts = dict(study_pack.get("artifacts", {}))
             entry = dict(artifacts.get(artifact, {}))
             versions = dict(entry.get("versions", {}))
+            if version_id not in versions:
+                db.rollback()
+                return False
             current = dict(versions.get(version_id, {}))
+            if current.get("status") != "processing":
+                db.rollback()
+                return False
+            job = db.get(ProcessingJob, job_id)
+            payload = job.payload_json if job and isinstance(job.payload_json, dict) else {}
+            if payload.get("version_id") != version_id:
+                db.rollback()
+                return False
+            if artifact == "book":
+                from app.models.provider_call import BookBudget
+
+                budget_id = payload.get("budget_id")
+                budget = db.get(BookBudget, budget_id) if budget_id else None
+                if (
+                    budget is None
+                    or budget.course_id != course_id
+                    or budget.version_id != version_id
+                    or budget.user_id != course.user_id
+                ):
+                    db.rollback()
+                    return False
             timestamp = now.isoformat()
             current.update(
                 {
@@ -420,6 +1039,9 @@ class Generator:
             )
             if score is not None:
                 current["quality_score"] = score
+            report_payload = _quality_report_payload(quality_report)
+            if report_payload is not None:
+                current["quality_report"] = report_payload
             versions[version_id] = current
             entry.update({"active": version_id, "versions": versions})
             artifacts[artifact] = entry
@@ -435,6 +1057,9 @@ class Generator:
             readiness[readiness_key] = True
             if score is not None:
                 quality_scores[readiness_key] = score
+            quality_reports = dict(study_pack.get("quality_reports", {}))
+            if report_payload is not None:
+                quality_reports[readiness_key] = report_payload
             grounding = dict(
                 study_pack.get(
                     "grounding",
@@ -451,6 +1076,7 @@ class Generator:
                 course.quality_score = grounding["quality_score"]
             study_pack["readiness"] = readiness
             study_pack["quality_scores"] = quality_scores
+            study_pack["quality_reports"] = quality_reports
             study_pack["grounding"] = grounding
             meta["study_pack"] = study_pack
 
@@ -858,7 +1484,14 @@ class Generator:
             }
         return visual_map
 
-    def _update_course_metadata(self, course_id: str, artifact_type: str, score: int, db_session_factory=None):
+    def _update_course_metadata(
+        self,
+        course_id: str,
+        artifact_type: str,
+        score: int,
+        db_session_factory=None,
+        quality_report: QualityReport | Dict[str, Any] | None = None,
+    ):
         """Update course metadata_json and readiness flags in database."""
         version_id = self._generation_versions.get((course_id, artifact_type))
         db = self._get_db(db_session_factory)
@@ -881,26 +1514,38 @@ class Generator:
                 if version_id in versions:
                     version = dict(versions[version_id])
                     version["quality_score"] = score
+                    report_payload = _quality_report_payload(quality_report)
+                    if report_payload is not None:
+                        version["quality_report"] = report_payload
                     versions[version_id] = version
                     entry["versions"] = versions
                     artifacts[artifact_type] = entry
                     study_pack["artifacts"] = artifacts
             readiness = study_pack.get("readiness", {})
             quality_scores = study_pack.get("quality_scores", {})
+            quality_reports = study_pack.get("quality_reports", {})
             grounding = study_pack.get("grounding", {"num_chunks": course.chunk_count, "quality_score": 0, "warnings": []})
 
             if artifact_type == "book":
                 readiness["study_guide_pdf"] = True
                 quality_scores["study_guide_pdf"] = score
+                readiness_key = "study_guide_pdf"
             elif artifact_type == "slides":
                 readiness["slides"] = True
                 quality_scores["slides"] = score
+                readiness_key = "slides"
             elif artifact_type == "quiz":
                 readiness["quiz"] = True
                 quality_scores["quiz"] = score
+                readiness_key = "quiz"
             elif artifact_type == "vid":
                 readiness["vid"] = True
                 quality_scores["vid"] = score
+                readiness_key = "vid"
+
+            report_payload = _quality_report_payload(quality_report)
+            if report_payload is not None:
+                quality_reports[readiness_key] = report_payload
 
 
             # Update overall average score
@@ -911,6 +1556,7 @@ class Generator:
 
             study_pack["readiness"] = readiness
             study_pack["quality_scores"] = quality_scores
+            study_pack["quality_reports"] = quality_reports
             study_pack["grounding"] = grounding
             meta["study_pack"] = study_pack
             course.metadata_json = json.dumps(meta, ensure_ascii=False)
@@ -994,6 +1640,9 @@ class Generator:
             study_pack["artifacts"] = artifacts
             meta["study_pack"] = study_pack
             if reserve:
+                if artifact == "book":
+                    from app.services.provider_usage import ensure_book_budget
+                    ensure_book_budget(db, course, version_id, retry=bool(retry_version_id))
                 course.metadata_json = json.dumps(meta, ensure_ascii=False)
                 if owns_session:
                     db.commit()
@@ -1008,13 +1657,201 @@ class Generator:
             if owns_session:
                 db.close()
 
+    def find_ready_book_version(
+        self,
+        course_id: str,
+        options: Dict[str, Any],
+        user_prompt: str = "",
+        *,
+        db_session: Optional[Session] = None,
+        db_session_factory=None,
+    ) -> Optional[str]:
+        """Return an identical owned ready Book before admitting paid work."""
+
+        from app.models.provider_call import BookBudget
+        from app.services.book_model_policy import BookModelPolicy
+
+        owns_session = db_session is None
+        db = db_session or self._get_db(db_session_factory)
+        try:
+            course = db.query(Course).filter(
+                Course.id == course_id, Course.is_deleted.is_(False)
+            ).first()
+            if course is None:
+                return None
+            owner_id = course.user_id
+            try:
+                source_digest, _context, evidence_ids = self._source_plan_inputs(
+                    course_id, db_session_factory
+                )
+            except ValueError:
+                return None
+            expected_options_digest = book_options_digest(
+                {"detail_level": options.get("detail_level"), "user_prompt": user_prompt}
+            )
+            expected_policy = BookModelPolicy.default()
+            meta, _ = migrate_legacy_artifact_metadata(self._metadata_dict(course))
+            versions = (
+                meta.get("study_pack", {})
+                .get("artifacts", {})
+                .get("book", {})
+                .get("versions", {})
+            )
+            for version_id, version in sorted(
+                versions.items(),
+                key=lambda item: str(item[1].get("created_at", "")),
+                reverse=True,
+            ):
+                if (
+                    not isinstance(version, dict)
+                    or version.get("status") != "ready"
+                    or version.get("options") != options
+                    or str(version.get("user_prompt") or "") != user_prompt
+                    or version.get("source_plan_digest") != source_digest
+                ):
+                    continue
+                budget = db.query(BookBudget).filter_by(
+                    course_id=course_id, version_id=version_id
+                ).one_or_none()
+                if (
+                    budget is None
+                    or budget.state != "active"
+                    or not budget.allocation_digest
+                ):
+                    continue
+                candidate_allocation_digest = budget.allocation_digest
+                try:
+                    policy = BookModelPolicy.model_validate(budget.model_policy)
+                    if policy != expected_policy:
+                        continue
+                    identity = CheckpointIdentity(
+                        course_id=course_id,
+                        version_id=version_id,
+                        source_digest=source_digest,
+                        source_plan_revision=int(version.get("source_plan_revision")),
+                        model=policy.model,
+                        options_digest=expected_options_digest,
+                        prompt_revision=BOOK_PROMPT_REVISION,
+                        policy_revision=policy.revision,
+                        budget_id=budget.id,
+                    )
+                except (TypeError, ValueError):
+                    continue
+                store = BookCheckpointStore(settings.UPLOAD_DIR, identity)
+                ready_manifest = store.ready_manifest(
+                    budget.allocation_digest, evidence_ids
+                )
+                if ready_manifest is None:
+                    continue
+                artifact_dir = Path(
+                    artifact_directory_path(
+                        settings.UPLOAD_DIR, course_id, "book", version_id
+                    )
+                )
+                json_path = artifact_dir / "book.json"
+                pdf_path = artifact_dir / "book.pdf"
+                try:
+                    cached_output = BookOutput.model_validate_json(
+                        json_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, ValueError):
+                    continue
+                if (
+                    len(cached_output.chapters) == len(ready_manifest.plan_digests)
+                    and pdf_path.is_file()
+                    and pdf_path.stat().st_size > 0
+                ):
+                    self._ready_cache_before_final_lock(course_id, version_id)
+                    owner_query = db.query(Course).filter(
+                        Course.id == course_id,
+                        Course.user_id == owner_id,
+                        Course.is_deleted.is_(False),
+                    ).populate_existing()
+                    if db.bind is not None and db.bind.dialect.name == "postgresql":
+                        owner_query = owner_query.with_for_update()
+                    fresh_course = owner_query.first()
+                    if fresh_course is None:
+                        continue
+                    fresh_meta, _ = migrate_legacy_artifact_metadata(
+                        self._metadata_dict(fresh_course)
+                    )
+                    fresh_version = (
+                        fresh_meta.get("study_pack", {})
+                        .get("artifacts", {})
+                        .get("book", {})
+                        .get("versions", {})
+                        .get(version_id)
+                    )
+                    fresh_budget = (
+                        db.query(BookBudget)
+                        .populate_existing()
+                        .filter_by(
+                            id=budget.id,
+                            course_id=course_id,
+                            user_id=owner_id,
+                            version_id=version_id,
+                        )
+                        .one_or_none()
+                    )
+                    if (
+                        not isinstance(fresh_version, dict)
+                        or fresh_version.get("status") != "ready"
+                        or fresh_version.get("options") != options
+                        or str(fresh_version.get("user_prompt") or "") != user_prompt
+                        or fresh_version.get("source_plan_digest") != source_digest
+                        or fresh_budget is None
+                        or fresh_budget.state != "active"
+                        or fresh_budget.allocation_digest != candidate_allocation_digest
+                    ):
+                        continue
+                    try:
+                        fresh_policy = BookModelPolicy.model_validate(
+                            fresh_budget.model_policy
+                        )
+                        fresh_identity = CheckpointIdentity(
+                            course_id=course_id,
+                            version_id=version_id,
+                            source_digest=source_digest,
+                            source_plan_revision=int(
+                                fresh_version.get("source_plan_revision")
+                            ),
+                            model=fresh_policy.model,
+                            options_digest=expected_options_digest,
+                            prompt_revision=BOOK_PROMPT_REVISION,
+                            policy_revision=fresh_policy.revision,
+                            budget_id=fresh_budget.id,
+                        )
+                    except (TypeError, ValueError):
+                        continue
+                    if fresh_policy == expected_policy and fresh_identity == identity:
+                        return version_id
+            return None
+        finally:
+            if owns_session:
+                db.close()
+
+    @staticmethod
+    def _ready_cache_before_final_lock(_course_id: str, _version_id: str) -> None:
+        """Test seam for races between private file validation and ownership lock."""
+
     @staticmethod
     def _version_summaries(versions: Dict[str, Any]) -> list[Dict[str, Any]]:
-        return [
-            {"version_id": key, "label": value.get("label", key), "options": value.get("options", {}),
-             "status": value.get("status", "empty"), "created_at": value.get("created_at")}
-            for key, value in versions.items() if isinstance(value, dict)
-        ]
+        summaries = []
+        for key, value in versions.items():
+            if not isinstance(value, dict):
+                continue
+            summary = {
+                "version_id": key,
+                "label": value.get("label", key),
+                "options": value.get("options", {}),
+                "status": value.get("status", "empty"),
+                "created_at": value.get("created_at"),
+            }
+            quality_report = _quality_report_payload(value.get("quality_report"))
+            if quality_report is not None:
+                summary["quality_report"] = quality_report
+            summaries.append(summary)
+        return summaries
 
     def artifact_versions(self, course_id: str, artifact: str, db_session_factory=None) -> tuple[Optional[str], list[Dict[str, Any]]]:
         db = self._get_db(db_session_factory)
@@ -1037,6 +1874,7 @@ class Generator:
         error_code: Optional[str] = None,
         technical_error: Optional[str] = None,
         progress: Optional[int] = None,
+        quality_report: QualityReport | Dict[str, Any] | None = None,
         version_id: Optional[str] = None,
         job_id: Optional[str] = None,
         worker_id: Optional[str] = None,
@@ -1048,7 +1886,20 @@ class Generator:
         replacement_to_remove: Optional[str] = None
         db = self._get_db(db_session_factory)
         try:
+            # SQLite ignores SELECT FOR UPDATE. Acquire its database write lock before
+            # either representation is read so concurrent artifact updates cannot lose
+            # one another's metadata entry.
+            if db.bind is not None and db.bind.dialect.name == "sqlite":
+                db.execute(text("BEGIN IMMEDIATE"))
+            effective_progress = progress
             if job_id:
+                values = {"updated_at": datetime.utcnow()}
+                if progress is not None:
+                    bounded = max(0, min(99 if status == "processing" else 100, progress))
+                    values["progress"] = case(
+                        (ProcessingJob.progress > bounded, ProcessingJob.progress),
+                        else_=bounded,
+                    )
                 guard = db.execute(
                     update(ProcessingJob)
                     .where(
@@ -1060,12 +1911,19 @@ class Generator:
                         ProcessingJob.cancel_requested.is_(False),
                         ProcessingJob.lease_expires_at > datetime.utcnow(),
                     )
-                    .values(updated_at=ProcessingJob.updated_at)
+                    .values(**values)
+                    .returning(ProcessingJob.progress)
                 )
-                if guard.rowcount != 1:
+                guarded_progress = guard.scalar_one_or_none()
+                if guarded_progress is None:
                     db.rollback()
                     return False
-            course = db.query(Course).filter(Course.id == course_id).first()
+                if progress is not None:
+                    effective_progress = guarded_progress
+            course_query = db.query(Course).filter(Course.id == course_id)
+            if db.bind is not None and db.bind.dialect.name == "postgresql":
+                course_query = course_query.with_for_update()
+            course = course_query.first()
             if not course:
                 return False
 
@@ -1083,8 +1941,11 @@ class Generator:
             current["error"] = error
             current["error_code"] = error_code
             current["technical_error"] = technical_error
-            if progress is not None:
-                current["progress"] = progress
+            report_payload = _quality_report_payload(quality_report)
+            if report_payload is not None:
+                current["quality_report"] = report_payload
+            if effective_progress is not None:
+                current["progress"] = effective_progress
             if status == "processing" and "started_at" not in current:
                 current["started_at"] = now
             if status in ("ready", "error"):
@@ -1145,7 +2006,9 @@ class Generator:
             current["updated_at"] = datetime.utcnow().isoformat()
             versions[version_id] = current
             entry["versions"] = versions
-            meta["study_pack"]["artifacts"][artifact] = entry
+            study_pack = meta["study_pack"]
+            study_pack["artifacts"][artifact] = entry
+            study_pack["quality_reports"] = _active_quality_report_payloads(study_pack)
             course.metadata_json = json.dumps(meta, ensure_ascii=False)
             db.commit()
             return {"version_id": version_id, "label": label}
@@ -1175,10 +2038,15 @@ class Generator:
             entry["versions"] = versions
             meta["study_pack"]["artifacts"][artifact] = entry
             course.metadata_json = json.dumps(meta, ensure_ascii=False)
+            if artifact == "book":
+                from app.models.provider_call import BookBudget
+                db.query(BookBudget).filter(BookBudget.course_id == course_id, BookBudget.version_id == version_id).update({"state": "closed"})
             db.commit()
         finally:
             db.close()
         remove_artifact_version(settings.UPLOAD_DIR, course_id, artifact, version_id)
+        if artifact == "book":
+            remove_book_checkpoints(settings.UPLOAD_DIR, course_id, version_id)
 
     def get_artifact_status(self, course_id: str, artifact: str, version_id: Optional[str] = None, db_session_factory=None) -> Dict[str, Any]:
         """Read per-artifact generation status from Course.metadata_json."""
@@ -1236,6 +2104,237 @@ class Generator:
         finally:
             db.close()
 
+    @staticmethod
+    def _chapter_content_to_book_chapter(
+        content: BookChapterContent, plan: BookChapterPlan
+    ) -> BookChapter:
+        return BookChapter(
+            chapter_title=content.chapter_title or plan.chapter_title,
+            introduction=content.introduction,
+            objectives=content.objectives,
+            sections=content.sections,
+            key_points=content.key_points,
+            review_questions=content.review_questions,
+            source_chunk_ids=content.source_chunk_ids,
+        )
+
+    def _run_book_chapter_task(
+        self,
+        book_llm,
+        task: _BookChapterTask,
+        provider_context,
+    ) -> tuple[int, BookChapterContent]:
+        with usage_context(
+            dataclass_replace(
+                provider_context,
+                stage="chapter",
+                chapter=task.index + 1,
+            )
+        ), stage_timer("chapter", task.index + 1):
+            chapter_args = (
+                task.book_title,
+                task.plan,
+                task.total,
+                task.context,
+                task.detail_level,
+                list(task.valid_chunk_ids),
+            )
+            if isinstance(book_llm, LLMService) and getattr(
+                book_llm, "book_policy", None
+            ) is not None:
+                content = book_llm.generate_book_chapter(
+                    *chapter_args,
+                    max_output_tokens=task.max_output_tokens,
+                    reasoning_tokens=task.reasoning_tokens,
+                    required_objectives=task.required_objectives,
+                )
+            else:
+                content = book_llm.generate_book_chapter(
+                    *chapter_args,
+                    required_objectives=task.required_objectives,
+                )
+        return task.index, content
+
+    def _generate_book_chapters_bounded(
+        self,
+        *,
+        book_llm,
+        outline: BookOutline,
+        plans: list[BookChapterPlan],
+        source_plan: SourcePlan,
+        chapter_budgets,
+        chapter_contexts,
+        cached_chapter_contents: list[BookChapterContent | None],
+        chapter_request_estimates,
+        checkpoint_store,
+        checkpoint_fence,
+        outline_digest: str,
+        allocation_digest: str,
+        checkpoint_plan_digests: list[str],
+        detail_level: str,
+        progress_callback: Optional[Callable[[], bool]],
+        set_progress: Callable[[int], bool],
+        capacity_check: Callable[[list[Any], Any], None],
+    ) -> tuple[list[BookChapter], set[str], dict[int, list[str]]]:
+        total = len(plans)
+        provider_context = current_provider_context()
+        completed: list[BookChapterContent | None] = list(cached_chapter_contents)
+        all_ids: set[str] = set()
+        chapter_evidence: dict[int, list[str]] = {}
+        for index, (_context, evidence_ids) in enumerate(chapter_contexts):
+            all_ids.update(evidence_ids)
+            chapter_evidence[index] = list(evidence_ids)
+
+        missing = [index for index, item in enumerate(completed) if item is None]
+        if not missing:
+            return (
+                [
+                    self._chapter_content_to_book_chapter(content, plan)
+                    for content, plan in zip(completed, plans)
+                    if content is not None
+                ],
+                all_ids,
+                chapter_evidence,
+            )
+
+        cap = max(1, min(settings.BOOK_CHAPTER_CONCURRENCY, total))
+        if provider_context.job_id:
+            try:
+                from app.services import database as database_service
+
+                bind = database_service.SessionLocal.kw.get("bind")
+                if bind is not None and bind.dialect.name == "sqlite":
+                    cap = 1
+            except Exception:
+                pass
+        executor = ThreadPoolExecutor(max_workers=cap, thread_name_prefix="book-chapter")
+        active = {}
+        next_missing = 0
+        completed_count = total - len(missing)
+        aborted = False
+
+        def submit_available() -> None:
+            nonlocal next_missing
+            while len(active) < cap and next_missing < len(missing):
+                index = missing[next_missing]
+                if chapter_request_estimates:
+                    remaining = [
+                        chapter_request_estimates[pending]
+                        for pending in missing[next_missing:]
+                    ]
+                    capacity_check(remaining, chapter_request_estimates[index])
+                self._report_progress(progress_callback)
+                unit = source_plan.units[index]
+                chapter_budget = chapter_budgets[index]
+                if unit.id != chapter_budget.unit_id:
+                    raise BookCoverageInfeasible(
+                        "Chapter allocation no longer matches the source plan"
+                    )
+                ch_context, ch_ids = chapter_contexts[index]
+                required_objectives = dict(
+                    zip(
+                        chapter_budget.objective_ids,
+                        chapter_budget.expected_learning_objectives,
+                    )
+                )
+                task = _BookChapterTask(
+                    index=index,
+                    book_title=outline.title,
+                    plan=plans[index],
+                    total=total,
+                    context=ch_context,
+                    valid_chunk_ids=tuple(ch_ids),
+                    detail_level=detail_level,
+                    max_output_tokens=(
+                        chapter_budget.max_tokens
+                        if isinstance(book_llm, LLMService)
+                        and getattr(book_llm, "book_policy", None) is not None
+                        else None
+                    ),
+                    reasoning_tokens=(
+                        chapter_budget.reasoning_allowance
+                        if isinstance(book_llm, LLMService)
+                        and getattr(book_llm, "book_policy", None) is not None
+                        else None
+                    ),
+                    required_objectives=required_objectives,
+                )
+                future = executor.submit(self._run_book_chapter_task, book_llm, task, provider_context)
+                active[future] = index
+                next_missing += 1
+
+        try:
+            submit_available()
+            while active:
+                done, _pending = wait(active, return_when=FIRST_COMPLETED)
+                for future in done:
+                    index = active.pop(future)
+                    try:
+                        result_index, content = future.result()
+                    except Exception:
+                        aborted = True
+                        for pending in active:
+                            pending.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    if result_index != index:
+                        raise RuntimeError("Book chapter worker returned the wrong index")
+                    ch_ids = list(chapter_contexts[index][1])
+                    required_objectives = dict(
+                        zip(
+                            chapter_budgets[index].objective_ids,
+                            chapter_budgets[index].expected_learning_objectives,
+                        )
+                    )
+                    validate_book_chapter_completion(
+                        content,
+                        valid_chunk_ids=ch_ids,
+                        required_objectives=required_objectives,
+                    )
+                    if checkpoint_store and not checkpoint_store.save_chapter(
+                        index,
+                        content,
+                        outline_digest=outline_digest,
+                        allocation_digest=allocation_digest,
+                        expected_plan_digest=checkpoint_plan_digests[index],
+                        evidence_ids=ch_ids,
+                        fence=checkpoint_fence,
+                    ):
+                        raise _GenerationInterrupted
+                    completed[index] = content
+                    completed_count += 1
+                    progress = 15 + int(75 * completed_count / total)
+                    self._report_progress(progress_callback)
+                    if not set_progress(progress):
+                        raise _GenerationInterrupted
+                submit_available()
+        finally:
+            if not aborted:
+                executor.shutdown(wait=True, cancel_futures=True)
+
+        if any(item is None for item in completed):
+            raise _GenerationInterrupted
+        return (
+            [
+                self._chapter_content_to_book_chapter(content, plan)
+                for content, plan in zip(completed, plans)
+                if content is not None
+            ],
+            all_ids,
+            chapter_evidence,
+        )
+
+    def _get_doc_name_list(self, course_id: str, db_session_factory=None) -> List[str]:
+        """Fetch ordered source filenames for bounded Book-outline coverage retrieval."""
+
+        db = self._get_db(db_session_factory)
+        try:
+            course = db.query(Course).filter(Course.id == course_id).first()
+            return [str(name) for name in (course.filenames or [])] if course else []
+        finally:
+            db.close()
+
+    @book_usage
     def generate_book(
         self,
         course_id: str,
@@ -1277,58 +2376,505 @@ class Generator:
             self._require_course_not_processing(course_id, db_session_factory)
 
             book_llm = self._llm_for("book")
-            context, base_ids = self._retrieve_context(course_id, k=20, db_session_factory=db_session_factory)
+            if version_id:
+                from app.services.provider_usage import (
+                    get_book_model_policy,
+                    require_estimated_book_capacity,
+                )
+
+                policy_db = self._get_db(db_session_factory)
+                try:
+                    policy = get_book_model_policy(policy_db, course_id, version_id)
+                finally:
+                    policy_db.close()
+                binder = getattr(book_llm, "with_book_policy", None)
+                if binder is None:
+                    raise BudgetLimitError("Book LLM cannot honor the saved model policy")
+                book_llm = binder(policy)
+
+            total_output = {
+                "tóm tắt": 14_000,
+                "tiêu chuẩn": 20_000,
+                "chuyên sâu": 24_000,
+            }.get(detail_level.strip().casefold(), 20_000)
+            total_input = {
+                "tóm tắt": 60_000,
+                "tiêu chuẩn": 40_000,
+                "chuyên sâu": 30_000,
+            }.get(detail_level.strip().casefold(), 40_000)
+            outline_tokens = outline_output_allowance(detail_level, total_output)
+            outline_reasoning = getattr(
+                getattr(book_llm, "book_policy", None), "reasoning_budget", 512
+            )
+
+            def require_capacity(requests, *, retry_request=None, residual_usd=Decimal("0")):
+                if not version_id:
+                    return
+                capacity_db = self._get_db(db_session_factory)
+                try:
+                    require_estimated_book_capacity(
+                        capacity_db,
+                        course_id,
+                        version_id,
+                        requests,
+                        retry_request=retry_request,
+                        residual_usd=residual_usd,
+                    )
+                finally:
+                    capacity_db.close()
+
+            source_plan_estimate = None
+            if isinstance(book_llm, LLMService) and getattr(
+                book_llm, "book_policy", None
+            ) is not None:
+                from app.services.provider_usage import estimate_call_usd
+
+                source_digest, source_context, source_ids = self._source_plan_inputs(
+                    course_id, db_session_factory
+                )
+                self._source_plan_contexts[(course_id, source_digest)] = (
+                    source_context,
+                    source_ids,
+                )
+                source_plan_output = min(4_000, 1_800 + 200 * len(source_ids))
+                source_plan_revision = source_plan_request_revision(
+                    course_id,
+                    source_digest,
+                    book_llm.book_policy.model,
+                    SOURCE_PLAN_PROMPT_REVISION,
+                    db_session_factory=db_session_factory,
+                )
+                source_plan_estimate = book_llm.estimate_source_plan_request(
+                    source_context,
+                    source_digest,
+                    source_plan_revision,
+                    source_plan_output,
+                    outline_reasoning,
+                )
+                residual_usd = estimate_call_usd(
+                    total_input,
+                    total_output,
+                    book_llm.book_policy.input_price_ceiling,
+                    book_llm.book_policy.output_price_ceiling,
+                )
+                plan_db = self._get_db(db_session_factory)
+                try:
+                    source_plan_is_cached = plan_db.query(SourcePlanRecord.id).filter_by(
+                        course_id=course_id,
+                        source_digest=source_digest,
+                        model=book_llm.book_policy.model,
+                        prompt_revision=SOURCE_PLAN_PROMPT_REVISION,
+                    ).first() is not None
+                finally:
+                    plan_db.close()
+                if not source_plan_is_cached:
+                    require_capacity(
+                        [source_plan_estimate],
+                        retry_request=source_plan_estimate,
+                        residual_usd=residual_usd,
+                    )
+            with stage_timer("retrieving"):
+                source_plan = self._get_source_plan(
+                    course_id,
+                    "book",
+                    db_session_factory,
+                    selected_llm=book_llm,
+                )
+                context, base_ids, plan_units = self._plan_context(
+                    course_id, source_plan, all_units=True
+                )
+                provisional_budgets = allocate_book_budget(
+                    source_plan,
+                    available_input_tokens=10_000_000,
+                    available_output_tokens=(
+                        total_output - outline_tokens - outline_reasoning
+                    ),
+                    detail_level=detail_level,
+                )
+                objectives = {item.id: item.text for item in source_plan.objectives}
+                provisional_plans = [
+                    BookChapterPlan(
+                        chapter_number=index + 1,
+                        chapter_title=unit.title,
+                        description="; ".join(
+                            objectives[item] for item in unit.objective_ids
+                        ),
+                        retrieval_query=unit.title,
+                        planned_sections=[objectives[item] for item in unit.objective_ids],
+                    )
+                    for index, unit in enumerate(source_plan.units)
+                ]
+                chapter_contexts = []
+                for unit, budget in zip(source_plan.units, provisional_budgets):
+                    chapter_contexts.append(
+                        self._plan_context(
+                            course_id,
+                            source_plan,
+                            unit_ids=[unit.id],
+                            evidence_ids_override=list(budget.evidence_ids),
+                        )[:2]
+                    )
+                if isinstance(book_llm, LLMService) and getattr(
+                    book_llm, "book_policy", None
+                ) is not None:
+                    raw_source_context, raw_source_ids = self._source_plan_contexts[
+                        (course_id, source_plan.source_digest)
+                    ]
+                    source_plan_output = min(
+                        4_000, 1_800 + 200 * len(raw_source_ids)
+                    )
+                    source_plan_estimate = book_llm.estimate_source_plan_request(
+                        raw_source_context,
+                        source_plan.source_digest,
+                        source_plan.revision,
+                        source_plan_output,
+                        outline_reasoning,
+                    )
+                    outline_estimate = book_llm.estimate_book_outline_request(
+                        context,
+                        detail_level,
+                        user_prompt,
+                        self._get_doc_names(course_id, db_session_factory),
+                        outline_tokens,
+                        outline_reasoning,
+                    )
+                    measured_inputs = {}
+                    chapter_estimates = []
+                    for plan, budget, (unit_context, _ids) in zip(
+                        provisional_plans, provisional_budgets, chapter_contexts
+                    ):
+                        estimate = book_llm.estimate_book_chapter_request(
+                            "Sách ôn tập theo Source Plan",
+                            plan,
+                            len(provisional_plans),
+                            unit_context,
+                            detail_level,
+                            budget.visible_output_allowance,
+                            budget.reasoning_allowance,
+                            dict(
+                                zip(
+                                    budget.objective_ids,
+                                    budget.expected_learning_objectives,
+                                )
+                            ),
+                        )
+                        if estimate.output_bound != budget.output_bound:
+                            raise BookCoverageInfeasible(
+                                "Provider output reservation disagrees with chapter allocation"
+                            )
+                        measured_inputs[budget.unit_id] = estimate.input_bound + 512
+                        chapter_estimates.append(estimate)
+                    remaining_input = (
+                        total_input
+                        - source_plan_estimate.input_bound
+                        - outline_estimate.input_bound
+                    )
+                    chapter_budgets = allocate_book_budget(
+                        source_plan,
+                        available_input_tokens=remaining_input,
+                        available_output_tokens=(
+                            total_output - outline_tokens - outline_reasoning
+                        ),
+                        detail_level=detail_level,
+                        measured_input_bounds=measured_inputs,
+                    )
+                    from app.services.provider_usage import CEILING
+
+                    planned_upper = (
+                        source_plan_estimate.upper_bound_usd
+                        + outline_estimate.upper_bound_usd
+                        + sum(item.upper_bound_usd for item in chapter_estimates)
+                        + outline_estimate.upper_bound_usd
+                    )
+                    if planned_upper > CEILING:
+                        raise BookCoverageInfeasible(
+                            "Estimated complete Book plan exceeds the financial envelope"
+                        )
+                else:
+                    chapter_budgets = provisional_budgets
+                allocation_payload = [item.model_dump(mode="json") for item in chapter_budgets]
+                allocation_digest = hashlib.sha256(
+                    json.dumps(allocation_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                if version_id:
+                    from app.services.provider_usage import save_book_allocation_digest
+
+                    allocation_db = self._get_db(db_session_factory)
+                    try:
+                        save_book_allocation_digest(
+                            allocation_db, course_id, version_id, allocation_digest
+                        )
+                        allocation_db.commit()
+                    finally:
+                        allocation_db.close()
+                self._bind_version_to_plan(
+                    course_id, "book", version_id, source_plan, db_session_factory,
+                    selected_model=getattr(book_llm, "model", settings.OPENROUTER_MODEL),
+                )
             self._require_context(context)
-            doc_names = self._get_doc_names(course_id, db_session_factory)
-            outline = book_llm.generate_book_outline(context, detail_level, user_prompt, doc_names)
-            plans = outline.chapters[:8]
-            if len(plans) < 4:
-                raise ValueError(f"Dàn ý chỉ có {len(plans)} chương, cần tối thiểu 4 chương.")
+            checkpoint_store = None
+            checkpoint_fence = None
+            if version_id:
+                from app.models.provider_call import BookBudget
+                from app.services import database as database_service
+
+                identity_db = self._get_db(db_session_factory)
+                try:
+                    budget = identity_db.query(BookBudget).filter_by(
+                        course_id=course_id, version_id=version_id
+                    ).one_or_none()
+                    if budget is None or budget.allocation_digest != allocation_digest:
+                        raise BudgetLimitError("Book checkpoint budget identity is unavailable")
+                    checkpoint_identity = CheckpointIdentity(
+                        course_id=course_id,
+                        version_id=version_id,
+                        source_digest=source_plan.source_digest,
+                        source_plan_revision=source_plan.revision,
+                        model=getattr(book_llm, "model", settings.OPENROUTER_MODEL),
+                        options_digest=book_options_digest(
+                            {"detail_level": detail_level, "user_prompt": user_prompt}
+                        ),
+                        prompt_revision=BOOK_PROMPT_REVISION,
+                        policy_revision=getattr(
+                            getattr(book_llm, "book_policy", None), "revision", "legacy"
+                        ),
+                        budget_id=budget.id,
+                    )
+                finally:
+                    identity_db.close()
+                checkpoint_store = BookCheckpointStore(settings.UPLOAD_DIR, checkpoint_identity)
+                checkpoint_fence = checkpoint_write_fence(
+                    db_session_factory or database_service.SessionLocal,
+                    checkpoint_identity,
+                    job_id=job_id,
+                    worker_id=worker_id,
+                    attempt_number=attempt_number,
+                )
+
+            proposed_outline = (
+                checkpoint_store.load_outline(base_ids) if checkpoint_store else None
+            )
+            if proposed_outline is None:
+                if (
+                    isinstance(book_llm, LLMService)
+                    and getattr(book_llm, "book_policy", None) is not None
+                ):
+                    require_capacity(
+                        [outline_estimate, *chapter_estimates],
+                        retry_request=outline_estimate,
+                    )
+                with stage_timer("outline"):
+                    outline_args = (
+                        context,
+                        detail_level,
+                        user_prompt,
+                        self._get_doc_names(course_id, db_session_factory),
+                    )
+                    if isinstance(book_llm, LLMService):
+                        proposed_outline = book_llm.generate_book_outline(
+                            *outline_args,
+                            max_output_tokens=outline_tokens,
+                            reasoning_tokens=outline_reasoning,
+                        )
+                    else:
+                        proposed_outline = book_llm.generate_book_outline(*outline_args)
+                if (
+                    len(proposed_outline.chapters) != len(source_plan.units)
+                    and not getattr(book_llm, "_test_mode", False)
+                ):
+                    raise BookCoverageInfeasible("Outline omitted a planned source unit")
+                proposed_outline = BookOutline(
+                    title=proposed_outline.title,
+                    summary=proposed_outline.summary,
+                    preface=proposed_outline.preface,
+                    chapters=[
+                        BookChapterPlan(
+                            chapter_number=index + 1,
+                            chapter_title=unit.title,
+                            description=(
+                                proposed_outline.chapters[index].description
+                                if index < len(proposed_outline.chapters)
+                                else objectives.get(unit.objective_ids[0], unit.title)
+                            ),
+                            retrieval_query=unit.title,
+                            planned_sections=(
+                                proposed_outline.chapters[index].planned_sections
+                                if index < len(proposed_outline.chapters)
+                                else [objectives.get(unit.objective_ids[0], unit.title)]
+                            ),
+                        )
+                        for index, unit in enumerate(source_plan.units)
+                    ],
+                )
+                if checkpoint_store and not checkpoint_store.save_outline(
+                    proposed_outline, list(base_ids), checkpoint_fence
+                ):
+                    raise _GenerationInterrupted
+            if len(proposed_outline.chapters) != len(source_plan.units):
+                raise BookCoverageInfeasible("Checkpointed outline omitted a planned source unit")
+            outline = proposed_outline
+            plans = outline.chapters
+            if len(plans) != len(chapter_budgets):
+                raise BookCoverageInfeasible("Outline omitted a planned source unit")
+
+            outline_digest = canonical_digest(outline.model_dump(mode="json"))
+            checkpoint_plan_digests = [checkpoint_plan_digest(plan) for plan in plans]
+            manifest = None
+            if checkpoint_store:
+                manifest = checkpoint_store.load_manifest(
+                    outline_digest=outline_digest,
+                    allocation_digest=allocation_digest,
+                    plan_digests=checkpoint_plan_digests,
+                    valid_evidence_ids=base_ids,
+                )
+                if manifest is None and not checkpoint_store.save_manifest(
+                    outline_digest=outline_digest,
+                    allocation_digest=allocation_digest,
+                    plans=plans,
+                    evidence_ids=list(base_ids),
+                    fence=checkpoint_fence,
+                ):
+                    raise _GenerationInterrupted
+
+            chapter_request_estimates = []
+            if isinstance(book_llm, LLMService) and getattr(
+                book_llm, "book_policy", None
+            ) is not None:
+                for plan, chapter_budget, (chapter_context, _ids) in zip(
+                    plans, chapter_budgets, chapter_contexts
+                ):
+                    estimate = book_llm.estimate_book_chapter_request(
+                        outline.title,
+                        plan,
+                        len(plans),
+                        chapter_context,
+                        detail_level,
+                        chapter_budget.visible_output_allowance,
+                        chapter_budget.reasoning_allowance,
+                        dict(
+                            zip(
+                                chapter_budget.objective_ids,
+                                chapter_budget.expected_learning_objectives,
+                            )
+                        ),
+                    )
+                    if (
+                        estimate.input_bound > chapter_budget.input_bound
+                        or estimate.output_bound != chapter_budget.output_bound
+                    ):
+                        raise BookCoverageInfeasible(
+                            "Final chapter request exceeds its measured allocation"
+                        )
+                    chapter_request_estimates.append(estimate)
+            cached_chapter_contents: list[BookChapterContent | None] = [
+                None for _ in plans
+            ]
+            if checkpoint_store:
+                for index, (chapter_budget, (_context, evidence_ids)) in enumerate(
+                    zip(chapter_budgets, chapter_contexts)
+                ):
+                    assigned_objectives = dict(
+                        zip(
+                            chapter_budget.objective_ids,
+                            chapter_budget.expected_learning_objectives,
+                        )
+                    )
+
+                    def validate_saved(
+                        value: BookChapterContent,
+                        *,
+                        valid_ids=evidence_ids,
+                        required=assigned_objectives,
+                    ) -> None:
+                        validate_book_chapter_completion(
+                            value,
+                            valid_chunk_ids=valid_ids,
+                            required_objectives=required,
+                        )
+
+                    cached_chapter_contents[index] = checkpoint_store.load_chapter(
+                        index,
+                        outline_digest=outline_digest,
+                        allocation_digest=allocation_digest,
+                        expected_plan_digest=checkpoint_plan_digests[index],
+                        valid_evidence_ids=evidence_ids,
+                        validator=validate_saved,
+                    )
+            if chapter_request_estimates:
+                missing_estimates = [
+                    estimate
+                    for estimate, cached in zip(
+                        chapter_request_estimates, cached_chapter_contents
+                    )
+                    if cached is None
+                ]
+                if missing_estimates:
+                    require_capacity(
+                        missing_estimates,
+                        retry_request=missing_estimates[0],
+                    )
 
             self._report_progress(progress_callback)
             if not self._set_artifact_status(course_id, "book", "processing", progress=15, db_session_factory=db_session_factory, **status_fence):
                 raise _GenerationInterrupted
 
+            chapters, chapter_ids, chapter_evidence = self._generate_book_chapters_bounded(
+                book_llm=book_llm,
+                outline=outline,
+                plans=plans,
+                source_plan=source_plan,
+                chapter_budgets=chapter_budgets,
+                chapter_contexts=chapter_contexts,
+                cached_chapter_contents=cached_chapter_contents,
+                chapter_request_estimates=chapter_request_estimates,
+                checkpoint_store=checkpoint_store,
+                checkpoint_fence=checkpoint_fence,
+                outline_digest=outline_digest,
+                allocation_digest=allocation_digest,
+                checkpoint_plan_digests=checkpoint_plan_digests,
+                detail_level=detail_level,
+                progress_callback=progress_callback,
+                set_progress=lambda progress: self._set_artifact_status(
+                    course_id,
+                    "book",
+                    "processing",
+                    progress=progress,
+                    db_session_factory=db_session_factory,
+                    **status_fence,
+                ),
+                capacity_check=lambda requests, retry_request: require_capacity(
+                    requests,
+                    retry_request=retry_request,
+                ),
+            )
             all_ids = set(base_ids)
-            chapters: List[BookChapter] = []
-            total = len(plans)
-            for i, plan in enumerate(plans):
-                ch_context, ch_ids = self._retrieve_context(
-                    course_id, query=plan.retrieval_query, k=10, db_session_factory=db_session_factory
-                )
-                if not ch_context:
-                    ch_context, ch_ids = context, base_ids
-                all_ids.update(ch_ids)
-
-                content = book_llm.generate_book_chapter(
-                    outline.title, plan, total, ch_context, detail_level, ch_ids
-                )
-
-                chapters.append(
-                    BookChapter(
-                        chapter_title=content.chapter_title or plan.chapter_title,
-                        introduction=content.introduction,
-                        objectives=content.objectives,
-                        sections=content.sections,
-                        key_points=content.key_points,
-                        review_questions=content.review_questions,
-                        source_chunk_ids=content.source_chunk_ids,
-                    )
-                )
-                progress = 15 + int(75 * (i + 1) / total)
-                self._report_progress(progress_callback)
-                if not self._set_artifact_status(course_id, "book", "processing", progress=progress, db_session_factory=db_session_factory, **status_fence):
-                    raise _GenerationInterrupted
+            all_ids.update(chapter_ids)
 
             book = BookOutput(title=outline.title, summary=outline.summary, preface=outline.preface, chapters=chapters)
-            validated_output, score, warnings = validate_and_score_output(book, "book", list(all_ids))
+            self._enforce_canonical_consistency(book, "book", source_plan, plan_units)
+            validated_output, report, warnings = validate_and_score_output(
+                book,
+                "book",
+                list(all_ids),
+                unit_valid_chunk_ids=chapter_evidence,
+            )
+            score = report.structural_validity
             if warnings:
                 logger.warning(f"Book generation warnings for {course_id}: {warnings}")
 
-            self._save_artifact_json(course_id, "book.json", validated_output, artifact_dir)
-            self._generate_pdf_book(course_id, validated_output, artifact_dir)
+            with stage_timer("exporting"):
+                self._save_artifact_json(
+                    course_id, "book.json",
+                    self._artifact_with_plan(
+                        validated_output, source_plan, [unit.id for unit in plan_units]
+                    ),
+                    artifact_dir,
+                )
+                self._generate_pdf_book(course_id, validated_output, artifact_dir)
             if not job_id:
-                self._update_course_metadata(course_id, "book", score, db_session_factory)
+                self._update_course_metadata(
+                    course_id, "book", score, db_session_factory, quality_report=report
+                )
             self._report_progress(progress_callback)
             if not self._publish_ready_version(
                 transaction,
@@ -1339,12 +2885,48 @@ class Generator:
                 worker_id=worker_id,
                 attempt_number=attempt_number,
                 score=score,
+                quality_report=report,
                 db_session_factory=db_session_factory,
             ):
                 raise _GenerationInterrupted
             return validated_output
         except _GenerationInterrupted:
             self._finish_version_write(transaction, False)
+            return None
+        except SoftTimeLimitExceeded:
+            self._finish_version_write(transaction, False)
+            raise
+        except BudgetLimitError:
+            self._finish_version_write(transaction, False)
+            self._set_artifact_status(course_id, "book", "error",
+                error="Tác vụ đã dừng ở giới hạn chi phí an toàn.", error_code="BOOK_BUDGET_LIMIT",
+                db_session_factory=db_session_factory, **status_fence)
+            raise
+        except BookCoverageInfeasible as exc:
+            self._finish_version_write(transaction, False)
+            self._set_artifact_status(
+                course_id,
+                "book",
+                "error",
+                error="Phạm vi sách đã chọn không thể bao quát đầy đủ trong giới hạn chi phí.",
+                error_code="BOOK_SCOPE_INFEASIBLE",
+                technical_error=str(exc)[:1000],
+                db_session_factory=db_session_factory,
+                **status_fence,
+            )
+            return None
+        except BookIncompleteError as exc:
+            self._finish_version_write(transaction, False)
+            self._set_artifact_status(
+                course_id,
+                "book",
+                "error",
+                error="Chương sách chưa hoàn chỉnh và không được công bố.",
+                error_code="BOOK_INCOMPLETE_BUDGET",
+                technical_error=str(exc)[:1000],
+                db_session_factory=db_session_factory,
+                **status_fence,
+            )
             return None
         except ProviderCircuitOpen:
             self._finish_version_write(transaction, False)
@@ -1395,25 +2977,53 @@ class Generator:
                 raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
-            context, valid_chunk_ids = self._retrieve_context(
-                course_id, query=resolved_topic, db_session_factory=db_session_factory
+            slides_llm = self._llm_for("slides")
+            source_plan = self._get_source_plan(
+                course_id,
+                "slides",
+                db_session_factory,
+                selected_llm=slides_llm,
+            )
+            context, valid_chunk_ids, plan_units = self._plan_context(
+                course_id, source_plan, topic=resolved_topic
+            )
+            self._bind_version_to_plan(
+                course_id, "slides", version_id, source_plan, db_session_factory,
+                selected_model=getattr(slides_llm, "model", settings.OPENROUTER_MODEL),
             )
             self._require_context(context)
             focus = f"\nTrọng tâm mong muốn: {focus_prompt}" if focus_prompt.strip() else ""
-            raw_output = self._llm_for("slides").generate_slides(context + focus, resolved_topic, num_slides, valid_chunk_ids)
-            validated_output, score, warnings = validate_and_score_output(raw_output, "slides", valid_chunk_ids)
+            raw_output = slides_llm.generate_slides(context + focus, resolved_topic, num_slides, valid_chunk_ids)
+            raw_output = _repair_flattened_array_indices(raw_output, context, "slides")
+            raw_output = _clean_slides_output(raw_output)
+            assigned_units = [
+                plan_units[i % len(plan_units)] for i in range(len(raw_output.slides))
+            ]
+            self._enforce_canonical_consistency(raw_output, "slides", source_plan, assigned_units)
+            item_evidence = {
+                i: unit.evidence_ids for i, unit in enumerate(assigned_units)
+            }
+            validated_output, report, warnings = validate_and_score_output(
+                raw_output, "slides", valid_chunk_ids, unit_valid_chunk_ids=item_evidence
+            )
+            score = report.structural_validity
             if warnings:
                 logger.warning(f"Slides generation warnings for {course_id}: {warnings}")
-            validated_output = _repair_flattened_array_indices(validated_output, context, "slides")
-            validated_output = _clean_slides_output(validated_output)
 
             self._report_progress(progress_callback)
             if not self._set_artifact_status(course_id, "slides", "processing", progress=70, db_session_factory=db_session_factory, **status_fence):
                 raise _GenerationInterrupted
-            self._save_artifact_json(course_id, "slides.json", validated_output, artifact_dir)
+            self._save_artifact_json(
+                course_id, "slides.json",
+                self._artifact_with_plan(
+                    validated_output, source_plan, [unit.id for unit in plan_units]
+                ), artifact_dir,
+            )
             self._generate_pptx_slides(course_id, validated_output, artifact_dir)
             if not job_id:
-                self._update_course_metadata(course_id, "slides", score, db_session_factory)
+                self._update_course_metadata(
+                    course_id, "slides", score, db_session_factory, quality_report=report
+                )
             self._report_progress(progress_callback)
             if not self._publish_ready_version(
                 transaction,
@@ -1424,6 +3034,7 @@ class Generator:
                 worker_id=worker_id,
                 attempt_number=attempt_number,
                 score=score,
+                quality_report=report,
                 db_session_factory=db_session_factory,
             ):
                 raise _GenerationInterrupted
@@ -1480,24 +3091,52 @@ class Generator:
                 raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
-            context, valid_chunk_ids = self._retrieve_context(
-                course_id, query=resolved_topic, db_session_factory=db_session_factory
+            quiz_llm = self._llm_for("quiz")
+            source_plan = self._get_source_plan(
+                course_id,
+                "quiz",
+                db_session_factory,
+                selected_llm=quiz_llm,
+            )
+            context, valid_chunk_ids, plan_units = self._plan_context(
+                course_id, source_plan, topic=resolved_topic
+            )
+            self._bind_version_to_plan(
+                course_id, "quiz", version_id, source_plan, db_session_factory,
+                selected_model=getattr(quiz_llm, "model", settings.OPENROUTER_MODEL),
             )
             self._require_context(context)
-            raw_output = self._llm_for("quiz").generate_quiz(context, resolved_topic, quantity, valid_chunk_ids, difficulty=difficulty)
-            validated_output, score, warnings = validate_and_score_output(raw_output, "quiz", valid_chunk_ids)
-            validated_output = _balance_quiz_answers(validated_output, kwargs.get("version_id", "legacy"))
-            validated_output = _repair_flattened_array_indices(validated_output, context, "quiz")
+            raw_output = quiz_llm.generate_quiz(context, resolved_topic, quantity, valid_chunk_ids, difficulty=difficulty)
+            raw_output = _balance_quiz_answers(raw_output, kwargs.get("version_id", "legacy"))
+            raw_output = _repair_flattened_array_indices(raw_output, context, "quiz")
+            assigned_units = [
+                plan_units[i % len(plan_units)] for i in range(len(raw_output.questions))
+            ]
+            self._enforce_canonical_consistency(raw_output, "quiz", source_plan, assigned_units)
+            item_evidence = {
+                i: unit.evidence_ids for i, unit in enumerate(assigned_units)
+            }
+            validated_output, report, warnings = validate_and_score_output(
+                raw_output, "quiz", valid_chunk_ids, unit_valid_chunk_ids=item_evidence
+            )
+            score = report.structural_validity
             if warnings:
                 logger.warning(f"Quiz generation warnings for {course_id}: {warnings}")
 
             self._report_progress(progress_callback)
             if not self._set_artifact_status(course_id, "quiz", "processing", progress=70, db_session_factory=db_session_factory, **status_fence):
                 raise _GenerationInterrupted
-            self._save_artifact_json(course_id, "quiz.json", validated_output, artifact_dir)
+            self._save_artifact_json(
+                course_id, "quiz.json",
+                self._artifact_with_plan(
+                    validated_output, source_plan, [unit.id for unit in plan_units]
+                ), artifact_dir,
+            )
             self._generate_pdf_quiz_key(course_id, validated_output, artifact_dir)
             if not job_id:
-                self._update_course_metadata(course_id, "quiz", score, db_session_factory)
+                self._update_course_metadata(
+                    course_id, "quiz", score, db_session_factory, quality_report=report
+                )
             self._report_progress(progress_callback)
             if not self._publish_ready_version(
                 transaction,
@@ -1508,6 +3147,7 @@ class Generator:
                 worker_id=worker_id,
                 attempt_number=attempt_number,
                 score=score,
+                quality_report=report,
                 db_session_factory=db_session_factory,
             ):
                 raise _GenerationInterrupted
@@ -1575,17 +3215,38 @@ class Generator:
                 raise _GenerationInterrupted
             self._require_course_not_processing(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
-            context, valid_chunk_ids = self._retrieve_context(
-                course_id, query=resolved_topic, db_session_factory=db_session_factory
+            vid_llm = self._llm_for("vid")
+            source_plan = self._get_source_plan(
+                course_id,
+                "vid",
+                db_session_factory,
+                selected_llm=vid_llm,
+            )
+            context, valid_chunk_ids, plan_units = self._plan_context(
+                course_id, source_plan, topic=resolved_topic
+            )
+            self._bind_version_to_plan(
+                course_id, "vid", version_id, source_plan, db_session_factory,
+                selected_model=getattr(vid_llm, "model", settings.OPENROUTER_MODEL),
             )
             self._require_context(context)
-            raw_output = self._llm_for("vid").generate_vid(
+            raw_output = vid_llm.generate_vid(
                 context, resolved_topic, fmt, user_prompt, valid_chunk_ids
             )
-            validated_output, score, warnings = validate_and_score_output(raw_output, "vid", valid_chunk_ids)
+            raw_output = _clean_vid_output(raw_output)
+            assigned_units = [
+                plan_units[i % len(plan_units)] for i in range(len(raw_output.scenes))
+            ]
+            self._enforce_canonical_consistency(raw_output, "vid", source_plan, assigned_units)
+            item_evidence = {
+                i: unit.evidence_ids for i, unit in enumerate(assigned_units)
+            }
+            validated_output, report, warnings = validate_and_score_output(
+                raw_output, "vid", valid_chunk_ids, unit_valid_chunk_ids=item_evidence
+            )
+            score = report.structural_validity
             if warnings:
                 logger.warning(f"Vid generation warnings for {course_id}: {warnings}")
-            validated_output = _clean_vid_output(validated_output)
             scene_visual_map = self._build_scene_visual_map(course_id, validated_output)
 
             self._report_progress(progress_callback)
@@ -1614,9 +3275,16 @@ class Generator:
             self._report_progress(progress_callback)
             if not self._set_artifact_status(course_id, "vid", "processing", progress=90, db_session_factory=db_session_factory, **status_fence):
                 raise _GenerationInterrupted
-            self._save_artifact_json(course_id, "vid.json", validated_output, artifact_dir)
+            self._save_artifact_json(
+                course_id, "vid.json",
+                self._artifact_with_plan(
+                    validated_output, source_plan, [unit.id for unit in plan_units]
+                ), artifact_dir,
+            )
             if not job_id:
-                self._update_course_metadata(course_id, "vid", score, db_session_factory)
+                self._update_course_metadata(
+                    course_id, "vid", score, db_session_factory, quality_report=report
+                )
             self._report_progress(progress_callback)
             if not self._publish_ready_version(
                 transaction,
@@ -1627,6 +3295,7 @@ class Generator:
                 worker_id=worker_id,
                 attempt_number=attempt_number,
                 score=score,
+                quality_report=report,
                 db_session_factory=db_session_factory,
             ):
                 raise _GenerationInterrupted
@@ -1707,6 +3376,15 @@ class Generator:
             quiz=quality_scores_meta.get("quiz", 0),
             vid=quality_scores_meta.get("vid", 0),
         )
+        quality_reports = {}
+        for key, value in _active_quality_report_payloads(sp_meta).items():
+            payload = _quality_report_payload(value)
+            if payload is None:
+                continue
+            try:
+                quality_reports[key] = QualityReport.model_validate(payload)
+            except Exception:
+                continue
 
         grounding_meta = sp_meta.get("grounding", {})
         grounding = GroundingData(
@@ -1738,6 +3416,7 @@ class Generator:
                 vid=sanitize_public_payload(vid_json),
                 readiness=readiness,
                 quality_scores=quality_scores,
+                quality_reports=quality_reports,
                 grounding=grounding,
             ),
         )

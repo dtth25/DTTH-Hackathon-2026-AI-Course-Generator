@@ -326,13 +326,10 @@ function DashboardContent() {
                 {cfg.icon}
                 {cfg.label}
               </Badge>
-              {course.quality_score !== undefined && course.quality_score > 0 ? (
-                <QualityScoreBadge score={course.quality_score} />
-              ) : studyPack?.study_pack?.grounding?.quality_score ? (
-                <QualityScoreBadge
-                  score={studyPack.study_pack.grounding.quality_score}
-                />
-              ) : null}
+              <QualityScoreBadge
+                report={course.document_quality_report}
+                score={course.quality_score ?? studyPack?.study_pack?.grounding?.quality_score}
+              />
             </div>
           </div>
         </div>

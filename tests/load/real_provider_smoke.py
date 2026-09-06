@@ -7,6 +7,12 @@ credentials, provider responses, prompts, source text, tokens, or raw chunk ids.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, UTC
+from decimal import Decimal
+from uuid import uuid4
+from sqlalchemy import select
+from app.models.provider_call import ProviderCall, ProviderTestBudget
+from app.services.provider_usage import BudgetLimitError, reserve_test_budget, settle_test_budget, verified_request_bound
 import json
 import logging
 import os
@@ -26,6 +32,7 @@ BASE_URL = os.environ.get("REAL_SMOKE_BASE_URL", "http://frontend:3000")
 PASSWORD = os.environ.get("REAL_SMOKE_PASSWORD", "")
 BUDGET_USD = float(os.environ.get("REAL_SMOKE_BUDGET_USD", "0.35"))
 USER_COUNT = 5
+RUN_ID = str(uuid4())
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 # Keep the paid smoke output compact and free of job identifiers. The final JSON
@@ -33,23 +40,48 @@ TERMINAL = {"succeeded", "failed", "cancelled"}
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-def _provider_usage() -> tuple[float, float | None]:
-    response = httpx.get(
-        f"{settings.OPENROUTER_BASE_URL}/key",
-        headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
-        timeout=settings.OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    data = response.json().get("data", {})
-    usage = data.get("usage")
-    remaining = data.get("limit_remaining")
-    if not isinstance(usage, (int, float)) or isinstance(usage, bool):
-        raise RuntimeError("Provider usage is unavailable; paid smoke is blocked.")
-    if remaining is not None and (
-        not isinstance(remaining, (int, float)) or isinstance(remaining, bool)
-    ):
-        raise RuntimeError("Provider capacity is invalid; paid smoke is blocked.")
-    return float(usage), None if remaining is None else float(remaining)
+def _provider_preflight() -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"}
+    snapshots = {}
+    for endpoint in ('key', 'credits', 'models'):
+        response = httpx.get(f"{settings.OPENROUTER_BASE_URL}/{endpoint}", headers=headers,
+                             timeout=settings.OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        snapshots[endpoint] = response.json().get('data')
+    key, credits = snapshots['key'], snapshots['credits']
+    if not isinstance(key, dict) or not isinstance(credits, dict):
+        raise RuntimeError('Provider capacity unavailable; smoke blocked.')
+    remaining = key.get('limit_remaining')
+    account_remaining = Decimal(str(credits['total_credits'])) - Decimal(str(credits['total_usage']))
+    if not account_remaining.is_finite() or account_remaining <= 0 or (remaining is not None and Decimal(str(remaining)) <= 0):
+        raise RuntimeError('Provider capacity not positive; smoke blocked.')
+    selected = {settings.OPENROUTER_MODEL, settings.OPENROUTER_BOOK_MODEL or settings.OPENROUTER_MODEL,
+                settings.OPENROUTER_EMBEDDING_MODEL}
+    prices = {item['id']: item.get('pricing') for item in snapshots['models'] if item.get('id') in selected}
+    if set(prices) != selected or any(not value for value in prices.values()):
+        raise RuntimeError('Current model pricing unavailable; smoke blocked.')
+    return {'pricing': prices, 'pricing_source': 'https://openrouter.ai/api/v1/models',
+            'pricing_checked_at': datetime.now(UTC).isoformat()}
+
+
+def _reserve_smoke(run_id):
+    # No flag or user-supplied estimate can bypass unresolved billing semantics.
+    # A complete seven-job envelope must include ingestion/OCR, query embeddings,
+    # outline, all required chapters, title/quiz schemas, and same-model retries.
+    with SessionLocal() as db:
+        if db.scalar(select(ProviderTestBudget.run_id).where(ProviderTestBudget.state.in_(['active', 'blocked_unknown']))):
+            raise BudgetLimitError('An earlier smoke reservation needs reconciliation')
+    verified_request_bound(settings.OPENROUTER_BOOK_MODEL or settings.OPENROUTER_MODEL,
+        {'messages': [{'role': 'user', 'content': 'Capped smoke plan'}], 'max_tokens': 8192}, 'generation')
+    raise BudgetLimitError('A complete source-dependent seven-job allowance is required before dispatch')
+
+
+def _response_cost(user_ids):
+    with SessionLocal() as db:
+        rows = db.scalars(select(ProviderCall).where(ProviderCall.user_id.in_(user_ids))).all()
+        if not rows or any(row.cost is None for row in rows):
+            return None
+        return sum((Decimal(row.cost) / Decimal(1_000_000_000) for row in rows), Decimal('0'))
 
 
 def _seed_users() -> None:
@@ -58,7 +90,7 @@ def _seed_users() -> None:
     hashed = get_password_hash(PASSWORD)
     with SessionLocal() as db:
         for number in range(1, USER_COUNT + 1):
-            email = f"provider-smoke-{number:02d}@example.com"
+            email = f"provider-smoke-{RUN_ID}-{number:02d}@example.com"
             user = db.query(User).filter(User.email == email).one_or_none()
             if user is None:
                 db.add(
@@ -76,7 +108,7 @@ def _login(client: httpx.Client, number: int) -> str:
     response = client.post(
         "/api/auth/login",
         json={
-            "email": f"provider-smoke-{number:02d}@example.com",
+            "email": f"provider-smoke-{RUN_ID}-{number:02d}@example.com",
             "password": PASSWORD,
         },
     )
@@ -185,9 +217,15 @@ def main() -> None:
     if BUDGET_USD <= 0 or BUDGET_USD > 0.50:
         raise RuntimeError("REAL_SMOKE_BUDGET_USD must be within (0, 0.50].")
 
-    usage_before, remaining = _provider_usage()
-    if remaining is not None and remaining <= 0:
-        raise RuntimeError("Provider capacity is not positive; paid smoke is blocked.")
+    snapshot = _provider_preflight()
+    run_id = RUN_ID
+    try:
+        upper_bound = _reserve_smoke(run_id)
+    except BudgetLimitError:
+        print(json.dumps({"status": "blocked_unverified_allowance", **snapshot, "provider_cost_usd": "0"}))
+        return
+    if not reserve_test_budget(run_id, upper_bound):
+        raise RuntimeError("Smoke reservation denied.")
     _seed_users()
 
     with ThreadPoolExecutor(max_workers=USER_COUNT) as pool:
@@ -200,8 +238,12 @@ def main() -> None:
         _verify_grounding(course_id)
 
     time.sleep(5)
-    usage_after, _ = _provider_usage()
-    observed_cost = max(0.0, usage_after - usage_before)
+    with SessionLocal() as db:
+        user_ids = list(db.scalars(select(User.id).where(User.email.like(f"provider-smoke-{RUN_ID}-%@example.com"))))
+    observed_cost = _response_cost(user_ids)
+    settle_test_budget(run_id, observed_cost)
+    if observed_cost is None:
+        raise RuntimeError("Unknown response cost; reservation remains held.")
     if observed_cost > BUDGET_USD:
         raise RuntimeError("Observed provider cost exceeded the predeclared smoke budget.")
     print(
@@ -210,7 +252,8 @@ def main() -> None:
                 "jobs": 7,
                 "succeeded": 7,
                 "grounded_artifacts": 2,
-                "provider_cost_usd": round(observed_cost, 6),
+                "provider_cost_usd": str(observed_cost),
+                **snapshot,
                 "budget_usd": BUDGET_USD,
             },
             separators=(",", ":"),

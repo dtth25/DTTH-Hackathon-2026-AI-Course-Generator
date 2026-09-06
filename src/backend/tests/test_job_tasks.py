@@ -214,6 +214,9 @@ def test_transient_failure_enters_durable_retry_and_is_reenqueued(
     from app.jobs import tasks
 
     job_id, _ = _seed_job(worker_database)
+    with worker_database() as db:
+        db.get(ProcessingJob, job_id).progress = 44
+        db.commit()
     processor = Mock()
     processor.list_saved_course_files.return_value = ["saved-source.txt"]
     processor.process_course.side_effect = RuntimeError("temporary provider outage")
@@ -228,6 +231,7 @@ def test_transient_failure_enters_durable_retry_and_is_reenqueued(
     with worker_database() as db:
         job = db.get(ProcessingJob, job_id)
         assert job.status == "retry_scheduled"
+        assert job.progress == 0
         assert job.attempts == 1
         assert job.next_attempt_at is not None
         assert job.error_code is None

@@ -1,8 +1,8 @@
 """Pydantic schemas for Course models and Upload service."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class CourseCreate(BaseModel):
@@ -21,6 +21,7 @@ class CourseResponse(BaseModel):
     chunk_count: int = 0
     embedding_status: str = "pending"
     quality_score: int = 0
+    quality_score_label: str = "structural/coverage checks compatibility"
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -51,6 +52,7 @@ class CourseStatusResponse(BaseModel):
     chunk_count: int = 0
     embedding_status: str = "pending"
     quality_score: int = 0
+    quality_score_label: str = "structural/coverage checks compatibility"
     message: str = "Tài liệu đã sẵn sàng."
     filenames: List[str] = []
     file_count: int = 0
@@ -91,6 +93,16 @@ class JobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    next_attempt_at: Optional[datetime] = None
+    stage: str
+
+    @field_serializer("next_attempt_at", "created_at", "updated_at", "completed_at")
+    def serialize_utc_datetime(self, value: Optional[datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 class DocumentRetryResponse(BaseModel):

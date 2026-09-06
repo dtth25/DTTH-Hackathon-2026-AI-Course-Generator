@@ -125,12 +125,14 @@ class Settings(BaseSettings):
     CHROMA_SSL: bool = Field(default=False)
     CHROMA_TIMEOUT_SECONDS: float = Field(default=10.0, ge=1.0, le=60.0)
 
-    EMBEDDING_BATCH_SIZE: int = Field(default=32, description="Chunks per embed_content batch call")
+    EMBEDDING_BATCH_SIZE: int = Field(default=32, ge=1, description="Chunks per embed_content batch call")
     EMBEDDING_BATCH_DELAY: float = Field(default=0, description="Seconds to sleep between embedding batches")
     EMBEDDING_MAX_RETRIES: int = Field(default=3, description="Max retries per embedding batch on failure")
     EMBEDDING_MAX_RETRY_DELAY: float = Field(default=60, description="Max backoff delay (seconds) between embedding retries")
     EMBEDDING_REQUESTS_PER_MINUTE: int = Field(default=72, description="Client-side rate limit for embedding API calls")
     EMBEDDING_CACHE_DIR: str = Field(default="cache/chunk_embeddings", description="Directory for content-hash embedding cache")
+    EMBEDDING_DIMENSIONS: int = Field(default=1536, ge=1, description="Requested OpenRouter embedding dimensions")
+    EMBEDDING_NORMALIZATION_VERSION: str = Field(default="exact-v1", min_length=1, description="Stable embedding input normalization identity")
 
     OPENROUTER_EMBEDDING_MODEL: str = Field(default="openai/text-embedding-3-small", description="OpenRouter embedding model slug")
     OPENROUTER_MAX_IN_FLIGHT: int = Field(default=6, ge=1, le=32)
@@ -141,6 +143,13 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = Field(default="https://openrouter.ai/api/v1")
     OPENROUTER_PREFLIGHT_TTL_SECONDS: int = Field(default=30, ge=5, le=300)
     OPENROUTER_PREFLIGHT_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0, le=20.0)
+    OPENROUTER_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, ge=1.0, le=60.0)
+    OPENROUTER_READ_TIMEOUT_SECONDS: float = Field(default=180.0, ge=10.0, le=600.0)
+    OPENROUTER_ATTEMPT_TIMEOUT_SECONDS: float = Field(default=180.0, ge=10.0, le=600.0)
+    PROVIDER_CAPACITY_WAIT_MIN_SECONDS: int = Field(default=1, ge=1, le=10)
+    PROVIDER_CAPACITY_WAIT_MAX_SECONDS: int = Field(default=3, ge=1, le=30)
+    PROVIDER_CAPACITY_WAITER_TTL_SECONDS: int = Field(default=15, ge=5, le=120)
+    BOOK_CHAPTER_CONCURRENCY: int = Field(default=2, ge=1, le=4)
     ENVIRONMENT: str = Field(
         default="local", pattern="^(local|test|loadtest|production)$"
     )
@@ -194,6 +203,16 @@ class Settings(BaseSettings):
             raise ValueError("OPENROUTER_MODEL must reference a paid model")
         return model
 
+    @field_validator("OPENROUTER_EMBEDDING_MODEL", "EMBEDDING_NORMALIZATION_VERSION", mode="before")
+    @classmethod
+    def validate_embedding_identity(cls, value: str, info) -> str:
+        identity = str(value or "").strip()
+        if not identity:
+            raise ValueError(f"{info.field_name} cannot be missing or empty")
+        if info.field_name == "OPENROUTER_EMBEDDING_MODEL" and cls._is_free_model_slug(identity):
+            raise ValueError("OPENROUTER_EMBEDDING_MODEL must reference a paid model")
+        return identity
+
     @field_validator(
         "OPENROUTER_BOOK_MODEL", "OPENROUTER_SLIDE_MODEL", "OPENROUTER_QUIZ_MODEL", "OPENROUTER_VID_MODEL",
         mode="before",
@@ -226,6 +245,14 @@ class Settings(BaseSettings):
         if self.CREATE_DEFAULT_ADMIN and (not self.ADMIN_EMAIL.strip() or not self.ADMIN_PASSWORD.strip()):
             raise ValueError(
                 "CREATE_DEFAULT_ADMIN=true requires ADMIN_EMAIL and ADMIN_PASSWORD to also be set"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_provider_capacity_wait_window(self) -> "Settings":
+        if self.PROVIDER_CAPACITY_WAIT_MIN_SECONDS > self.PROVIDER_CAPACITY_WAIT_MAX_SECONDS:
+            raise ValueError(
+                "PROVIDER_CAPACITY_WAIT_MIN_SECONDS cannot exceed PROVIDER_CAPACITY_WAIT_MAX_SECONDS"
             )
         return self
 

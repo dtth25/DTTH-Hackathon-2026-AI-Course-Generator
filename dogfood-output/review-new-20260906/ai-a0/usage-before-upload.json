@@ -1,0 +1,10 @@
+{
+  "time_utc": "2026-09-06T08:46:39.489598+00:00",
+  "http_status": 200,
+  "counters": {
+    "usage": 2.36165674,
+    "limit": 10,
+    "limit_remaining": 7.63834326,
+    "limit_reset": null
+  }
+}

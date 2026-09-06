@@ -1,0 +1,28 @@
+# Error details
+
+```
+Error: expect(page).toHaveScreenshot(expected) failed
+
+  Expected an image 1440px by 1061px, received 1440px by 1067px. 30987 pixels (ratio 0.03 of all image pixels) are different.
+
+  Snapshot: course-book-desktop-dark.png
+
+Call log:
+  - Expect "toHaveScreenshot(course-book-desktop-dark.png)" with timeout 5000ms
+    - verifying given screenshot expectation
+  - taking page screenshot
+    - disabled all CSS animations
+  - waiting for fonts to load...
+  - fonts loaded
+  - Expected an image 1440px by 1061px, received 1440px by 1067px. 30987 pixels (ratio 0.03 of all image pixels) are different.
+  - waiting 100ms before taking screenshot
+  - taking page screenshot
+    - disabled all CSS animations
+  - waiting for fonts to load...
+  - fonts loaded
+  - captured a stable screenshot
+  - Expected an image 1440px by 1061px, received 1440px by 1067px. 30987 pixels (ratio 0.03 of all image pixels) are different.
+
+```
+
+

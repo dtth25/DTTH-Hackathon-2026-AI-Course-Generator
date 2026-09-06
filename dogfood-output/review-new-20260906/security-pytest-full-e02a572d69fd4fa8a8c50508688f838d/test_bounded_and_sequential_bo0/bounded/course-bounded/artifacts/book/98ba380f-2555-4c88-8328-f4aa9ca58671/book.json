@@ -1,0 +1,107 @@
+{
+  "title": "Scheduled Book",
+  "summary": "Summary",
+  "preface": "",
+  "chapters": [
+    {
+      "chapter_title": "Unit 1",
+      "introduction": "",
+      "objectives": [
+        "Explain unit 1"
+      ],
+      "sections": [
+        {
+          "title": "Concept",
+          "content": "Explain unit 1"
+        }
+      ],
+      "key_points": [
+        "Explain unit 1"
+      ],
+      "review_questions": [
+        "Explain?"
+      ],
+      "source_chunk_ids": [
+        "e1"
+      ]
+    },
+    {
+      "chapter_title": "Unit 2",
+      "introduction": "",
+      "objectives": [
+        "Explain unit 2"
+      ],
+      "sections": [
+        {
+          "title": "Concept",
+          "content": "Explain unit 2"
+        }
+      ],
+      "key_points": [
+        "Explain unit 2"
+      ],
+      "review_questions": [
+        "Explain?"
+      ],
+      "source_chunk_ids": [
+        "e2"
+      ]
+    },
+    {
+      "chapter_title": "Unit 3",
+      "introduction": "",
+      "objectives": [
+        "Explain unit 3"
+      ],
+      "sections": [
+        {
+          "title": "Concept",
+          "content": "Explain unit 3"
+        }
+      ],
+      "key_points": [
+        "Explain unit 3"
+      ],
+      "review_questions": [
+        "Explain?"
+      ],
+      "source_chunk_ids": [
+        "e3"
+      ]
+    },
+    {
+      "chapter_title": "Unit 4",
+      "introduction": "",
+      "objectives": [
+        "Explain unit 4"
+      ],
+      "sections": [
+        {
+          "title": "Concept",
+          "content": "Explain unit 4"
+        }
+      ],
+      "key_points": [
+        "Explain unit 4"
+      ],
+      "review_questions": [
+        "Explain?"
+      ],
+      "source_chunk_ids": [
+        "e4"
+      ]
+    }
+  ],
+  "source_plan": {
+    "revision": 1,
+    "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "unit_ids": [
+      "u1",
+      "u2",
+      "u3",
+      "u4"
+    ],
+    "canonical_equations": [],
+    "glossary": []
+  }
+}

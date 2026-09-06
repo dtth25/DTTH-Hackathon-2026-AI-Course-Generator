@@ -46,6 +46,7 @@ class ProcessingJob(Base):
     status = Column(
         String(32), nullable=False, default=JobStatus.QUEUED.value, index=True
     )
+    product_stage = Column(String(32), nullable=True)
     progress = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=False, default="Đang chờ xử lý")
     error_code = Column(String(80), nullable=True)
@@ -55,6 +56,7 @@ class ProcessingJob(Base):
     active_key = Column(String(180), nullable=True, unique=True, index=True)
     queue_name = Column(String(32), nullable=False, default="ingestion")
     attempts = Column(Integer, nullable=False, default=0)
+    failure_attempts = Column(Integer, nullable=False, default=0)
     max_attempts = Column(Integer, nullable=False, default=3)
     worker_id = Column(String(120), nullable=True)
     lease_expires_at = Column(DateTime, nullable=True, index=True)

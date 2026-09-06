@@ -159,6 +159,12 @@ def test_upload_to_processing_pipeline_integration(client):
     assert status_data["chunk_count"] > 0
     assert status_data["embedding_status"] == "completed"
     assert status_data["quality_score"] > 0
+    assert status_data["document_quality_report"]["version"] == 2
+    assert status_data["document_quality_report"]["complete"] is True
+    assert status_data["document_quality_report"]["extraction_complete"] is True
+    assert status_data["document_quality_report"]["indexed_chunk_count"] == status_data["chunk_count"]
+    assert status_data["document_quality_report"]["faithfulness"] is None
+    assert status_data["document_quality_report"]["faithfulness_status"] == "not_evaluated"
 
     # Verify search returns the chunk
     vs = get_vector_store()

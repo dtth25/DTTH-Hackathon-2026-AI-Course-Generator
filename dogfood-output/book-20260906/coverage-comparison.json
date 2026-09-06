@@ -1,0 +1,53 @@
+{
+  "__builtin_popcount": [
+    {
+      "pdf_page": 108,
+      "excerpt": "ltin_ctz(x): the number of zeros at the end of the number\n\u2022 __builtin_popcount(x): the number of ones in the number\n\u2022 __builtin_parity(x): the parity (even or odd) of the number of ones\nThe functions can be used as follows:\nint x = 5328; // 00000000000000000001010011010000\ncout << __builtin_clz(x) << \"\\n\"; // 19\ncout << __builtin_ctz(x) << \"\\n\"; // 4\ncout << __builtin_popcount(x) << \"\\n\"; // 5\ncout << __builtin_parit"
+    },
+    {
+      "pdf_page": 109,
+      "excerpt": ";\nint y = (1<<3)|(1<<6)|(1<<8)|(1<<9);\nint z = x|y;\ncout << __builtin_popcount(z) << \"\\n\"; // 6\nIterating through subsets\nThe following code goes through the subsets of {0,1,...,n\u22121}:\nfor (int b = 0; b < (1<<n); b++) {\n// process subset b\n}\nThe following code goes through the subsets with exactly k elements:\nfor (int b = 0; b < (1<<n); b++) {\nif (__builtin_popcount(b) == k) {\n// process subset b\n}\n}\nThe following cod"
+    }
+  ],
+  "Finding the largest value": [],
+  "Dijkstra": [
+    {
+      "pdf_page": 5,
+      "excerpt": " . . . . . . . . . . . . . . . . . . . . . . . . .\n123\n13.2 Dijkstra\u2019s algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n126\n13.3 Floyd\u2013Warshall algorithm\n. . . . . . . . . . . . . . . . . . . . . . . .\n129\n14 Tree algorithms\n133\n14.1 Tree traversal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n134\n14.2 Diameter . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n13"
+    },
+    {
+      "pdf_page": 136,
+      "excerpt": "e algorithm as slow as the original\nBellman\u2013Ford algorithm.\nDijkstra\u2019s algorithm\nDijkstra\u2019s algorithm2 \ufb01nds shortest paths from the starting node to all nodes of\nthe graph, like the Bellman\u2013Ford algorithm. The bene\ufb01t of Dijsktra\u2019s algorithm\nis that it is more ef\ufb01cient and can be used for processing large graphs. However,\nthe algorithm requires that there are no negative weight edges in the graph.\nLike the Bellman\u2013For"
+    }
+  ],
+  "segment tree": [
+    {
+      "pdf_page": 99,
+      "excerpt": "Segment tree\nA segment tree3 is a data structure that supports two operations: processing\na range query and updating an array value. Segment trees can support sum\nqueries, minimum and maximum queries and many other queries so that both\noperations work in O(logn) time.\nCompared to a binary indexed tree, the advantage of a segment tree is that it\nis a more general data struc"
+    },
+    {
+      "pdf_page": 100,
+      "excerpt": "hanges O(logn) nodes in the tree.\nImplementation\nWe store a segment tree as an array of 2n elements where n is the size of the\noriginal array and a power of two. The tree nodes are stored from top to bottom:\n90\n"
+    }
+  ],
+  "Knuth": [
+    {
+      "pdf_page": 293,
+      "excerpt": " and \u00c9. Tardos. Algorithm Design, Pearson, 2005.\n[46] D. E. Knuth. The Art of Computer Programming. Volume 2: Seminumerical\nAlgorithms, Addison\u2013Wesley, 1998 (3rd edition).\n283\n"
+    },
+    {
+      "pdf_page": 294,
+      "excerpt": "[47] D. E. Knuth. The Art of Computer Programming. Volume 3: Sorting and\nSearching, Addison\u2013Wesley, 1998 (2nd edition).\n[48] J. B. Kruskal. On the shortest spanning subtree of a graph and the travel-\ning salesman problem. Proceedings of the American Mathematical Society,\n7(1):48\u201350, 1956.\n[49] V. I. Levenshtein. Binary codes capable of correcting deletions, insertions,"
+    }
+  ],
+  "Z-algorithm": [
+    {
+      "pdf_page": 6,
+      "excerpt": " . . . . . . . . . . . . . . . . . . . . . . . . .\n245\n26.4 Z-algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n247\n27 Square root algorithms\n251\n27.1 Combining algorithms . . . . . . . . . . . . . . . . . . . . . . . . . . .\n252\n27.2 Integer partitions\n. . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n254\n27.3 Mo\u2019s algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . . . "
+    },
+    {
+      "pdf_page": 257,
+      "excerpt": "ate collisions when constants of the form 2x are used [51].\nZ-algorithm\nThe Z-array z of a string s of length n contains for each k = 0,1,...,n \u22121 the\nlength of the longest substring of s that begins at position k and is a pre\ufb01x of\n247\n"
+    }
+  ]
+}

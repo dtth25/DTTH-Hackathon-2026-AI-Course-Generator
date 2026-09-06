@@ -1,15 +1,22 @@
 """Paid-only OpenRouter LLM service with strict structured-output validation."""
 
 import base64
+import hashlib
+import json
 import logging
 import os
-from typing import Any, Callable, List, Optional
+import time
+import copy
+from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import ValidationError
+from billiard.exceptions import SoftTimeLimitExceeded
 
+from app.services.provider_usage import BudgetLimitError, current_provider_context, dispatch_provider, mark_response_outcome
 from app.core.config import settings
 from app.schemas.generator_output import (
     BookChapterContent,
+    BookObjectiveCoverage,
     BookChapterPlan,
     BookOutline,
     BookSection,
@@ -21,6 +28,12 @@ from app.schemas.generator_output import (
     SlidesOutput,
     VidOutput,
     VidScene,
+)
+from app.schemas.source_plan import (
+    GlossaryEntry,
+    SourceObjective,
+    SourcePlan,
+    SourcePlanUnit,
 )
 from app.services.provider_errors import (
     ProviderRequestError,
@@ -41,6 +54,7 @@ BOOK_CHAPTER_MAX_TOKENS = 16384
 SLIDES_MAX_TOKENS = 8192
 QUIZ_MAX_TOKENS = 8192
 VID_MAX_TOKENS = 8192
+SOURCE_PLAN_MAX_TOKENS = 8192
 
 
 def _quiz_max_tokens(quantity: int) -> int:
@@ -55,6 +69,93 @@ def _slides_max_tokens(num_slides: int) -> int:
 
 class LLMGenerationError(Exception):
     """Raised when both attempts with the configured OpenRouter model fail."""
+
+
+class BookIncompleteError(LLMGenerationError):
+    """A paid Book response ended before its assigned unit was complete."""
+
+
+def validate_book_chapter_completion(
+    value: BookChapterContent,
+    *,
+    valid_chunk_ids: List[str] | None,
+    required_objectives: Dict[str, str] | List[str] | None,
+) -> None:
+    """Reject structurally incomplete objective-to-section assignments."""
+
+    required_evidence = set(valid_chunk_ids or ())
+    cited = set(value.source_chunk_ids)
+
+    def normalize_objective(item: str) -> str:
+        return " ".join(item.split())
+
+    if isinstance(required_objectives, dict):
+        required_by_id = {
+            objective_id.strip(): normalize_objective(objective)
+            for objective_id, objective in required_objectives.items()
+            if objective_id.strip() and objective.strip()
+        }
+        assignments_valid = len(required_by_id) == len(required_objectives)
+    elif required_objectives is not None:
+        required_by_id = {
+            f"objective-{index + 1}": normalize_objective(objective)
+            for index, objective in enumerate(required_objectives)
+            if objective.strip()
+        }
+        assignments_valid = len(required_by_id) == len(required_objectives)
+    else:
+        required_by_id = {}
+        assignments_valid = True
+    required_objective_values = list(required_by_id.values())
+    delivered_objective_values = [
+        normalize_objective(item) for item in value.objectives if item.strip()
+    ]
+    objectives_complete = len(delivered_objective_values) == len(
+        set(delivered_objective_values)
+    )
+    if required_objectives is not None:
+        objectives_complete = (
+            objectives_complete
+            and set(required_objective_values) == set(delivered_objective_values)
+        )
+    coverage_ids = [item.objective_id.strip() for item in value.objective_coverage]
+    coverage_complete = (
+        assignments_valid
+        and len(coverage_ids) == len(set(coverage_ids))
+        and set(coverage_ids) == set(required_by_id)
+    )
+    if coverage_complete:
+        for item in value.objective_coverage:
+            objective_id = item.objective_id.strip()
+            indices = item.section_indices
+            if (
+                normalize_objective(item.objective) != required_by_id[objective_id]
+                or not indices
+                or len(indices) != len(set(indices))
+                or any(
+                    index < 0
+                    or index >= len(value.sections)
+                    or not value.sections[index].content.strip()
+                    for index in indices
+                )
+            ):
+                coverage_complete = False
+                break
+    complete_sections = bool(value.sections) and all(
+        section.title.strip() and section.content.strip() for section in value.sections
+    )
+    if (
+        not value.chapter_title.strip()
+        or not objectives_complete
+        or not coverage_complete
+        or not complete_sections
+        or not value.key_points
+        or not all(item.strip() for item in value.key_points)
+        or not value.review_questions
+        or not all(item.strip() for item in value.review_questions)
+        or not required_evidence.issubset(cited)
+    ):
+        raise BookIncompleteError("Assigned Book chapter is incomplete")
 
 
 def _friendly_openrouter_error(exc: Exception) -> str:
@@ -78,9 +179,10 @@ def _friendly_openrouter_error(exc: Exception) -> str:
 class LLMService:
     """Service wrapper for one paid OpenRouter model with one same-model retry."""
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: Optional[str] = None, book_policy=None):
         self.client = None
-        self.model = model or settings.OPENROUTER_MODEL
+        self.book_policy = book_policy
+        self.model = book_policy.model if book_policy is not None else (model or settings.OPENROUTER_MODEL)
         self._test_mode = "PYTEST_CURRENT_TEST" in os.environ
         self._provider_guard = (
             ProviderGuard(settings_obj=settings)
@@ -90,18 +192,34 @@ class LLMService:
         self._init_client()
         self.prompts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
+    def with_book_policy(self, policy):
+        """Reuse the injected client/guard while pinning one persisted Book policy."""
+
+        bound = copy.copy(self)
+        bound.book_policy = policy
+        bound.model = policy.model
+        return bound
+
     def _init_client(self):
         """Initialize the OpenRouter client, allowing mock mode only under pytest."""
         if self._test_mode:
             logger.info("PYTEST_CURRENT_TEST detected: using mock mode for LLMService.")
             return
         try:
+            import httpx
             from openai import OpenAI
 
             self.client = OpenAI(
                 base_url=settings.OPENROUTER_BASE_URL,
                 api_key=settings.OPENROUTER_API_KEY,
                 max_retries=0,
+                timeout=httpx.Timeout(
+                    timeout=settings.OPENROUTER_ATTEMPT_TIMEOUT_SECONDS,
+                    connect=settings.OPENROUTER_CONNECT_TIMEOUT_SECONDS,
+                    read=settings.OPENROUTER_READ_TIMEOUT_SECONDS,
+                    write=settings.OPENROUTER_READ_TIMEOUT_SECONDS,
+                    pool=settings.OPENROUTER_CONNECT_TIMEOUT_SECONDS,
+                ),
             )
             logger.info("Initialized OpenRouter client with model %s", self.model)
         except Exception as exc:
@@ -131,12 +249,61 @@ class LLMService:
             self._provider_guard = guard
         return guard
 
+    def _structured_request(
+        self,
+        prompt: str,
+        schema_model: Any,
+        max_output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> dict:
+        policy = getattr(self, "book_policy", None)
+        return {
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_output_tokens,
+            "temperature": 0.2,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_model.__name__,
+                    "schema": schema_model.model_json_schema(),
+                    "strict": True,
+                },
+            },
+            "extra_body": (
+                policy.extra_body(reasoning_tokens=reasoning_tokens)
+                if policy is not None
+                else {"provider": {"require_parameters": True}}
+            ),
+        }
+
+    def estimate_structured_request(
+        self,
+        prompt: str,
+        schema_model: Any,
+        max_output_tokens: int,
+        reasoning_tokens: int,
+    ):
+        """Measure the exact final local request shape used by strict dispatch."""
+
+        from app.services.provider_tokens import estimate_gemini_request
+
+        policy = getattr(self, "book_policy", None)
+        if policy is None:
+            raise BudgetLimitError("Measured Book requests require a saved policy")
+        request = self._structured_request(
+            prompt, schema_model, max_output_tokens, reasoning_tokens
+        )
+        return estimate_gemini_request(policy.model, request)
+
     def _call_openrouter_strict(
         self,
         prompt: str,
         schema_model: Any,
         fallback_fn: Callable[[], Any],
         max_output_tokens: int,
+        *,
+        reasoning_tokens: int | None = None,
+        completion_validator: Callable[[Any], None] | None = None,
     ) -> Any:
         """Call the configured paid model and retry it once if validation or delivery fails.
 
@@ -149,35 +316,54 @@ class LLMService:
             raise LLMGenerationError("Dịch vụ AI OpenRouter chưa được khởi tạo.")
 
         last_error: Optional[Exception] = None
-        model = self.model
+        policy = getattr(self, "book_policy", None)
+        model = policy.model if policy is not None else self.model
         guard = self._guard()
         for attempt in range(1, 3):
-            permit = guard.acquire("generation")
-            try:
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_output_tokens,
-                    temperature=0.2,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": schema_model.__name__,
-                            "schema": schema_model.model_json_schema(),
-                            "strict": True,
-                        },
-                    },
-                    extra_body={"provider": {"require_parameters": True}},
+            context = current_provider_context()
+            request_owner = context.user_id or "anonymous"
+            request_job = context.job_id or f"standalone:{context.feature}"
+            request_hash = hashlib.sha256(
+                f"{model}\n{schema_model.__name__}\n{attempt}\n{context.feature}\n{context.stage}\n{context.chapter}\n{max_output_tokens}\n{reasoning_tokens}\n{prompt}".encode(
+                    "utf-8"
                 )
-                content = response.choices[0].message.content if response.choices else None
+            ).hexdigest()
+            permit = guard.acquire(
+                "generation",
+                owner_key=request_owner,
+                job_key=request_job,
+                request_id=request_hash,
+            )
+            try:
+                request = self._structured_request(
+                    prompt, schema_model, max_output_tokens, reasoning_tokens
+                )
+                response = dispatch_provider(
+                    self.client.chat.completions.create,
+                    model=model,
+                    feature="generation",
+                    attempt=attempt,
+                    request=request,
+                )
+                choice = response.choices[0] if response.choices else None
+                if choice is not None and getattr(choice, "finish_reason", None) == "length":
+                    mark_response_outcome("schema_invalid")
+                    raise BookIncompleteError("Nội dung Book bị cắt do chạm giới hạn đầu ra.")
+                content = choice.message.content if choice else None
                 if not content:
                     raise LLMGenerationError("OpenRouter returned an empty response")
                 result = schema_model.model_validate_json(content)
+                if completion_validator is not None:
+                    completion_validator(result)
+                mark_response_outcome("valid")
                 guard.record_success("generation")
                 return result
-            except ProviderCircuitOpen:
+            except SoftTimeLimitExceeded:
+                raise
+            except (ProviderCircuitOpen, BudgetLimitError, BookIncompleteError):
                 raise
             except (ValidationError, LLMGenerationError) as e:
+                mark_response_outcome("schema_invalid")
                 last_error = e
                 logger.warning(
                     "OpenRouter model %s produced invalid output on attempt %s/2: %s",
@@ -225,7 +411,7 @@ class LLMService:
             _friendly_openrouter_error(last_error) if last_error else "AI generation failed."
         )
 
-    def ocr_page_image(self, image_bytes: bytes) -> str:
+    def ocr_page_image(self, image_bytes: bytes):
         """Transcribe one rendered PDF page through the configured OpenRouter model.
 
         A valid empty provider response means that the page genuinely has no readable
@@ -233,27 +419,44 @@ class LLMService:
         after one call, while transient failures get the single same-model retry allowed by
         the OCR contract. Typed failures must reach the document pipeline for persistence.
         """
+        from app.services.extraction_quality import OCRResult
+
         if not self.client:
-            return ""
+            return OCRResult(text="", complete=True)
         content = [{"type": "text", "text": "Trích xuất toàn bộ văn bản có thể đọc được trong ảnh này, giữ nguyên thứ tự đọc tự nhiên. Chỉ trả về văn bản thuần, không thêm giải thích hay định dạng markdown."}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}"}}]
         model = self.model
         guard = self._guard()
         for attempt in range(1, 3):
             permit = guard.acquire("ocr")
             try:
-                response = self.client.chat.completions.create(
-                    model=model,
+                started = time.perf_counter()
+                response = dispatch_provider(
+                    self.client.chat.completions.create, model=model, feature="ocr", attempt=attempt, request=dict(
                     messages=[{"role": "user", "content": content}],
                     max_tokens=4096,
                     temperature=0.0,
                     extra_body={"provider": {"require_parameters": True}},
-                )
-                text = response.choices[0].message.content if response.choices else None
+                ))
+                choice = response.choices[0] if response.choices else None
+                text = choice.message.content if choice else None
+                finish_reason = getattr(choice, "finish_reason", None)
+                usage = getattr(response, "usage", None)
+                if hasattr(usage, "model_dump"):
+                    usage = usage.model_dump()
+                usage = usage if isinstance(usage, dict) else {}
+                mark_response_outcome("valid")
                 guard.record_success("ocr")
-                if text and text.strip():
-                    return text.strip()
-                return ""
-            except ProviderCircuitOpen:
+                return OCRResult(
+                    text=text.strip() if text and text.strip() else "",
+                    complete=finish_reason != "length",
+                    finish_reason=finish_reason,
+                    latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
+                    input_tokens=usage.get("prompt_tokens"),
+                    output_tokens=usage.get("completion_tokens"),
+                )
+            except SoftTimeLimitExceeded:
+                raise
+            except (ProviderCircuitOpen, BudgetLimitError):
                 raise
             except Exception as exc:
                 failure = (
@@ -291,12 +494,94 @@ class LLMService:
 
         return self._call_openrouter_strict(prompt, CourseTitleOutput, _fallback, COURSE_TITLE_MAX_TOKENS)
 
+    def generate_source_plan(
+        self,
+        context: str,
+        source_digest: str,
+        revision: int,
+        valid_chunk_ids: List[str],
+        max_output_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
+    ) -> SourcePlan:
+        """Build the shared curriculum/evidence contract before any artifact content."""
+        prompt = self._source_plan_prompt(context, source_digest, revision)
+
+        cids = valid_chunk_ids or ["chunk_1"]
+
+        def _fallback():
+            units = [
+                SourcePlanUnit(
+                    id=f"unit-{index + 1}",
+                    title=title,
+                    objective_ids=[f"objective-{index + 1}"],
+                    evidence_ids=[cids[index % len(cids)]],
+                )
+                for index, title in enumerate(
+                    ("Khái niệm nền tảng", "Nguyên lý", "Phân tích", "Ứng dụng", "Tổng kết")
+                )
+            ]
+            objectives = [
+                SourceObjective(
+                    id=f"objective-{index + 1}",
+                    text=f"Giải thích được {unit.title.lower()}",
+                    evidence_ids=unit.evidence_ids,
+                )
+                for index, unit in enumerate(units)
+            ]
+            return SourcePlan(
+                revision=revision,
+                source_digest=source_digest,
+                objectives=objectives,
+                glossary=[
+                    GlossaryEntry(
+                        term="Khái niệm trọng tâm",
+                        definition="Khái niệm được trình bày trong tài liệu nguồn.",
+                        evidence_ids=cids,
+                    )
+                ],
+                equations=[],
+                units=units,
+            )
+
+        return self._call_openrouter_strict(
+            prompt,
+            SourcePlan,
+            _fallback,
+            max_output_tokens or SOURCE_PLAN_MAX_TOKENS,
+            reasoning_tokens=reasoning_tokens,
+        )
+
+    def _source_plan_prompt(self, context: str, source_digest: str, revision: int) -> str:
+        return self._load_prompt(
+            "source_plan.txt",
+            context=context,
+            source_digest=source_digest,
+            revision=revision,
+        )
+
+    def estimate_source_plan_request(
+        self,
+        context: str,
+        source_digest: str,
+        revision: int,
+        visible_output_tokens: int,
+        reasoning_tokens: int,
+    ):
+        return self.estimate_structured_request(
+            self._source_plan_prompt(context, source_digest, revision),
+            SourcePlan,
+            visible_output_tokens,
+            reasoning_tokens,
+        )
+
     def generate_book_outline(
         self,
         context: str,
         detail_level: str = "Tiêu chuẩn",
         user_prompt: str = "",
         doc_names: str = "",
+        max_output_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
     ) -> BookOutline:
         """Generate the whole-book outline (title, preface, chapter plans) from RAG context."""
         prompt = self._load_prompt(
@@ -339,7 +624,91 @@ class LLMService:
                 chapters=chapters,
             )
 
-        return self._call_openrouter_strict(prompt, BookOutline, _fallback, BOOK_OUTLINE_MAX_TOKENS)
+        return self._call_openrouter_strict(
+            prompt, BookOutline, _fallback, max_output_tokens or BOOK_OUTLINE_MAX_TOKENS,
+            reasoning_tokens=reasoning_tokens,
+        )
+
+    def estimate_book_outline_request(
+        self,
+        context: str,
+        detail_level: str,
+        user_prompt: str,
+        doc_names: str,
+        visible_output_tokens: int,
+        reasoning_tokens: int,
+    ):
+        prompt = self._load_prompt(
+            "book_outline.txt",
+            detail_level=detail_level,
+            user_prompt=user_prompt or "(không có)",
+            doc_names=doc_names or "(không rõ)",
+            context=context,
+        )
+        return self.estimate_structured_request(
+            prompt, BookOutline, visible_output_tokens, reasoning_tokens
+        )
+
+    def _book_chapter_prompt(
+        self,
+        book_title: str,
+        chapter_plan: BookChapterPlan,
+        total_chapters: int,
+        context: str,
+        detail_level: str,
+        required_objectives: Dict[str, str] | List[str] | None,
+    ) -> str:
+        if isinstance(required_objectives, dict):
+            objective_assignments = required_objectives
+        else:
+            objective_assignments = {
+                f"objective-{index + 1}": objective
+                for index, objective in enumerate(required_objectives or ())
+            }
+        return self._load_prompt(
+            "book_chapter.txt",
+            book_title=book_title,
+            chapter_number=chapter_plan.chapter_number,
+            total_chapters=total_chapters,
+            chapter_title=chapter_plan.chapter_title,
+            chapter_description=chapter_plan.description,
+            planned_sections=", ".join(chapter_plan.planned_sections)
+            or "(do bạn tự đề xuất)",
+            detail_level=detail_level,
+            context=context,
+            required_objectives=json.dumps(
+                [
+                    {"objective_id": objective_id, "objective": objective}
+                    for objective_id, objective in objective_assignments.items()
+                ],
+                ensure_ascii=False,
+            )
+            if objective_assignments
+            else "(theo Source Plan)",
+        )
+
+    def estimate_book_chapter_request(
+        self,
+        book_title: str,
+        chapter_plan: BookChapterPlan,
+        total_chapters: int,
+        context: str,
+        detail_level: str,
+        visible_output_tokens: int,
+        reasoning_tokens: int,
+        required_objectives: Dict[str, str] | List[str],
+    ):
+        prompt = self._book_chapter_prompt(
+            book_title,
+            chapter_plan,
+            total_chapters,
+            context,
+            detail_level,
+            required_objectives,
+        )
+        return self.estimate_structured_request(
+            prompt, BookChapterContent, visible_output_tokens, reasoning_tokens
+        )
 
     def generate_book_chapter(
         self,
@@ -349,20 +718,27 @@ class LLMService:
         context: str,
         detail_level: str = "Tiêu chuẩn",
         valid_chunk_ids: List[str] = None,
+        max_output_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
+        required_objectives: Dict[str, str] | List[str] | None = None,
     ) -> BookChapterContent:
         """Generate the full content for a single chapter from chapter-specific RAG context."""
-        prompt = self._load_prompt(
-            "book_chapter.txt",
-            book_title=book_title,
-            chapter_number=chapter_plan.chapter_number,
-            total_chapters=total_chapters,
-            chapter_title=chapter_plan.chapter_title,
-            chapter_description=chapter_plan.description,
-            planned_sections=", ".join(chapter_plan.planned_sections) or "(do bạn tự đề xuất)",
-            detail_level=detail_level,
-            context=context,
+        prompt = self._book_chapter_prompt(
+            book_title,
+            chapter_plan,
+            total_chapters,
+            context,
+            detail_level,
+            required_objectives,
         )
         cids = valid_chunk_ids or ["chunk_1", "chunk_2"]
+        if isinstance(required_objectives, dict):
+            objective_assignments = required_objectives
+        else:
+            objective_assignments = {
+                f"objective-{index + 1}": objective
+                for index, objective in enumerate(required_objectives or ())
+            }
 
         def _fallback():
             sections = [
@@ -379,6 +755,10 @@ class LLMService:
                 )
                 for title in (chapter_plan.planned_sections[:3] or [f"{chapter_plan.chapter_title} — Nội dung chính"])
             ]
+            delivered_objectives = list(objective_assignments.values()) or [
+                f"Giải thích được các khái niệm cốt lõi của {chapter_plan.chapter_title.lower()}",
+                "Phân biệt được các thành phần chính đã trình bày trong chương",
+            ]
             return BookChapterContent(
                 chapter_title=chapter_plan.chapter_title,
                 introduction=(
@@ -386,11 +766,18 @@ class LLMService:
                     "nền tảng vững chắc trước khi tiếp cận các chương tiếp theo. Chúng ta sẽ đi từ khái niệm cơ bản đến các "
                     "ví dụ minh họa cụ thể, giúp việc ôn tập trở nên trực quan và dễ nhớ hơn."
                 ),
-                objectives=[
-                    f"Giải thích được các khái niệm cốt lõi của {chapter_plan.chapter_title.lower()}",
-                    "Phân biệt được các thành phần chính đã trình bày trong chương",
-                ],
+                objectives=delivered_objectives,
                 sections=sections,
+                objective_coverage=[
+                    BookObjectiveCoverage(
+                        objective_id=objective_id,
+                        objective=objective,
+                        section_indices=[min(index, len(sections) - 1)],
+                    )
+                    for index, (objective_id, objective) in enumerate(
+                        objective_assignments.items()
+                    )
+                ],
                 key_points=[
                     f"{chapter_plan.chapter_title} xây dựng nền tảng cho các chương sau",
                     "Kiến thức cần được liên hệ với ví dụ thực tế để ghi nhớ lâu dài",
@@ -402,7 +789,17 @@ class LLMService:
                 source_chunk_ids=cids[:2],
             )
 
-        return self._call_openrouter_strict(prompt, BookChapterContent, _fallback, BOOK_CHAPTER_MAX_TOKENS)
+        def _validate_complete(value: BookChapterContent) -> None:
+            validate_book_chapter_completion(
+                value,
+                valid_chunk_ids=valid_chunk_ids,
+                required_objectives=required_objectives,
+            )
+
+        return self._call_openrouter_strict(
+            prompt, BookChapterContent, _fallback, max_output_tokens or BOOK_CHAPTER_MAX_TOKENS,
+            reasoning_tokens=reasoning_tokens, completion_validator=_validate_complete,
+        )
 
     def generate_slides(
         self, context: str, topic: str = "AI Overview", num_slides: int = 15, valid_chunk_ids: List[str] = None

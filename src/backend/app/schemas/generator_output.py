@@ -1,7 +1,7 @@
 """Pydantic schemas and quality scoring for HackaGen outputs."""
 
 import re
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, List, Literal, Mapping, Optional, Tuple
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -71,8 +71,19 @@ class BookOutline(BaseModel):
 
     title: str = Field(..., description="Overall title of the study guide")
     summary: str = Field(..., description="Executive summary of the course content")
-    preface: str = Field(..., description="Foreword/preface, 200-350 words")
-    chapters: List[BookChapterPlan] = Field(default_factory=list, description="Planned chapters, 5-8 entries")
+    preface: str = Field("", description="Optional concise orientation when it adds learning value")
+    chapters: List[BookChapterPlan] = Field(default_factory=list, description="One entry per evidenced source-plan unit")
+
+
+class BookObjectiveCoverage(BaseModel):
+    """Internal structural link from a stable objective to teaching sections."""
+
+    objective_id: str = Field(..., min_length=1, description="Assigned SourcePlan objective ID")
+    objective: str = Field(..., min_length=1, description="Exact assigned objective text")
+    section_indices: List[int] = Field(
+        default_factory=list,
+        description="Zero-based chapter section indices that teach this objective",
+    )
 
 
 class BookChapterContent(BaseModel):
@@ -82,6 +93,10 @@ class BookChapterContent(BaseModel):
     introduction: str = Field("", description="Opening paragraph introducing the chapter")
     objectives: List[str] = Field(default_factory=list, description="Learning objectives")
     sections: List[BookSection] = Field(default_factory=list, description="Sections in this chapter")
+    objective_coverage: List[BookObjectiveCoverage] = Field(
+        default_factory=list,
+        description="Internal assignment of each objective ID to instructional sections",
+    )
     key_points: List[str] = Field(default_factory=list, description="Key takeaways")
     review_questions: List[str] = Field(default_factory=list, description="Review/self-check questions")
     source_chunk_ids: List[str] = Field(
@@ -221,6 +236,30 @@ class VidOutput(BaseModel):
 # =====================================================================
 
 
+class QualityReport(BaseModel):
+    """Observable checks only; empirical answer faithfulness is optional by design."""
+
+    structural_validity: int = Field(ge=0, le=100)
+    citation_validity: int = Field(ge=0, le=100)
+    source_coverage: Optional[int] = Field(default=None, ge=0, le=100)
+    extraction_complete: Optional[bool] = None
+    faithfulness: Optional[int] = Field(default=None, ge=0, le=100)
+    indexed_chunk_count: Optional[int] = Field(default=None, ge=0)
+    invalid_citation_count: int = Field(default=0, ge=0)
+    missing_citation_count: int = Field(default=0, ge=0)
+    labels: List[str] = Field(default_factory=lambda: ["structural checks", "source coverage"])
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, (int, float)):
+            return self.structural_validity == other
+        return super().__eq__(other)
+
+    def __gt__(self, other: object) -> bool:
+        if isinstance(other, (int, float)):
+            return self.structural_validity > other
+        return NotImplemented
+
+
 _CHUNK_MENTION_RE = re.compile(r"\bchunk[_\s]*\d+\b", re.IGNORECASE)
 
 
@@ -243,9 +282,10 @@ def _check_grounding(
     never retrieved is a hallucinated reference, not grounding, so it costs points
     instead of counting toward the grounding boost."""
     if not cited_ids:
+        warnings.append(f"{label} thiếu trích dẫn nguồn.")
         return 0, False
     invalid = [cid for cid in cited_ids if cid not in valid_ids]
-    if invalid and valid_ids:
+    if invalid:
         warnings.append(f"{label} tham chiếu chunk không tồn tại: {invalid}")
         return 5 * len(invalid), False
     return 0, True
@@ -255,15 +295,40 @@ def validate_and_score_output(
     data: Any,
     artifact_type: str,
     valid_chunk_ids: List[str] = None,
-) -> Tuple[Any, int, List[str]]:
-    """Validate generated artifact and calculate quality score (0-100).
+    unit_valid_chunk_ids: Optional[Mapping[int, List[str]]] = None,
+    extraction_complete: Optional[bool] = None,
+    indexed_chunk_count: Optional[int] = None,
+) -> Tuple[Any, QualityReport, List[str]]:
+    """Validate generated structure and citations without claiming factual accuracy.
 
     Returns:
-        tuple[data, quality_score, warnings]
+        tuple[data, quality_report, warnings]
     """
     valid_chunk_ids_set = set(valid_chunk_ids or [])
     warnings: List[str] = []
     base_score = 80  # Start with high baseline for valid schema
+    citation_results: List[bool] = []
+    valid_cited_ids: set[str] = set()
+    invalid_citation_count = 0
+    missing_citation_count = 0
+
+    def allowed_for(index: int) -> set[str]:
+        if unit_valid_chunk_ids is None:
+            return valid_chunk_ids_set
+        return set(unit_valid_chunk_ids.get(index, []))
+
+    def check(cited: List[str], index: int, label: str) -> Tuple[int, bool]:
+        nonlocal invalid_citation_count, missing_citation_count
+        allowed = allowed_for(index)
+        if not cited:
+            missing_citation_count += 1
+        else:
+            invalid_citation_count += sum(citation not in allowed for citation in cited)
+        penalty, grounded = _check_grounding(cited, allowed, label, warnings)
+        citation_results.append(grounded)
+        if grounded:
+            valid_cited_ids.update(cited)
+        return penalty, grounded
 
     if artifact_type == "book":
         if not isinstance(data, BookOutput):
@@ -272,11 +337,8 @@ def validate_and_score_output(
             warnings.append("Sách không có chương nào.")
             base_score -= 20
         else:
-            if not (4 <= len(data.chapters) <= 10):
-                warnings.append(f"Số chương ({len(data.chapters)}) nằm ngoài khoảng khuyến nghị 4-10.")
-                base_score -= 10
             grounded_items = 0
-            for ch in data.chapters:
+            for index, ch in enumerate(data.chapters):
                 if not ch.chapter_title or not ch.sections:
                     warnings.append(f"Chương '{ch.chapter_title}' thiếu nội dung chi tiết.")
                     base_score -= 5
@@ -286,13 +348,7 @@ def validate_and_score_output(
                     sec.content = _strip_chunk_mentions(sec.content, label, warnings)
                 ch.key_points = [_strip_chunk_mentions(kp, label, warnings) for kp in ch.key_points]
                 ch.review_questions = [_strip_chunk_mentions(q, label, warnings) for q in ch.review_questions]
-                word_count = len(ch.introduction.split()) + sum(len(s.content.split()) for s in ch.sections)
-                if word_count < 400:
-                    warnings.append(f"Chương '{ch.chapter_title}' quá ngắn ({word_count} từ).")
-                    base_score -= 5
-                penalty, grounded = _check_grounding(
-                    ch.source_chunk_ids, valid_chunk_ids_set, f"Chương '{ch.chapter_title}'", warnings
-                )
+                penalty, grounded = check(ch.source_chunk_ids, index, f"Chương '{ch.chapter_title}'")
                 base_score -= penalty
                 if grounded:
                     grounded_items += 1
@@ -308,16 +364,14 @@ def validate_and_score_output(
             base_score -= 20
         else:
             grounded_items = 0
-            for sl in data.slides:
+            for index, sl in enumerate(data.slides):
                 if not sl.bullet_points:
                     warnings.append(f"Slide {sl.slide_number} thiếu nội dung bullet points.")
                     base_score -= 5
                 label = f"Slide {sl.slide_number}"
                 sl.title = _strip_chunk_mentions(sl.title, label, warnings)
                 sl.bullet_points = [_strip_chunk_mentions(b, label, warnings) for b in sl.bullet_points]
-                penalty, grounded = _check_grounding(
-                    sl.source_chunk_ids, valid_chunk_ids_set, f"Slide {sl.slide_number}", warnings
-                )
+                penalty, grounded = check(sl.source_chunk_ids, index, f"Slide {sl.slide_number}")
                 base_score -= penalty
                 if grounded:
                     grounded_items += 1
@@ -332,7 +386,7 @@ def validate_and_score_output(
             base_score -= 20
         else:
             grounded_items = 0
-            for q in data.questions:
+            for index, q in enumerate(data.questions):
                 if len(q.options) != 4:
                     warnings.append(f"Câu hỏi {q.question_number} không đủ 4 lựa chọn.")
                     base_score -= 10
@@ -344,9 +398,7 @@ def validate_and_score_output(
                 q.explanation = _strip_chunk_mentions(q.explanation, label, warnings)
                 for opt in q.options:
                     opt.text = _strip_chunk_mentions(opt.text, label, warnings)
-                penalty, grounded = _check_grounding(
-                    q.source_chunk_ids, valid_chunk_ids_set, f"Câu hỏi {q.question_number}", warnings
-                )
+                penalty, grounded = check(q.source_chunk_ids, index, f"Câu hỏi {q.question_number}")
                 base_score -= penalty
                 if grounded:
                     grounded_items += 1
@@ -361,7 +413,7 @@ def validate_and_score_output(
             base_score -= 20
         else:
             grounded_items = 0
-            for sc in data.scenes:
+            for index, sc in enumerate(data.scenes):
                 if not sc.narration or len(sc.narration.split()) < 5:
                     warnings.append(f"Phân cảnh {sc.scene_number} thiếu lời đọc hoặc quá ngắn.")
                     base_score -= 5
@@ -370,9 +422,7 @@ def validate_and_score_output(
                 sc.on_screen_text = _strip_chunk_mentions(sc.on_screen_text or "", label, warnings)
                 sc.key_points = [_strip_chunk_mentions(kp, label, warnings) for kp in sc.key_points]
                 sc.narration = _strip_chunk_mentions(sc.narration, label, warnings)
-                penalty, grounded = _check_grounding(
-                    sc.source_chunk_ids, valid_chunk_ids_set, f"Phân cảnh {sc.scene_number}", warnings
-                )
+                penalty, grounded = check(sc.source_chunk_ids, index, f"Phân cảnh {sc.scene_number}")
                 base_score -= penalty
                 if grounded:
                     grounded_items += 1
@@ -382,6 +432,21 @@ def validate_and_score_output(
 
 
     # Clamp score between 0 and 100
-    quality_score = max(0, min(100, base_score))
-
-    return data, quality_score, warnings
+    structural_validity = max(0, min(100, base_score))
+    citation_validity = (
+        round(100 * sum(citation_results) / len(citation_results)) if citation_results else 0
+    )
+    source_coverage = (
+        round(100 * len(valid_cited_ids) / len(valid_chunk_ids_set)) if valid_chunk_ids_set else None
+    )
+    report = QualityReport(
+        structural_validity=structural_validity,
+        citation_validity=citation_validity,
+        source_coverage=source_coverage,
+        extraction_complete=extraction_complete,
+        faithfulness=None,
+        indexed_chunk_count=indexed_chunk_count,
+        invalid_citation_count=invalid_citation_count,
+        missing_citation_count=missing_citation_count,
+    )
+    return data, report, warnings

@@ -1,0 +1,10 @@
+[
+  {"id": "fraction", "text": "$\\frac{a+b}{c+d}$"},
+  {"id": "nested-fraction", "text": "$\\frac{1}{\\frac{2}{3}}$"},
+  {"id": "root", "text": "$\\sqrt{x+1}$"},
+  {"id": "exponent", "text": "$x^{a+b}$"},
+  {"id": "matrix", "text": "$\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}$"},
+  {"id": "integral", "text": "$\\int_0^1 x^2\\,dx=\\frac{1}{3}$"},
+  {"id": "glyphs", "text": "Tiếng Việt: đạo hàm. 𝛼 ∑ ℝ ∇ ∀ ₁ ᵢ 中文"},
+  {"id": "literal-question", "text": "Giá trị x là bao nhiêu?"}
+]

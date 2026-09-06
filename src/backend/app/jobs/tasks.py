@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from celery.exceptions import Reject
+from billiard.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select, update
 
 from app.core.config import settings
@@ -25,9 +26,13 @@ from app.services.job_service import (
     mark_job_failed,
     mark_job_succeeded,
     renew_job_lease,
+    schedule_capacity_continuation,
     schedule_job_retry,
 )
-from app.services.provider_guard import ProviderCircuitOpen
+from app.services.provider_guard import ProviderCapacityWait, ProviderCircuitOpen
+from app.services.provider_usage import BudgetLimitError, ProviderCallContext, usage_context, stage_timer, assert_accounting_ready
+from app.models.provider_call import BookBudget, ProviderStage
+from uuid import uuid4
 
 
 logger = logging.getLogger(__name__)
@@ -247,6 +252,13 @@ def _execute_artifact(
     if _artifact_version_is_ready(course_metadata, artifact, version_id):
         return True
 
+    if job_type == "book" and payload.get("budget_id"):
+        with database.SessionLocal() as db:
+            budget = db.get(BookBudget, payload["budget_id"])
+            job = db.get(ProcessingJob, job_id)
+            if budget is None or budget.course_id != course_id or budget.version_id != version_id or budget.user_id != job.user_id:
+                raise BudgetLimitError("Book budget ownership mismatch")
+
     common = {
         "course_id": course_id,
         "version_id": version_id,
@@ -330,8 +342,39 @@ def _retry_or_fail(
             error_code=final_error_code,
             message=final_message,
             expected_attempt=attempt_number,
+            consume_failure_attempt=True,
         )
         return None
+
+
+def _continue_after_capacity_wait(
+    job_id: str,
+    worker_id: str,
+    attempt_number: int,
+    retry_after: int,
+) -> DeliveryInstruction | None:
+    with database.SessionLocal() as db:
+        job = db.get(ProcessingJob, job_id)
+        if job is None or job.worker_id != worker_id or job.attempts != attempt_number:
+            return _delivery_for_unclaimed(job_id)
+        if job.cancel_requested:
+            mark_job_cancelled(
+                db, job_id, worker_id, expected_attempt=attempt_number
+            )
+            return None
+        retry_at = datetime.utcnow() + timedelta(seconds=max(1, min(30, retry_after)))
+        if schedule_capacity_continuation(
+            db,
+            job_id,
+            worker_id,
+            retry_at,
+            expected_attempt=attempt_number,
+        ):
+            return DeliveryInstruction(
+                queue_name=job.queue_name,
+                countdown=_countdown_until(retry_at),
+            )
+        return _delivery_for_unclaimed(job_id)
 
 
 def execute_job(
@@ -339,6 +382,8 @@ def execute_job(
 ) -> DeliveryInstruction | None:
     """Claim and execute one persisted job; all durable inputs are loaded by id."""
     with database.SessionLocal() as db:
+        before_claim = db.get(ProcessingJob, job_id)
+        queue_started = (before_claim.next_attempt_at or before_claim.created_at) if before_claim else datetime.utcnow()
         if not claim_job(db, job_id, worker_id, settings.JOB_LEASE_SECONDS):
             return _delivery_for_unclaimed(job_id)
         job = db.get(ProcessingJob, job_id)
@@ -381,22 +426,58 @@ def execute_job(
         attempt_number = job.attempts
         course_id = course.id
         course_metadata = course.metadata_json
+        usage = ProviderCallContext(job_id=job_id, worker_id=worker_id, job_attempt=attempt_number,
+            course_id=course.id, user_id=course.user_id, feature=job_type,
+            version_id=payload.get("version_id"), budget_id=payload.get("budget_id"),
+            heartbeat=_progress_callback(job_id, worker_id, attempt_number))
+        db.add(ProviderStage(id=str(uuid4()), job_id=job_id, attempt=attempt_number,
+            stage="queued", started_at=queue_started,
+            elapsed_ms=max(0, int((datetime.utcnow() - queue_started).total_seconds() * 1000))))
+        db.commit()
 
     try:
-        if job_type == "preprocess":
-            succeeded = _execute_preprocess(
-                job_id, course_id, worker_id, attempt_number
-            )
-        else:
-            succeeded = _execute_artifact(
-                job_id,
-                job_type,
-                course_id,
-                course_metadata,
-                payload,
-                worker_id,
-                attempt_number,
-            )
+        with usage_context(usage), stage_timer("total"):
+            assert_accounting_ready(job_id, attempt_number)
+            if job_type == "preprocess":
+                succeeded = _execute_preprocess(
+                    job_id, course_id, worker_id, attempt_number
+                )
+            else:
+                succeeded = _execute_artifact(
+                    job_id,
+                    job_type,
+                    course_id,
+                    course_metadata,
+                    payload,
+                    worker_id,
+                    attempt_number,
+                )
+    except SoftTimeLimitExceeded:
+        logger.warning("Durable job %s reached its bounded worker deadline", job_id)
+        return _retry_or_fail(
+            job_id,
+            worker_id,
+            attempt_number,
+            final_error_code="AI_TIMEOUT",
+            final_message="Kết nối dịch vụ AI quá thời gian chờ.",
+        )
+    except BudgetLimitError:
+        with database.SessionLocal() as db:
+            mark_job_failed(db, job_id, worker_id=worker_id, expected_attempt=attempt_number,
+                error_code="BOOK_BUDGET_LIMIT", message="Tác vụ đã dừng ở giới hạn chi phí an toàn.")
+        return None
+    except ProviderCapacityWait as exc:
+        logger.info(
+            "Durable job %s yielded during provider capacity wait for %s seconds",
+            job_id,
+            exc.retry_after,
+        )
+        return _continue_after_capacity_wait(
+            job_id,
+            worker_id,
+            attempt_number,
+            exc.retry_after,
+        )
     except ProviderCircuitOpen as exc:
         logger.info(
             "Durable job %s deferred by provider capacity guard for %s seconds",

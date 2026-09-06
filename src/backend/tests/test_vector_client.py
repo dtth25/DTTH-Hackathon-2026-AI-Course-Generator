@@ -16,6 +16,16 @@ from app.core.config import Settings
 from app.services import vector_client, vector_store
 
 
+_TEST_IDENTITY = {
+    "embedding_provider": "openrouter",
+    "embedding_model": "deterministic-test",
+    "embedding_dimensions": 3,
+    "embedding_normalization_version": "v1",
+    "distance_metric": "cosine",
+    "hnsw:space": "cosine",
+}
+
+
 class _HangingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         time.sleep(3)
@@ -532,7 +542,7 @@ def test_vector_write_uses_the_same_bounded_no_proxy_transport(
 def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
     client = Mock()
     client.heartbeat.side_effect = ConnectionError("server stopped")
-    collection = Mock(name="active-collection")
+    collection = Mock(name="active-collection", metadata=_TEST_IDENTITY)
     client.get_or_create_collection.return_value = collection
     monkeypatch.setattr(vector_store, "build_chroma_client", Mock(return_value=client))
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
@@ -541,6 +551,9 @@ def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
         collection_name="ai_course_chunks",
         persist_directory="ignored-in-http-mode",
         embedding_function=Mock(),
+        embedding_model="deterministic-test",
+        embedding_dimensions=3,
+        normalization_version="v1",
     )
 
     assert store.collection is collection
@@ -551,7 +564,7 @@ def test_http_readiness_rechecks_heartbeat_and_returns_false(monkeypatch):
 def test_embedded_readiness_uses_the_same_heartbeat_contract(monkeypatch, tmp_path):
     client = Mock()
     client.heartbeat.return_value = 1
-    client.get_or_create_collection.return_value = Mock()
+    client.get_or_create_collection.return_value = Mock(metadata=_TEST_IDENTITY)
     monkeypatch.setattr(vector_store, "build_chroma_client", Mock(return_value=client))
     monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "embedded")
 
@@ -559,10 +572,32 @@ def test_embedded_readiness_uses_the_same_heartbeat_contract(monkeypatch, tmp_pa
         collection_name="ai_course_chunks",
         persist_directory=str(tmp_path),
         embedding_function=Mock(),
+        embedding_model="deterministic-test",
+        embedding_dimensions=3,
+        normalization_version="v1",
     )
 
     assert store.is_ready() is True
     client.heartbeat.assert_called_once_with()
+
+
+def test_http_identity_mismatch_is_not_reported_as_service_unavailable(monkeypatch):
+    client = Mock()
+    client.get_or_create_collection.return_value = Mock(metadata=None)
+    monkeypatch.setattr(vector_store, "build_chroma_client", Mock(return_value=client))
+    monkeypatch.setattr(vector_store.settings, "CHROMA_MODE", "http")
+
+    with pytest.raises(vector_store.CollectionIdentityError, match="explicit new-index migration"):
+        vector_store.VectorStore(
+            collection_name="legacy_identity",
+            persist_directory="ignored-in-http-mode",
+            embedding_function=Mock(),
+            embedding_model="deterministic-test",
+            embedding_dimensions=3,
+            normalization_version="v1",
+        )
+
+    client.close.assert_called_once_with()
 
 
 def test_health_endpoint_reports_http_heartbeat_failure(client, monkeypatch):

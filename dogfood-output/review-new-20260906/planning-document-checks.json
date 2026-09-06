@@ -1,0 +1,99 @@
+{
+  "status": "passed",
+  "scope": "planning documents only; snippets parsed, not executed; product tests not rerun",
+  "spec_sha256": "3ad3cc6f2bbc1d8275f68ef1997f37218d6cb7885a85d21cc0bdd48c4215e73c",
+  "plans": [
+    {
+      "file": "docs\\superpowers\\plans\\2026-09-06-01-runtime-and-spending.md",
+      "sha256": "0ca1342de47a627dda58f39da1e941dd1a4218e3c44671bc2529f16cd2343408",
+      "tasks": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6"
+      ],
+      "task_count": 6,
+      "checkbox_steps": 28,
+      "python_blocks_parsed": 14,
+      "python_syntax_errors": [],
+      "fences_balanced": true,
+      "placeholder_hits": [],
+      "spec_reference_present": true,
+      "constraints_match": true
+    },
+    {
+      "file": "docs\\superpowers\\plans\\2026-09-06-02-source-and-student-flow.md",
+      "sha256": "cd68ed2dd3b7ffe58dacb987165843bc5707463dba0a90c767c6dc00eceb6a26",
+      "tasks": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7"
+      ],
+      "task_count": 7,
+      "checkbox_steps": 26,
+      "python_blocks_parsed": 9,
+      "python_syntax_errors": [],
+      "fences_balanced": true,
+      "placeholder_hits": [],
+      "spec_reference_present": true,
+      "constraints_match": true
+    },
+    {
+      "file": "docs\\superpowers\\plans\\2026-09-06-03-security-and-speech.md",
+      "sha256": "f620fe77d727cd70366f8755fbd7d58fe79e0d3d325520f83a6eef49c7eca19e",
+      "tasks": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8"
+      ],
+      "task_count": 8,
+      "checkbox_steps": 26,
+      "python_blocks_parsed": 10,
+      "python_syntax_errors": [],
+      "fences_balanced": true,
+      "placeholder_hits": [],
+      "spec_reference_present": true,
+      "constraints_match": true
+    },
+    {
+      "file": "docs\\superpowers\\plans\\2026-09-06-04-release-verification.md",
+      "sha256": "4afe4e2f4c70abd1dc0e76fb84c2a39e40c5f879ffcf95ee79bf455881a169b2",
+      "tasks": [
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6"
+      ],
+      "task_count": 6,
+      "checkbox_steps": 37,
+      "python_blocks_parsed": 3,
+      "python_syntax_errors": [],
+      "fences_balanced": true,
+      "placeholder_hits": [],
+      "spec_reference_present": true,
+      "constraints_match": true
+    }
+  ],
+  "manual_review": [
+    "spec coverage mapping",
+    "migration chain a5->a6->a7->a8",
+    "retry intent separate from content settings",
+    "privacy controls merged at final dispatch",
+    "durable reconciliation and purge scheduling",
+    "existing healthcheck contract migration",
+    "no implementation/paid test/commit in planning phase"
+  ]
+}

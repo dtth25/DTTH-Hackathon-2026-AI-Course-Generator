@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, CircleX, Clock3, Loader2, RotateCcw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { apiCancelJob, apiGetJob } from "@/lib/api";
+import { ApiRequestError, apiCancelJob, apiGetJob } from "@/lib/api";
 import {
   normalizePublicError,
   type JobStatus,
@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const JOB_POLL_MS = 3_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 const ACTIVE_STATUSES: ReadonlySet<JobStatus> = new Set([
   "queued",
   "running",
@@ -44,7 +45,13 @@ interface JobProgressProps {
   onSucceeded?: () => void;
   onTerminal?: (status: Extract<JobStatus, "failed" | "cancelled">) => void;
   onRetry?: () => void;
+  onUpdate?: (job: JobObservation) => void;
 }
+
+export type JobObservation = Pick<
+  JobStatusResponse,
+  "status" | "progress" | "updated_at" | "next_attempt_at" | "stage"
+>;
 
 function isAbortError(error: unknown): boolean {
   return Boolean(
@@ -56,6 +63,27 @@ function safeProgress(value: number): number {
   return Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)));
 }
 
+function stageLabel(stage?: string): string {
+  return ({
+    queued: "Đang chờ",
+    preprocessing: "Đang chuẩn bị tài liệu",
+    extracting: "Đang đọc nội dung tài liệu",
+    retrieving: "Đang lấy ngữ cảnh tài liệu",
+    source_plan: "Đang lập kế hoạch nguồn",
+    outline: "Đang lập dàn ý",
+    chapter: "Đang viết chương",
+    generating: "Đang tạo nội dung",
+    rendering: "Đang dựng nội dung",
+    exporting: "Đang xuất bản học liệu",
+    processing: "Đang xử lý",
+    capacity_wait: "Đang chờ lượt xử lý AI",
+    waiting_to_retry: "Đang chờ thử lại",
+    completed: "Đã hoàn tất",
+    failed: "Không thành công",
+    cancelled: "Đã hủy",
+  } as Record<string, string>)[stage ?? "generating"] ?? "Đang xử lý";
+}
+
 export function JobProgress({
   jobId,
   allowCancel = false,
@@ -63,61 +91,75 @@ export function JobProgress({
   onSucceeded,
   onTerminal,
   onRetry,
+  onUpdate,
 }: JobProgressProps) {
   const [job, setJob] = useState<JobStatusResponse | null>(null);
-  const [secondsUntilCheck, setSecondsUntilCheck] = useState(JOB_POLL_MS / 1_000);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [pollError, setPollError] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const cancelAbortRef = useRef<AbortController | null>(null);
   const terminalReportedRef = useRef(false);
   const onSucceededRef = useRef(onSucceeded);
   const onTerminalRef = useRef(onTerminal);
+  const onUpdateRef = useRef(onUpdate);
+  const generationRef = useRef(0);
+  const requestRef = useRef(0);
+  const stoppedRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     onSucceededRef.current = onSucceeded;
     onTerminalRef.current = onTerminal;
+    onUpdateRef.current = onUpdate;
   });
 
   const clearTimers = useCallback(() => {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     pollTimerRef.current = null;
-    countdownTimerRef.current = null;
   }, []);
 
   useEffect(() => {
     terminalReportedRef.current = false;
+    stoppedRef.current = false;
+    inFlightRef.current = false;
     let mounted = true;
+    const generation = ++generationRef.current;
+    const startedAt = Date.now();
+    const elapsedTimer = setInterval(() => {
+      if (mounted) setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1_000);
 
-    const scheduleNextPoll = () => {
+    const scheduleNextPoll = (withJitter = false) => {
+      if (!mounted || stoppedRef.current) return;
       clearTimers();
-      setSecondsUntilCheck(JOB_POLL_MS / 1_000);
-      countdownTimerRef.current = setInterval(() => {
-        setSecondsUntilCheck((seconds) => Math.max(1, seconds - 1));
-      }, 1_000);
+      const jitter = withJitter ? Math.floor(Math.random() * 2_001) : 0;
       pollTimerRef.current = setTimeout(() => {
         void poll();
-      }, JOB_POLL_MS);
+      }, JOB_POLL_MS + jitter);
     };
 
     const poll = async () => {
-      if (!mounted) return;
+      if (!mounted || stoppedRef.current || inFlightRef.current) return;
       clearTimers();
+      inFlightRef.current = true;
+      const request = ++requestRef.current;
       const controller = new AbortController();
       requestAbortRef.current = controller;
+      const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
         const nextJob = await apiGetJob(jobId, { signal: controller.signal });
-        if (!mounted) return;
+        if (!mounted || generationRef.current !== generation || requestRef.current !== request) return;
         setPollError(false);
         setJob(nextJob);
+        onUpdateRef.current?.(nextJob);
         if (ACTIVE_STATUSES.has(nextJob.status)) {
           scheduleNextPoll();
           return;
         }
+        stoppedRef.current = true;
         if (!terminalReportedRef.current) {
           terminalReportedRef.current = true;
           if (nextJob.status === "succeeded") onSucceededRef.current?.();
@@ -126,18 +168,40 @@ export function JobProgress({
           }
         }
       } catch (error) {
-        if (!mounted || isAbortError(error)) return;
+        if (!mounted || requestRef.current !== request || stoppedRef.current) return;
+        if (isAbortError(error) && generationRef.current !== generation) return;
         setPollError(true);
-        scheduleNextPoll();
+        if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
+          stoppedRef.current = true;
+          return;
+        }
+        scheduleNextPoll(true);
       } finally {
+        clearTimeout(deadline);
+        if (requestRef.current === request) inFlightRef.current = false;
         if (requestAbortRef.current === controller) requestAbortRef.current = null;
       }
     };
 
     void poll();
+    const recheck = () => {
+      if (!mounted || stoppedRef.current || document.visibilityState === "hidden") return;
+      requestRef.current += 1;
+      inFlightRef.current = false;
+      requestAbortRef.current?.abort();
+      void poll();
+    };
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", recheck);
     return () => {
       mounted = false;
+      stoppedRef.current = true;
+      requestRef.current += 1;
+      generationRef.current += 1;
       clearTimers();
+      clearInterval(elapsedTimer);
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", recheck);
       requestAbortRef.current?.abort();
       requestAbortRef.current = null;
       cancelAbortRef.current?.abort();
@@ -155,6 +219,11 @@ export function JobProgress({
       setCancelRequested(true);
       setJob(nextJob);
       if (!ACTIVE_STATUSES.has(nextJob.status)) {
+        stoppedRef.current = true;
+        requestRef.current += 1;
+        inFlightRef.current = false;
+        requestAbortRef.current?.abort();
+        requestAbortRef.current = null;
         clearTimers();
         if (!terminalReportedRef.current && (nextJob.status === "failed" || nextJob.status === "cancelled")) {
           terminalReportedRef.current = true;
@@ -188,6 +257,10 @@ export function JobProgress({
     job.error_code,
     "Không thể hoàn tất tác vụ. Vui lòng thử lại."
   );
+  const retryAt = job.next_attempt_at
+    ? new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(job.next_attempt_at))
+    : null;
+  const isCapacityWait = job.stage === "capacity_wait";
 
   return (
     <div className={cn("space-y-3 rounded-xl border bg-card/50 px-4 py-4 shadow-[var(--shadow-xs)]", className)}>
@@ -200,14 +273,26 @@ export function JobProgress({
             </>
           )}
           {job.status === "running" && (
-            <p className="inline-flex items-center gap-2 font-medium">
-              <Loader2 className="h-4 w-4 animate-spin" /> {RUNNING_LABELS[job.job_type]} ({progress}%)…
-            </p>
+            <>
+              <p className="inline-flex items-center gap-2 font-medium">
+                <Loader2 className="h-4 w-4 animate-spin" /> {RUNNING_LABELS[job.job_type]} ({progress}%)…
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{stageLabel(job.stage)} · đã chạy {elapsedSeconds} giây</p>
+              {elapsedSeconds >= 360 && <p className="mt-1 text-sm text-muted-foreground">Tác vụ đang mất nhiều thời gian hơn dự kiến; hệ thống vẫn tiếp tục theo dõi.</p>}
+            </>
           )}
           {job.status === "retry_scheduled" && (
             <>
-              <p className="inline-flex items-center gap-2 font-medium"><RotateCcw className="h-4 w-4" /> Đang chờ thử lại</p>
-              <p className="mt-1 text-sm text-muted-foreground">Thử lại sau {secondsUntilCheck} giây</p>
+              <p className="inline-flex items-center gap-2 font-medium"><RotateCcw className="h-4 w-4" /> {isCapacityWait ? stageLabel(job.stage) : "Đang chờ thử lại"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isCapacityWait
+                  ? retryAt
+                    ? `Hệ thống sẽ tự tiếp tục khi có lượt, dự kiến ${retryAt}`
+                    : "Hệ thống sẽ tự tiếp tục khi có lượt xử lý AI"
+                  : retryAt
+                    ? `Dự kiến thử lại lúc ${retryAt}`
+                    : "Đang chờ lịch thử lại từ máy chủ"}
+              </p>
             </>
           )}
           {job.status === "cancelled" && (

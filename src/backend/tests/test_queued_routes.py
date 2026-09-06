@@ -269,11 +269,20 @@ def test_generation_route_enqueues_one_validated_job_without_running_generator(
         assert job.job_type == job_type
         assert job.status == "queued"
         assert job.queue_name == queue_name
+        if artifact == "book":
+            from app.models.provider_call import BookBudget
+            budget = db.get(BookBudget, job.payload_json["budget_id"])
+            assert budget.course_id == course.id
+            assert budget.user_id == course.user_id
+            assert budget.version_id == f"version-{artifact}"
+            assert budget.ceiling == 95_000_000
+            assert "budget_id" not in body
         assert job.payload_json == {
             "course_id": course.id,
             "artifact": artifact,
             "version_id": f"version-{artifact}",
             **worker_options,
+            **({"budget_id": budget.id} if artifact == "book" else {}),
         }
         assert job.external_task_id == f"recorded:{job.id}"
     assert dispatcher.deliveries == [(body["job_id"], queue_name)]

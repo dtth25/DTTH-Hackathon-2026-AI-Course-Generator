@@ -232,6 +232,7 @@ export function SlideTab({ courseId, documentProcessing = false }: SlideTabProps
     <JobProgress
       key={activeJob.jobId}
       jobId={activeJob.jobId}
+      onUpdate={(job) => setProgress(job.progress)}
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}
       onRetry={() => {

@@ -7,20 +7,13 @@ from urllib.parse import quote
 import chromadb
 import httpx
 from chromadb.api.models.Collection import Collection
-from chromadb.api.types import (
-    DefaultEmbeddingFunction,
-    deserialize_metadata,
-    serialize_metadata,
-)
+from chromadb.api.types import deserialize_metadata, serialize_metadata
 from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT
 from chromadb.types import Collection as CollectionModel
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_EMBEDDING_FUNCTION = DefaultEmbeddingFunction()
-
 
 def _json_embeddings(embeddings: Any) -> Any:
     """Accept both Chroma's ndarray form and OpenAI's native list form."""
@@ -92,7 +85,7 @@ class BoundedChromaHttpClient:
         self,
         name: str,
         *,
-        embedding_function: Any = _DEFAULT_EMBEDDING_FUNCTION,
+        embedding_function: Any = None,
         metadata: dict[str, Any] | None = None,
         **_: Any,
     ) -> Collection:
@@ -118,7 +111,7 @@ class BoundedChromaHttpClient:
         self,
         name: str,
         *,
-        embedding_function: Any = _DEFAULT_EMBEDDING_FUNCTION,
+        embedding_function: Any = None,
         **_: Any,
     ) -> Collection:
         payload = self._request(

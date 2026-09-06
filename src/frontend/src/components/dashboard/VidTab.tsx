@@ -199,6 +199,7 @@ export function VidTab({ courseId, documentProcessing = false }: VidTabProps) {
     <JobProgress
       key={activeJob.jobId}
       jobId={activeJob.jobId}
+      onUpdate={(job) => setProgress(job.progress)}
       allowCancel
       onSucceeded={resumeArtifactPolling}
       onTerminal={finishJob}

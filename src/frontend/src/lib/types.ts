@@ -74,6 +74,8 @@ export interface CourseStatusResponse {
   file_count?: number;
   created_at?: string;
   quality_score?: number;
+  quality_score_label?: "structural/coverage checks compatibility" | "structural checks compatibility";
+  document_quality_report?: DocumentQualityReport | null;
   has_book?: boolean;
   has_slide?: boolean;
   has_quiz?: boolean;
@@ -84,6 +86,20 @@ export interface CourseStatusResponse {
   can_retry?: boolean;
   recommended_action?: DocumentRecommendedAction | null;
   job_id?: string;
+}
+
+export interface DocumentQualityReport {
+  coverage?: "unknown";
+  extraction_complete?: boolean;
+  indexed_chunk_count?: number;
+  structural_validity?: number;
+  citation_validity?: number;
+  source_coverage?: number | null;
+  faithfulness?: number | null;
+  faithfulness_status?: "not_evaluated";
+  legacy_quality_score_label?: string;
+  invalid_citation_count?: number;
+  missing_citation_count?: number;
 }
 
 export type DocumentFailureCode =
@@ -224,6 +240,8 @@ export interface JobStatusResponse {
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
+  next_attempt_at?: string | null;
+  stage?: string;
 }
 
 // ============================================================
@@ -267,12 +285,19 @@ export interface ArtifactVersion {
   error_code?: CourseErrorCode | null;
   progress?: number | null;
   created_at?: string | null;
+  quality_report?: DocumentQualityReport | null;
 }
 
 interface VersionedArtifactStatus {
   version_id?: string | null;
   active_version?: string | null;
   versions?: ArtifactVersion[];
+  quality_report?: DocumentQualityReport | null;
+  job_id?: string | null;
+  active_job?: {
+    job_id: string;
+    version_id?: string | null;
+  } | null;
 }
 
 export interface BookSection {
@@ -402,6 +427,7 @@ export interface StudyPackStats {
   has_quiz_answer_key: boolean;
   has_vid: boolean;
   quality_score?: number;
+  quality_score_label?: "structural checks compatibility";
   num_chunks?: number;
 }
 
@@ -414,10 +440,15 @@ export interface StudyPackResponse {
     quiz?: QuizQuestion[];
     readiness?: Record<string, boolean>;
     quality_scores?: Record<string, number>;
+    quality_reports?: Record<string, DocumentQualityReport>;
     grounding?: {
       num_chunks: number;
       quality_score: number;
+      quality_score_label?: "structural checks compatibility";
+      faithfulness?: number | null;
+      faithfulness_status?: "not_evaluated";
       warnings: string[];
+      quality_report?: DocumentQualityReport;
     };
   };
 }

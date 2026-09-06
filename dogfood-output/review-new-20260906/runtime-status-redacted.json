@@ -1,0 +1,24 @@
+{
+  "time_utc": "2026-09-06T06:44:08.467114+00:00",
+  "jobs": [
+    {
+      "job_type": "preprocess",
+      "status": "failed",
+      "progress": 0,
+      "error_code": "JOB_EXECUTION_FAILED",
+      "attempts": 3,
+      "failure_attempts": 3
+    }
+  ],
+  "provider_calls": [],
+  "courses": [
+    {
+      "status": "failed",
+      "stage": "failed",
+      "progress": 0,
+      "chunk_count": 0,
+      "error_code": "OPENROUTER_UNAVAILABLE",
+      "can_retry": 1
+    }
+  ]
+}

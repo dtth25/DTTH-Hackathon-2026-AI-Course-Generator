@@ -1,0 +1,124 @@
+{
+  "scenes": [
+    {
+      "diagram": null,
+      "duration_seconds": 31,
+      "key_points": [],
+      "narration": "Trong số 3000 người giỏi nhất tại Google Code Jam 2017, có đến 79% sử dụng C++. Tại sao một ngôn ngữ lại chiếm ưu thế áp đảo như vậy trong các cuộc thi lập trình? Không phải chỉ vì thói quen. Câu trả lời nằm ở hai yếu tố cốt lõi mà mọi lập trình viên thi đấu đều phải nắm vững: hiệu suất và bộ công cụ mạnh mẽ. C++ cung cấp cả hai, cho phép các thí sinh biến những ý tưởng thuật toán phức tạp thành mã nguồn vừa chính xác, vừa đủ nhanh để vượt qua mọi bài kiểm tra trong thời gian giới hạn.",
+      "on_screen_text": "79% lập trình viên hàng đầu",
+      "scene_number": 1,
+      "title": "Ngôn Ngữ Của Nhà Vô Địch"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 38,
+      "key_points": [
+        "Ước tính thời gian chạy",
+        "Ký hiệu Big O",
+        "Vòng lặp lồng nhau"
+      ],
+      "narration": "Yếu tố đầu tiên là hiệu suất. Một thuật toán đúng nhưng quá chậm sẽ không được điểm nào. Đây là lúc khái niệm 'độ phức tạp thời gian' phát huy tác dụng. Nó giúp chúng ta ước tính thời gian một thuật toán sẽ chạy dựa trên kích thước đầu vào, ký hiệu là n. Chúng ta biểu diễn nó bằng ký hiệu O-lớn, ví dụ O(n) hoặc O(n bình phương). Một trong những nguyên nhân phổ biến nhất khiến thuật toán chậm là các vòng lặp lồng nhau. Nếu có k vòng lặp lồng nhau, độ phức tạp thường là O(n mũ k). Việc phân tích này cho phép ta đánh giá hiệu quả của thuật toán ngay cả trước khi viết một dòng code.",
+      "on_screen_text": "Thuật toán có đủ nhanh không?",
+      "scene_number": 2,
+      "title": "Độ Phức Tạp Thời Gian"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 32,
+      "key_points": [
+        "Tiết kiệm thời gian",
+        "Đảm bảo đúng và hiệu quả",
+        "Hàm sort là một ví dụ"
+      ],
+      "narration": "Yếu tố thứ hai giúp C++ thống trị là thư viện chuẩn khổng lồ của nó. Trong một cuộc thi, việc tự viết các thuật toán cơ bản như sắp xếp là một sự lãng phí thời gian và tiềm ẩn rủi ro sai sót. Thư viện chuẩn C++ cung cấp các hàm đã được triển khai sẵn, đảm bảo tính đúng đắn và hiệu quả. Ví dụ, chỉ cần một dòng lệnh sort(v.begin(), v.end()), bạn có thể sắp xếp một mảng hoặc vector. Việc tận dụng các hàm có sẵn này không chỉ giúp viết code nhanh hơn mà còn cho phép bạn tập trung vào phần cốt lõi, sáng tạo của bài toán.",
+      "on_screen_text": "Không cần phát minh lại bánh xe",
+      "scene_number": 3,
+      "title": "Sức Mạnh Thư Viện Chuẩn"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 33,
+      "key_points": [
+        "Lưu trữ dữ liệu",
+        "Thay đổi kích thước linh hoạt",
+        "Nền tảng cho nhiều bài toán"
+      ],
+      "narration": "Nói đến thư viện, không thể không nhắc tới các cấu trúc dữ liệu. Đây là cách chúng ta tổ chức và lưu trữ dữ liệu trong bộ nhớ. Lựa chọn đúng cấu trúc dữ liệu là chìa khóa để giải quyết bài toán hiệu quả. Cấu trúc cơ bản và phổ biến nhất trong C++ là vector, một dạng mảng động. Không giống mảng tĩnh, kích thước của vector có thể thay đổi trong quá trình chạy chương trình. Điều này mang lại sự linh hoạt cực lớn, cho phép bạn thêm hoặc bớt phần tử một cách dễ dàng, khiến nó trở thành công cụ không thể thiếu trong hộp dụng cụ của mọi lập trình viên.",
+      "on_screen_text": "Mảng động vector",
+      "scene_number": 4,
+      "title": "Cấu Trúc Dữ Liệu Nền Tảng"
+    },
+    {
+      "diagram": {
+        "items": [
+          {
+            "detail": "Dựa trên cây, O(log n)",
+            "label": "set / map"
+          },
+          {
+            "detail": "Dựa trên hashing, O(1) trung bình",
+            "label": "unorderedₛet / unorderedₘap"
+          }
+        ],
+        "title": "Set và Map: Các phiên bản",
+        "type": "comparison"
+      },
+      "duration_seconds": 38,
+      "key_points": [],
+      "narration": "Khi cần lưu trữ các phần tử duy nhất hoặc các cặp khóa-giá trị, C++ cung cấp set và map. Mỗi loại lại có hai phiên bản với sự đánh đổi quan trọng. set và map được xây dựng dựa trên cây nhị phân cân bằng, giúp các phần tử luôn được duy trì theo thứ tự. Mọi thao tác như chèn, xóa, tìm kiếm mất thời gian O(log n). Ngược lại, unorderedₛet và unorderedₘap sử dụng kỹ thuật băm (hashing), cho phép thực hiện các thao tác này trong thời gian trung bình là O(1), tức là nhanh hơn đáng kể. Việc lựa chọn phụ thuộc vào bài toán: bạn có cần dữ liệu được sắp xếp hay ưu tiên tốc độ truy cập tối đa?",
+      "on_screen_text": "Chọn set hay unorderedₛet?",
+      "scene_number": 5,
+      "title": "Tốc Độ và Thứ Tự"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 33,
+      "key_points": [
+        "priorityqueue: Lấy phần tử lớn nhất/nhỏ nhất",
+        "bitset: Tiết kiệm bộ nhớ",
+        "Tối ưu hóa bằng bit"
+      ],
+      "narration": "Ngoài các cấu trúc cơ bản, thư viện chuẩn còn có những công cụ chuyên dụng hơn. priorityqueue, hay hàng đợi ưu tiên, cho phép bạn luôn truy cập và lấy ra phần tử lớn nhất (hoặc nhỏ nhất) một cách hiệu quả. Nó thường được triển khai bằng cấu trúc heap. Một công cụ khác là bitset, một mảng chỉ chứa các giá trị 0 hoặc 1. Ưu điểm của bitset là cực kỳ tiết kiệm bộ nhớ, vì mỗi phần tử chỉ tốn một bit. Hơn nữa, nó cho phép thực hiện các phép toán trên bit một cách nhanh chóng, mở ra khả năng tối ưu hóa thuật toán ở mức độ thấp.",
+      "on_screen_text": "",
+      "scene_number": 6,
+      "title": "Các Công Cụ Chuyên Dụng"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 36,
+      "key_points": [
+        "Chia bài toán lớn thành bài toán con",
+        "Lưu kết quả các bài toán con",
+        "Ví dụ: LOVE -> MOVIE"
+      ],
+      "narration": "Khi đã có công cụ, chúng ta cần các kỹ thuật giải quyết vấn đề. Quy hoạch động là một trong những kỹ thuật mạnh mẽ nhất. Ý tưởng cốt lõi là chia một bài toán phức tạp thành các bài toán con đơn giản hơn, giải chúng và lưu lại kết quả để tái sử dụng. Một ví dụ kinh điển là tính 'khoảng cách chỉnh sửa' giữa hai chuỗi, tức là số thao tác tối thiểu (chèn, xóa, sửa) để biến chuỗi này thành chuỗi kia. Chẳng hạn, để biến 'LOVE' thành 'MOVIE', ta cần 2 phép toán. Quy hoạch động giúp tìm ra con số tối thiểu này một cách có hệ thống bằng cách xây dựng lời giải từ các tiền tố ngắn hơn của hai chuỗi.",
+      "on_screen_text": "Bài toán Khoảng cách Chỉnh sửa",
+      "scene_number": 7,
+      "title": "Kỹ Thuật Quy Hoạch Động"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 37,
+      "key_points": [
+        "Đồ thị có nhãn",
+        "n^(n-2) cây khác nhau",
+        "Mã Prüfer"
+      ],
+      "narration": "Lập trình thi đấu không chỉ là code, mà còn là toán học. Lý thuyết đồ thị là một lĩnh vực thường xuyên xuất hiện. Lấy ví dụ công thức Cayley, một kết quả đẹp đẽ: có chính xác n mũ (n trừ 2) cây có nhãn khác nhau với n đỉnh. Các đỉnh được đánh số từ 1 đến n. Ví dụ, với 4 đỉnh, có 4 mũ 2, tức là 16 cây khác nhau. Công thức này có thể được chứng minh bằng cách sử dụng 'mã Prüfer', một chuỗi gồm n-2 số có thể đại diện duy nhất cho một cây có nhãn. Điều này cho thấy sự giao thoa sâu sắc giữa thuật toán và các khái niệm toán học trừu tượng.",
+      "on_screen_text": "Công thức Cayley",
+      "scene_number": 8,
+      "title": "Vẻ Đẹp Lý Thuyết Đồ Thị"
+    },
+    {
+      "diagram": null,
+      "duration_seconds": 34,
+      "key_points": [],
+      "narration": "Vậy, quay trở lại câu hỏi ban đầu: tại sao 79% lập trình viên hàng đầu lại chọn C++? Rõ ràng, đó không chỉ là về bản thân ngôn ngữ. Đó là về việc C++ cung cấp một con đường hiệu quả nhất để áp dụng các nguyên tắc cơ bản của khoa học máy tính vào thực tế thi đấu. Việc thành thạo không phải là học thuộc lòng cú pháp, mà là làm chủ tư duy về hiệu suất, nắm vững các cấu trúc dữ liệu như những công cụ sắc bén, và áp dụng các kỹ thuật giải quyết vấn đề tinh vi. Lập trình thi đấu, suy cho cùng, là sự kết hợp giữa thiết kế thuật toán và triển khai chúng một cách hiệu quả.",
+      "on_screen_text": "",
+      "scene_number": 9,
+      "title": "Không Chỉ Là Về Ngôn Ngữ"
+    }
+  ],
+  "title": "Lập Trình Thi Đấu: Các Khái Niệm Cốt Lõi",
+  "total_duration_seconds": 313
+}

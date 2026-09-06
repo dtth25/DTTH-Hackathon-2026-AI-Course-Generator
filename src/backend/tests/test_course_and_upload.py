@@ -2,6 +2,27 @@
 
 import os
 import time
+from io import BytesIO
+
+import fitz
+from docx import Document
+
+
+def _pdf_bytes(text="Valid source document with enough text for deterministic extraction."):
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text)
+    payload = document.tobytes()
+    document.close()
+    return payload
+
+
+def _docx_bytes(text="Valid DOCX source document with enough text for extraction."):
+    stream = BytesIO()
+    document = Document()
+    document.add_paragraph(text)
+    document.save(stream)
+    return stream.getvalue()
 
 
 def get_auth_headers(client, email: str = "user@example.com", full_name: str = "User"):
@@ -20,7 +41,7 @@ def get_auth_headers(client, email: str = "user@example.com", full_name: str = "
 
 def test_upload_single_file(client, test_upload_dir):
     headers = get_auth_headers(client, "single@example.com")
-    files = [("files", ("test_doc.pdf", b"dummy pdf content", "application/pdf"))]
+    files = [("files", ("test_doc.pdf", _pdf_bytes(), "application/pdf"))]
     response = client.post("/api/upload", headers=headers, files=files)
     assert response.status_code == 201, response.text
     data = response.json()
@@ -40,12 +61,12 @@ def test_upload_single_file(client, test_upload_dir):
 def test_upload_multiple_files_same_course(client, test_upload_dir):
     headers = get_auth_headers(client, "multi@example.com")
     files = [
-        ("files[]", ("doc1.pdf", b"content 1", "application/pdf")),
+        ("files[]", ("doc1.pdf", _pdf_bytes("Document one contains valid PDF text for extraction."), "application/pdf")),
         (
             "files[]",
             (
                 "doc2.docx",
-                b"content 2",
+                _docx_bytes(),
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ),
         ),
@@ -110,13 +131,13 @@ def test_courses_all_ownership(client):
     client.post(
         "/api/upload",
         headers=headers_a,
-        files=[("files", ("docA.pdf", b"content A", "application/pdf"))],
+        files=[("files", ("docA.pdf", _pdf_bytes("User A source document contains valid text."), "application/pdf"))],
     )
     # User B uploads 2 files
     client.post(
         "/api/upload",
         headers=headers_b,
-        files=[("files", ("docB.pdf", b"content B", "application/pdf"))],
+        files=[("files", ("docB.pdf", _pdf_bytes("User B source document contains valid text."), "application/pdf"))],
     )
 
     # Check A's list
@@ -201,7 +222,7 @@ def test_delete_course_and_cleanup(client, test_upload_dir):
     res = client.post(
         "/api/upload",
         headers=headers,
-        files=[("files", ("todelete.pdf", b"content", "application/pdf"))],
+        files=[("files", ("todelete.pdf", _pdf_bytes(), "application/pdf"))],
     )
     course_id = res.json()["course_id"]
     course_dir = os.path.join(test_upload_dir, course_id)
@@ -227,7 +248,7 @@ def test_delete_course_unauthorized(client):
     res = client.post(
         "/api/upload",
         headers=headers_owner,
-        files=[("files", ("doc.pdf", b"content", "application/pdf"))],
+        files=[("files", ("doc.pdf", _pdf_bytes(), "application/pdf"))],
     )
     course_id = res.json()["course_id"]
 

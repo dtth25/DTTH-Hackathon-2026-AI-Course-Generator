@@ -1,0 +1,1750 @@
+{
+  "file": "AI_for_A0.pdf",
+  "pages": 174,
+  "sha256": "f7331c7f1c14f4812475d7650877d0aca0e573313542279fdeb508fe66d1ee27",
+  "toc": [
+    [
+      1,
+      "Giới thiệu về Python cho Trí tuệ Nhân tạo",
+      11
+    ],
+    [
+      2,
+      "Cơ bản về Python",
+      11
+    ],
+    [
+      3,
+      "Vòng lặp và Cấu trúc điều khiển",
+      11
+    ],
+    [
+      3,
+      "Hàm trong Python",
+      12
+    ],
+    [
+      2,
+      "NumPy và Pandas để xử lý dữ liệu",
+      12
+    ],
+    [
+      3,
+      "NumPy",
+      12
+    ],
+    [
+      3,
+      "Pandas",
+      13
+    ],
+    [
+      2,
+      "Matplotlib và Seaborn để trực quan hóa dữ liệu",
+      14
+    ],
+    [
+      3,
+      "Matplotlib",
+      14
+    ],
+    [
+      3,
+      "Seaborn",
+      14
+    ],
+    [
+      2,
+      "Scikit-learn",
+      15
+    ],
+    [
+      3,
+      "Huấn luyện một mô hình đơn giản",
+      15
+    ],
+    [
+      2,
+      "Cơ bản về PyTorch",
+      16
+    ],
+    [
+      3,
+      "Giới thiệu về Tensor",
+      16
+    ],
+    [
+      2,
+      "Cơ bản về tái tạo kết quả",
+      17
+    ],
+    [
+      3,
+      "Thiết lập seed",
+      17
+    ],
+    [
+      2,
+      "Huấn luyện mô hình trên CPU và GPU",
+      17
+    ],
+    [
+      2,
+      "Sử dụng Weights and Biases để theo dõi thực nghiệm",
+      18
+    ],
+    [
+      2,
+      "Kết luận",
+      18
+    ],
+    [
+      1,
+      "Học có giám sát – Supervised Learning",
+      21
+    ],
+    [
+      2,
+      "Giới thiệu",
+      21
+    ],
+    [
+      2,
+      "Linear Regression (Hồi quy tuyến tính)",
+      21
+    ],
+    [
+      2,
+      "Logistic Regression (Hồi quy logistic)",
+      22
+    ],
+    [
+      2,
+      "K-Nearest Neighbors (K-NN)",
+      22
+    ],
+    [
+      2,
+      "Decision Trees (Cây quyết định)",
+      23
+    ],
+    [
+      2,
+      "Random Forests (Rừng ngẫu nhiên)",
+      23
+    ],
+    [
+      2,
+      "Gradient Boosting",
+      23
+    ],
+    [
+      2,
+      "Support Vector Machines (SVM)",
+      24
+    ],
+    [
+      1,
+      "Học không giám sát – Unsupervised Learning",
+      25
+    ],
+    [
+      2,
+      "Phân cụm K-Means",
+      26
+    ],
+    [
+      3,
+      "Giới thiệu",
+      26
+    ],
+    [
+      3,
+      "Thuật toán Hoạt động Như Thế Nào",
+      26
+    ],
+    [
+      3,
+      "Ứng Dụng Thực Tế",
+      27
+    ],
+    [
+      3,
+      "Cải tiến và Biến thể",
+      27
+    ],
+    [
+      3,
+      "Ví dụ Python với scikit-learn",
+      27
+    ],
+    [
+      2,
+      "Phân Tích Thành Phần Chính (PCA)",
+      28
+    ],
+    [
+      3,
+      "Giới thiệu về Phân Tích Thành Phần Chính (PCA)",
+      28
+    ],
+    [
+      3,
+      "Giải thích Thuật toán",
+      29
+    ],
+    [
+      3,
+      "Ví dụ Minh Họa",
+      30
+    ],
+    [
+      3,
+      "Ứng Dụng Thực Tế",
+      31
+    ],
+    [
+      2,
+      "t-SNE, MAP, và những cách giảm chiều dữ liệu khác",
+      31
+    ],
+    [
+      3,
+      "Giới thiệu",
+      31
+    ],
+    [
+      3,
+      "t-SNE: t-distributed Stochastic Neighbor Embedding",
+      32
+    ],
+    [
+      3,
+      "MAP: Manifold Approximation and Projection",
+      33
+    ],
+    [
+      3,
+      "Các phương pháp giảm chiều khác",
+      34
+    ],
+    [
+      3,
+      "Ứng dụng thực tiễn",
+      35
+    ],
+    [
+      2,
+      "Phân Cụm DBSCAN",
+      35
+    ],
+    [
+      3,
+      "Giới thiệu",
+      35
+    ],
+    [
+      3,
+      "Giải thích thuật toán",
+      35
+    ],
+    [
+      3,
+      "Ví dụ minh hoạ",
+      36
+    ],
+    [
+      3,
+      "Ứng dụng thực tiễn",
+      37
+    ],
+    [
+      2,
+      "Phân Cụm Phân Cấp (Hierarchical Clustering)",
+      38
+    ],
+    [
+      3,
+      "Giới thiệu",
+      38
+    ],
+    [
+      3,
+      "Cách Thuật Toán Hoạt Động",
+      38
+    ],
+    [
+      3,
+      "Ví dụ Minh Họa",
+      39
+    ],
+    [
+      3,
+      "Ứng Dụng Thực Tiễn",
+      40
+    ],
+    [
+      1,
+      "Đánh Giá Trong Trí Tuệ Nhân Tạo - Evaluation",
+      41
+    ],
+    [
+      2,
+      "Các Chỉ Số Đánh Giá Mô Hình",
+      41
+    ],
+    [
+      3,
+      "Độ Chính Xác (Accuracy)",
+      41
+    ],
+    [
+      3,
+      "Độ Chính Xác Của Dự Đoán Dương (Precision)",
+      42
+    ],
+    [
+      3,
+      "Khả Năng Thu Hồi (Recall)",
+      42
+    ],
+    [
+      3,
+      "F1-Score",
+      42
+    ],
+    [
+      3,
+      "So Sánh Giữa Các Chỉ Số",
+      43
+    ],
+    [
+      2,
+      "Hiện Tượng Underfitting và Overfitting",
+      43
+    ],
+    [
+      3,
+      "Underfitting",
+      43
+    ],
+    [
+      3,
+      "Overfitting",
+      43
+    ],
+    [
+      2,
+      "Tinh Chỉnh Siêu Tham Số (Hyperparameter Tuning)",
+      44
+    ],
+    [
+      3,
+      "Tại Sao Cần Tinh Chỉnh Siêu Tham Số?",
+      44
+    ],
+    [
+      3,
+      "Tìm Kiếm Lưới (Grid Search)",
+      45
+    ],
+    [
+      3,
+      "Tìm Kiếm Ngẫu Nhiên (Random Search)",
+      45
+    ],
+    [
+      2,
+      "Xác Thực Chéo (Cross-Validation)",
+      46
+    ],
+    [
+      3,
+      "K-Fold Cross-Validation",
+      46
+    ],
+    [
+      2,
+      "Ma Trận Nhầm Lẫn và Đường Cong ROC",
+      46
+    ],
+    [
+      3,
+      "Ma Trận Nhầm Lẫn",
+      46
+    ],
+    [
+      3,
+      "Đường Cong ROC và AUC",
+      47
+    ],
+    [
+      1,
+      "Neural Networks",
+      49
+    ],
+    [
+      2,
+      "Kiến thức cơ bản về Perceptron",
+      49
+    ],
+    [
+      2,
+      "Thuật toán Gradient Descent",
+      51
+    ],
+    [
+      2,
+      "Lan truyền ngược (Backpropagation)",
+      52
+    ],
+    [
+      2,
+      "Hàm kích hoạt (Activation Functions)",
+      54
+    ],
+    [
+      2,
+      "Hàm mất mát (Cost Functions)",
+      55
+    ],
+    [
+      1,
+      "Deep learning",
+      57
+    ],
+    [
+      2,
+      "Perceptron Đa Lớp (MLP)",
+      57
+    ],
+    [
+      3,
+      "MLP là gì?",
+      57
+    ],
+    [
+      3,
+      "Các thành phần chính",
+      58
+    ],
+    [
+      3,
+      "Cài đặt MLP bằng PyTorch",
+      59
+    ],
+    [
+      3,
+      "Huấn luyện MLP trên MNIST",
+      59
+    ],
+    [
+      3,
+      "Tại sao MLP hoạt động?",
+      60
+    ],
+    [
+      3,
+      "Mẹo thực hành cho cuộc thi",
+      61
+    ],
+    [
+      3,
+      "Bài tập thực hành",
+      61
+    ],
+    [
+      2,
+      "Stochastic Gradient Descent (SGD)  và Mini-Batch Gradient Descent",
+      62
+    ],
+    [
+      3,
+      "Tổng quan về Gradient Descent",
+      62
+    ],
+    [
+      3,
+      "Các biến thể chính",
+      63
+    ],
+    [
+      3,
+      "Lựa chọn batch size",
+      64
+    ],
+    [
+      2,
+      "Phương pháp Momentum  (Adam và AdamW)",
+      65
+    ],
+    [
+      3,
+      "Tại sao cần phương pháp Momentum?",
+      65
+    ],
+    [
+      3,
+      "Các phương pháp Momentum phổ biến",
+      66
+    ],
+    [
+      3,
+      "Khi nào sử dụng Adam/AdamW?",
+      67
+    ],
+    [
+      3,
+      "Thực hành với PyTorch",
+      68
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      68
+    ],
+    [
+      2,
+      "Tốc độ học thích ứng  (Adaptive Learning Rates)",
+      69
+    ],
+    [
+      3,
+      "Tại sao cần tốc độ học thích ứng?",
+      69
+    ],
+    [
+      3,
+      "Các phương pháp chính",
+      70
+    ],
+    [
+      3,
+      "Thực hành với PyTorch",
+      72
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      72
+    ],
+    [
+      2,
+      "Sự Hội Tụ và Tốc Độ Học",
+      73
+    ],
+    [
+      3,
+      "Tốc độ học là gì?",
+      73
+    ],
+    [
+      3,
+      "Các vấn đề về hội tụ",
+      74
+    ],
+    [
+      3,
+      "Cách chọn LR phù hợp",
+      75
+    ],
+    [
+      3,
+      "Theo dõi sự hội tụ",
+      76
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      76
+    ],
+    [
+      2,
+      "Điều chuẩn Trọng số  (Weight Regularization)",
+      77
+    ],
+    [
+      3,
+      "Tại sao cần điều chuẩn trọng số?",
+      78
+    ],
+    [
+      3,
+      "Các phương pháp chính",
+      78
+    ],
+    [
+      3,
+      "Cài đặt trong PyTorch",
+      79
+    ],
+    [
+      3,
+      "Khi nào nên sử dụng?",
+      80
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      80
+    ],
+    [
+      2,
+      "Dừng Sớm  (Early Stopping)",
+      81
+    ],
+    [
+      3,
+      "Early Stopping là gì?",
+      81
+    ],
+    [
+      3,
+      "Tại sao cần Early Stopping?",
+      82
+    ],
+    [
+      3,
+      "Cài đặt trong PyTorch",
+      82
+    ],
+    [
+      3,
+      "Cách sử dụng hiệu quả",
+      85
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      85
+    ],
+    [
+      2,
+      "Dropout và Gaussian Noise",
+      86
+    ],
+    [
+      3,
+      "Dropout là gì?",
+      86
+    ],
+    [
+      3,
+      "Gaussian Noise",
+      87
+    ],
+    [
+      3,
+      "Khi nào sử dụng?",
+      89
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      89
+    ],
+    [
+      2,
+      "Khởi tạo Trọng số  (Weight Initialization)",
+      91
+    ],
+    [
+      3,
+      "Tại sao cần khởi tạo đúng cách?",
+      91
+    ],
+    [
+      3,
+      "Các phương pháp phổ biến",
+      91
+    ],
+    [
+      3,
+      "Thực hành với PyTorch",
+      92
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      93
+    ],
+    [
+      2,
+      "Chuẩn hóa theo Batch  (Batch Normalization)",
+      94
+    ],
+    [
+      3,
+      "BatchNorm là gì?",
+      95
+    ],
+    [
+      3,
+      "Tại sao cần BatchNorm?",
+      95
+    ],
+    [
+      3,
+      "Cài đặt trong PyTorch",
+      95
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      96
+    ],
+    [
+      2,
+      "Autoencoders và Sparse Encoders",
+      97
+    ],
+    [
+      3,
+      "Autoencoder là gì?",
+      97
+    ],
+    [
+      3,
+      "Sparse Encoders",
+      98
+    ],
+    [
+      3,
+      "Ứng dụng thực tiễn",
+      100
+    ],
+    [
+      3,
+      "Mẹo thi đấu IOAI",
+      101
+    ],
+    [
+      1,
+      "NLP",
+      103
+    ],
+    [
+      2,
+      "Word Embedding: Word2VecvàGloVe",
+      103
+    ],
+    [
+      3,
+      "1. Ý tưởng trực quan",
+      103
+    ],
+    [
+      3,
+      "2. Mô hình Word2Vec",
+      103
+    ],
+    [
+      3,
+      "3. Mô hình GloVe",
+      104
+    ],
+    [
+      3,
+      "4. Code mẫu",
+      105
+    ],
+    [
+      3,
+      "5. Bài tập thực hành",
+      106
+    ],
+    [
+      2,
+      "Cơ bản về Transformer và Attention Mechanism",
+      107
+    ],
+    [
+      3,
+      "1. Ý tưởng trực quan",
+      107
+    ],
+    [
+      3,
+      "2. Scaled Dot‑Product Attention",
+      108
+    ],
+    [
+      3,
+      "3. Multi‑Head Attention",
+      108
+    ],
+    [
+      3,
+      "4. Code mẫu với PyTorch",
+      108
+    ],
+    [
+      3,
+      "5. Bài tập thực hành",
+      110
+    ],
+    [
+      2,
+      "Thực hành Phân loại Văn bản",
+      110
+    ],
+    [
+      3,
+      "1. Quy trình chung",
+      110
+    ],
+    [
+      3,
+      "2. Phương pháp cơ bản",
+      111
+    ],
+    [
+      3,
+      "3. Code mẫu",
+      111
+    ],
+    [
+      3,
+      "4. Bài tập thực hành",
+      113
+    ],
+    [
+      2,
+      "Giới thiệu các Mô hình NLP Đã được Pre‑train: BERT và GPT",
+      114
+    ],
+    [
+      3,
+      "1. Tại sao cần Pre‑trained Models?",
+      114
+    ],
+    [
+      3,
+      "2. BERT (Bidirectional Encoder Representations from Transformers)",
+      114
+    ],
+    [
+      3,
+      "3. GPT (Generative Pre‑trained Transformer)",
+      115
+    ],
+    [
+      3,
+      "4. Code mẫu",
+      116
+    ],
+    [
+      3,
+      "5. Bài tập thực hành",
+      117
+    ],
+    [
+      2,
+      "Thực hành Question Answering với Mô hình Pre‑trained",
+      117
+    ],
+    [
+      3,
+      "1. Ý tưởng trực quan",
+      117
+    ],
+    [
+      3,
+      "2. Công thức toán học nền tảng",
+      118
+    ],
+    [
+      3,
+      "3. Fine‑tuning BERT cho Extractive QA",
+      118
+    ],
+    [
+      3,
+      "4. Code mẫu với Hugging Face & PyTorch",
+      118
+    ],
+    [
+      3,
+      "5. Bài tập thực hành",
+      120
+    ],
+    [
+      2,
+      "Fine-Tuning Mô hình: Phương pháp và Giới hạn (LoRA, Adapters, v.v.)",
+      121
+    ],
+    [
+      3,
+      "1. Giới thiệu",
+      121
+    ],
+    [
+      3,
+      "2. LoRA: Low-Rank Adaptation",
+      121
+    ],
+    [
+      3,
+      "3. Adapters",
+      122
+    ],
+    [
+      3,
+      "4. Code mẫu với Hugging Face",
+      122
+    ],
+    [
+      3,
+      "5. Bài tập thực hành",
+      123
+    ],
+    [
+      2,
+      "Giới thiệu về Large Language Models (LLMs)",
+      124
+    ],
+    [
+      3,
+      "Ý tưởng chính đằng sau LLMs",
+      124
+    ],
+    [
+      3,
+      "Transformer và Attention",
+      124
+    ],
+    [
+      2,
+      "Xây dựng chatbot đơn giản sử dụng NLP",
+      125
+    ],
+    [
+      3,
+      "Mô hình hoạt động cơ bản của chatbot",
+      125
+    ],
+    [
+      3,
+      "Tiền xử lý văn bản (Text Preprocessing)",
+      125
+    ],
+    [
+      3,
+      "Nhận diện ý định (Intent Detection)",
+      126
+    ],
+    [
+      3,
+      "Sinh câu trả lời (Response Generation)",
+      126
+    ],
+    [
+      3,
+      "Tích hợp thành chatbot hoàn chỉnh",
+      127
+    ],
+    [
+      3,
+      "Mở rộng: Dùng mô hình GPT",
+      127
+    ],
+    [
+      3,
+      "Tổng kết",
+      128
+    ],
+    [
+      2,
+      "LLM Agents: Cơ bản và Ứng dụng",
+      128
+    ],
+    [
+      3,
+      "Ý tưởng chính",
+      128
+    ],
+    [
+      3,
+      "Ứng dụng ví dụ",
+      128
+    ],
+    [
+      3,
+      "Ví dụ mã Python: Agent đơn giản với LangChain",
+      129
+    ],
+    [
+      2,
+      "Kết luận",
+      129
+    ],
+    [
+      1,
+      "Computer Vision",
+      131
+    ],
+    [
+      2,
+      "Fundamentals of Convolutional Layers",
+      131
+    ],
+    [
+      2,
+      "Pooling Techniques (Max, Average)",
+      134
+    ],
+    [
+      2,
+      "Basic Image Classification",
+      138
+    ],
+    [
+      2,
+      "Object Detection Basics (YOLO, SSD)",
+      142
+    ],
+    [
+      2,
+      "Image Segmentation Basics (U-Net)",
+      146
+    ],
+    [
+      2,
+      "Transfer Learning for Image Classification",
+      150
+    ],
+    [
+      2,
+      "Image Augmentation Techniques",
+      153
+    ],
+    [
+      2,
+      "Feature Extraction Using Pre-Trained Models",
+      156
+    ],
+    [
+      2,
+      "Introduction to GANs (Generating Images)",
+      159
+    ],
+    [
+      2,
+      "Introduction to Self-Supervised Learning for Vision",
+      163
+    ],
+    [
+      2,
+      "Vision Transformers (ViT) Basics",
+      166
+    ],
+    [
+      2,
+      "CLIP and Multimodal Learning",
+      169
+    ],
+    [
+      2,
+      "Generative Models",
+      172
+    ]
+  ],
+  "pages_text": [
+    {
+      "page": 1,
+      "text": "AI for A0\nWe Are Gagging\nSeptember 12, 2025\n"
+    },
+    {
+      "page": 2,
+      "text": ""
+    },
+    {
+      "page": 3,
+      "text": "Contents\n1\nGiới thiệu vềPython cho Trí tuệNhân tạo\n1\n1.1\nCơ bản vềPython\n. . . . . . . . . . . . . . . . . . . . . . . . .\n1\n1.1.1\nVòng lặp và Cấu trúc điều khiển . . . . . . . . . . . . .\n1\n1.1.2\nHàm trong Python . . . . . . . . . . . . . . . . . . . . .\n2\n1.2\nNumPy và Pandas đểxửlý dữliệu . . . . . . . . . . . . . . . .\n2\n1.2.1\nNumPy . . . . . . . . . . . . . . . . . . . . . . . . . . .\n2\n1.2.2\nPandas\n. . . . . . . . . . . . . . . . . . . . . . . . . . .\n3\n1.3\nMatplotlib và Seaborn đểtrực quan hóa dữliệu . . . . . . . . .\n4\n1.3.1\nMatplotlib . . . . . . . . . . . . . . . . . . . . . . . . . .\n4\n1.3.2\nSeaborn . . . . . . . . . . . . . . . . . . . . . . . . . . .\n4\n1.4\nScikit-learn\n. . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n5\n1.4.1\nHuấn luyện một mô hình đơn giản . . . . . . . . . . . .\n5\n1.5\nCơ bản vềPyTorch . . . . . . . . . . . . . . . . . . . . . . . . .\n6\n1.5.1\nGiới thiệu vềTensor . . . . . . . . . . . . . . . . . . . .\n6\n1.6\nCơ bản vềtái tạo kết quả. . . . . . . . . . . . . . . . . . . . .\n7\n1.6.1\nThiết lập seed\n. . . . . . . . . . . . . . . . . . . . . . .\n7\n1.7\nHuấn luyện mô hình trên CPU và GPU\n. . . . . . . . . . . . .\n7\n1.8\nSửdụng Weights and Biases đểtheo dõi thực nghiệm . . . . . .\n8\n1.9\nKết luận . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n8\n2\nHọc có giám sát – Supervised Learning\n11\n2.1\nGiới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\n11\n2.2\nLinear Regression (Hồi quy tuyến tính)\n. . . . . . . . . . . . .\n11\n2.3\nLogistic Regression (Hồi quy logistic) . . . . . . . . . . . . . . .\n12\n2.4\nK-Nearest Neighbors (K-NN) . . . . . . . . . . . . . . . . . . .\n12\n2.5\nDecision Trees (Cây quyết định)\n. . . . . . . . . . . . . . . . .\n13\n2.6\nRandom Forests (Rừng ngẫu nhiên)\n. . . . . . . . . . . . . . .\n13\n2.7\nGradient Boosting\n. . . . . . . . . . . . . . . . . . . . . . . . .\n13\n3\n"
+    },
+    {
+      "page": 4,
+      "text": "Contents\n2.8\nSupport Vector Machines (SVM) . . . . . . . . . . . . . . . . .\n14\n3\nHọc không giám sát – Unsupervised Learning\n15\n3.1\nPhân cụm K-Means\n. . . . . . . . . . . . . . . . . . . . . . . .\n16\n3.1.1\nGiới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . .\n16\n3.1.2\nThuật toán Hoạt động Như ThếNào . . . . . . . . . . .\n16\n3.1.3\nỨng Dụng Thực Tế. . . . . . . . . . . . . . . . . . . . .\n17\n3.1.4\nCải tiến và Biến thể. . . . . . . . . . . . . . . . . . . .\n17\n3.1.5\nVí dụPython với scikit-learn . . . . . . . . . . . . .\n17\n3.2\nPhân Tích Thành Phần Chính (PCA) . . . . . . . . . . . . . .\n18\n3.2.1\nGiới thiệu vềPhân Tích Thành Phần Chính (PCA)\n. .\n18\n3.2.2\nGiải thích Thuật toán . . . . . . . . . . . . . . . . . . .\n19\n3.2.3\nVí dụMinh Họa\n. . . . . . . . . . . . . . . . . . . . . .\n20\n3.2.4\nỨng Dụng Thực Tế. . . . . . . . . . . . . . . . . . . . .\n21\n3.3\nt-SNE, MAP, và những cách giảm chiều dữliệu khác . . . . . .\n21\n3.3.1\nGiới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . .\n21\n3.3.2\nt-SNE: t-distributed Stochastic Neighbor Embedding . .\n22\n3.3.3\nMAP: Manifold Approximation and Projection . . . . .\n23\n3.3.4\nCác phương pháp giảm chiều khác . . . . . . . . . . . .\n24\n3.3.5\nỨng dụng thực tiễn\n. . . . . . . . . . . . . . . . . . . .\n25\n3.4\nPhân Cụm DBSCAN . . . . . . . . . . . . . . . . . . . . . . . .\n25\n3.4.1\nGiới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . .\n25\n3.4.2\nGiải thích thuật toán\n. . . . . . . . . . . . . . . . . . .\n25\n3.4.3\nVí dụminh hoạ. . . . . . . . . . . . . . . . . . . . . . .\n26\n3.4.4\nỨng dụng thực tiễn\n. . . . . . . . . . . . . . . . . . . .\n27\n3.5\nPhân Cụm Phân Cấp (Hierarchical Clustering) . . . . . . . . .\n28\n3.5.1\nGiới thiệu . . . . . . . . . . . . . . . . . . . . . . . . . .\n28\n3.5.2\nCách Thuật Toán Hoạt Động . . . . . . . . . . . . . . .\n28\n3.5.3\nVí dụMinh Họa\n. . . . . . . . . . . . . . . . . . . . . .\n29\n3.5.4\nỨng Dụng Thực Tiễn\n. . . . . . . . . . . . . . . . . . .\n30\n4\nĐánh Giá Trong Trí TuệNhân Tạo - Evaluation\n31\n4.1\nCác ChỉSốĐánh Giá Mô Hình . . . . . . . . . . . . . . . . . .\n31\n4.1.1\nĐộChính Xác (Accuracy) . . . . . . . . . . . . . . . . .\n31\n4.1.2\nĐộChính Xác Của DựĐoán Dương (Precision) . . . . .\n32\n4.1.3\nKhảNăng Thu Hồi (Recall) . . . . . . . . . . . . . . . .\n32\n4\n"
+    },
+    {
+      "page": 5,
+      "text": "Contents\n4.1.4\nF1-Score . . . . . . . . . . . . . . . . . . . . . . . . . . .\n32\n4.1.5\nSo Sánh Giữa Các ChỉSố. . . . . . . . . . . . . . . . .\n33\n4.2\nHiện Tượng Underfitting và Overfitting\n. . . . . . . . . . . . .\n33\n4.2.1\nUnderfitting . . . . . . . . . . . . . . . . . . . . . . . . .\n33\n4.2.2\nOverfitting\n. . . . . . . . . . . . . . . . . . . . . . . . .\n33\n4.3\nTinh Chỉnh Siêu Tham Số(Hyperparameter Tuning) . . . . . .\n34\n4.3.1\nTại Sao Cần Tinh Chỉnh Siêu Tham Số? . . . . . . . . .\n34\n4.3.2\nTìm Kiếm Lưới (Grid Search) . . . . . . . . . . . . . . .\n35\n4.3.3\nTìm Kiếm Ngẫu Nhiên (Random Search)\n. . . . . . . .\n35\n4.4\nXác Thực Chéo (Cross-Validation) . . . . . . . . . . . . . . . .\n36\n4.4.1\nK-Fold Cross-Validation . . . . . . . . . . . . . . . . . .\n36\n4.5\nMa Trận Nhầm Lẫn và Đường Cong ROC . . . . . . . . . . . .\n36\n4.5.1\nMa Trận Nhầm Lẫn . . . . . . . . . . . . . . . . . . . .\n36\n4.5.2\nĐường Cong ROC và AUC\n. . . . . . . . . . . . . . . .\n37\n5\nNeural Networks\n39\n5.1\nKiến thức cơ bản vềPerceptron . . . . . . . . . . . . . . . . . .\n39\n5.2\nThuật toán Gradient Descent . . . . . . . . . . . . . . . . . . .\n41\n5.3\nLan truyền ngược (Backpropagation) . . . . . . . . . . . . . . .\n42\n5.4\nHàm kích hoạt (Activation Functions) . . . . . . . . . . . . . .\n44\n5.5\nHàm mất mát (Cost Functions) . . . . . . . . . . . . . . . . . .\n45\n6\nDeep learning\n47\n6.1\nPerceptron Đa Lớp (MLP) . . . . . . . . . . . . . . . . . . . . .\n47\n6.1.1\nMLP là gì? . . . . . . . . . . . . . . . . . . . . . . . . .\n47\n6.1.2\nCác thành phần chính . . . . . . . . . . . . . . . . . . .\n48\n6.1.3\nCài đặt MLP bằng PyTorch . . . . . . . . . . . . . . . .\n49\n6.1.4\nHuấn luyện MLP trên MNIST\n. . . . . . . . . . . . . .\n49\n6.1.5\nTại sao MLP hoạt động?\n. . . . . . . . . . . . . . . . .\n50\n6.1.6\nMẹo thực hành cho cuộc thi . . . . . . . . . . . . . . . .\n51\n6.1.7\nBài tập thực hành . . . . . . . . . . . . . . . . . . . . .\n51\n6.2\nStochastic Gradient Descent (SGD)\nvà Mini-Batch Gradient Descent\n. . . . . . . . . . . . . . . . .\n52\n6.2.1\nTổng quan vềGradient Descent . . . . . . . . . . . . . .\n52\n6.2.2\nCác biến thểchính . . . . . . . . . . . . . . . . . . . . .\n53\n6.2.3\nLựa chọn batch size\n. . . . . . . . . . . . . . . . . . . .\n54\n5\n"
+    },
+    {
+      "page": 6,
+      "text": "Contents\n6.3\nPhương pháp Momentum\n(Adam và AdamW) . . . . . . . . . . . . . . . . . . . . . . . . .\n55\n6.3.1\nTại sao cần phương pháp Momentum? . . . . . . . . . .\n55\n6.3.2\nCác phương pháp Momentum phổbiến\n. . . . . . . . .\n56\n6.3.3\nKhi nào sửdụng Adam/AdamW? . . . . . . . . . . . . .\n57\n6.3.4\nThực hành với PyTorch . . . . . . . . . . . . . . . . . .\n58\n6.3.5\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n58\n6.4\nTốc độhọc thích ứng\n(Adaptive Learning Rates) . . . . . . . . . . . . . . . . . . . . .\n59\n6.4.1\nTại sao cần tốc độhọc thích ứng?\n. . . . . . . . . . . .\n59\n6.4.2\nCác phương pháp chính . . . . . . . . . . . . . . . . . .\n60\n6.4.3\nThực hành với PyTorch . . . . . . . . . . . . . . . . . .\n62\n6.4.4\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n62\n6.5\nSựHội Tụvà Tốc ĐộHọc . . . . . . . . . . . . . . . . . . . . .\n63\n6.5.1\nTốc độhọc là gì? . . . . . . . . . . . . . . . . . . . . . .\n63\n6.5.2\nCác vấn đềvềhội tụ. . . . . . . . . . . . . . . . . . . .\n64\n6.5.3\nCách chọn LR phù hợp\n. . . . . . . . . . . . . . . . . .\n65\n6.5.4\nTheo dõi sựhội tụ. . . . . . . . . . . . . . . . . . . . .\n66\n6.5.5\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n66\n6.6\nĐiều chuẩn Trọng số\n(Weight Regularization) . . . . . . . . . . . . . . . . . . . . . .\n68\n6.6.1\nTại sao cần điều chuẩn trọng số? . . . . . . . . . . . . .\n68\n6.6.2\nCác phương pháp chính . . . . . . . . . . . . . . . . . .\n68\n6.6.3\nCài đặt trong PyTorch . . . . . . . . . . . . . . . . . . .\n69\n6.6.4\nKhi nào nên sửdụng? . . . . . . . . . . . . . . . . . . .\n70\n6.6.5\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n70\n6.7\nDừng Sớm\n(Early Stopping) . . . . . . . . . . . . . . . . . . . . . . . . . .\n71\n6.7.1\nEarly Stopping là gì? . . . . . . . . . . . . . . . . . . . .\n71\n6.7.2\nTại sao cần Early Stopping? . . . . . . . . . . . . . . . .\n72\n6.7.3\nCài đặt trong PyTorch . . . . . . . . . . . . . . . . . . .\n72\n6.7.4\nCách sửdụng hiệu quả. . . . . . . . . . . . . . . . . . .\n75\n6.7.5\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n75\n6.8\nDropout và Gaussian Noise\n. . . . . . . . . . . . . . . . . . . .\n76\n6.8.1\nDropout là gì?\n. . . . . . . . . . . . . . . . . . . . . . .\n76\n6\n"
+    },
+    {
+      "page": 7,
+      "text": "Contents\n6.8.2\nGaussian Noise . . . . . . . . . . . . . . . . . . . . . . .\n77\n6.8.3\nKhi nào sửdụng? . . . . . . . . . . . . . . . . . . . . . .\n79\n6.8.4\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n79\n6.9\nKhởi tạo Trọng số\n(Weight Initialization) . . . . . . . . . . . . . . . . . . . . . . .\n81\n6.9.1\nTại sao cần khởi tạo đúng cách?\n. . . . . . . . . . . . .\n81\n6.9.2\nCác phương pháp phổbiến\n. . . . . . . . . . . . . . . .\n81\n6.9.3\nThực hành với PyTorch . . . . . . . . . . . . . . . . . .\n82\n6.9.4\nMẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n83\n6.10 Chuẩn hóa theo Batch\n(Batch Normalization) . . . . . . . . . . . . . . . . . . . . . . .\n84\n6.10.1 BatchNorm là gì? . . . . . . . . . . . . . . . . . . . . . .\n85\n6.10.2 Tại sao cần BatchNorm? . . . . . . . . . . . . . . . . . .\n85\n6.10.3 Cài đặt trong PyTorch . . . . . . . . . . . . . . . . . . .\n85\n6.10.4 Mẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n86\n6.11 Autoencoders và Sparse Encoders . . . . . . . . . . . . . . . . .\n87\n6.11.1 Autoencoder là gì? . . . . . . . . . . . . . . . . . . . . .\n87\n6.11.2 Sparse Encoders\n. . . . . . . . . . . . . . . . . . . . . .\n88\n6.11.3 Ứng dụng thực tiễn\n. . . . . . . . . . . . . . . . . . . .\n90\n6.11.4 Mẹo thi đấu IOAI\n. . . . . . . . . . . . . . . . . . . . .\n91\n7\nNLP\n93\n7.1\nWord Embedding: Word2VecvàGloVe\n. . . . . . . . . . . . . .\n93\n7.1.1\n1. Ý tưởng trực quan\n. . . . . . . . . . . . . . . . . . .\n93\n7.1.2\n2. Mô hình Word2Vec . . . . . . . . . . . . . . . . . . .\n93\n7.1.3\n3. Mô hình GloVe\n. . . . . . . . . . . . . . . . . . . . .\n94\n7.1.4\n4. Code mẫu . . . . . . . . . . . . . . . . . . . . . . . .\n95\n7.1.5\n5. Bài tập thực hành . . . . . . . . . . . . . . . . . . . .\n96\n7.2\nCơ bản vềTransformer và Attention Mechanism\n. . . . . . . .\n97\n7.2.1\n1. Ý tưởng trực quan\n. . . . . . . . . . . . . . . . . . .\n97\n7.2.2\n2. Scaled Dot‑Product Attention . . . . . . . . . . . . .\n98\n7.2.3\n3. Multi‑Head Attention . . . . . . . . . . . . . . . . . .\n98\n7.2.4\n4. Code mẫu với PyTorch . . . . . . . . . . . . . . . . .\n98\n7.2.5\n5. Bài tập thực hành . . . . . . . . . . . . . . . . . . . . 100\n7.3\nThực hành Phân loại Văn bản\n. . . . . . . . . . . . . . . . . . 100\n7.3.1\n1. Quy trình chung . . . . . . . . . . . . . . . . . . . . . 100\n7\n"
+    },
+    {
+      "page": 8,
+      "text": "Contents\n7.3.2\n2. Phương pháp cơ bản\n. . . . . . . . . . . . . . . . . . 101\n7.3.3\n3. Code mẫu . . . . . . . . . . . . . . . . . . . . . . . . 101\n7.3.4\n4. Bài tập thực hành . . . . . . . . . . . . . . . . . . . . 103\n7.4\nGiới thiệu các Mô hình NLP Đã được Pre‑train: BERT và GPT 104\n7.4.1\n1. Tại sao cần Pre‑trained Models? . . . . . . . . . . . . 104\n7.4.2\n2. BERT (Bidirectional Encoder Representations from\nTransformers) . . . . . . . . . . . . . . . . . . . . . . . . 104\n7.4.3\n3. GPT (Generative Pre‑trained Transformer)\n. . . . . 105\n7.4.4\n4. Code mẫu . . . . . . . . . . . . . . . . . . . . . . . . 106\n7.4.5\n5. Bài tập thực hành . . . . . . . . . . . . . . . . . . . . 107\n7.5\nThực hành Question Answering với Mô hình Pre‑trained . . . . 107\n7.5.1\n1. Ý tưởng trực quan\n. . . . . . . . . . . . . . . . . . . 107\n7.5.2\n2. Công thức toán học nền tảng\n. . . . . . . . . . . . . 108\n7.5.3\n3. Fine‑tuning BERT cho Extractive QA\n. . . . . . . . 108\n7.5.4\n4. Code mẫu với Hugging Face & PyTorch\n. . . . . . . 108\n7.5.5\n5. Bài tập thực hành . . . . . . . . . . . . . . . . . . . . 110\n7.6\nFine-Tuning Mô hình: Phương pháp và Giới hạn (LoRA, Adapters,\nv.v.) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 111\n7.6.1\n1. Giới thiệu\n. . . . . . . . . . . . . . . . . . . . . . . . 111\n7.6.2\n2. LoRA: Low-Rank Adaptation\n. . . . . . . . . . . . . 111\n7.6.3\n3. Adapters . . . . . . . . . . . . . . . . . . . . . . . . . 112\n7.6.4\n4. Code mẫu với Hugging Face . . . . . . . . . . . . . . 112\n7.6.5\n5. Bài tập thực hành . . . . . . . . . . . . . . . . . . . . 113\n7.7\nGiới thiệu vềLarge Language Models (LLMs) . . . . . . . . . . 114\n7.7.1\nÝ tưởng chính đằng sau LLMs\n. . . . . . . . . . . . . . 114\n7.7.2\nTransformer và Attention . . . . . . . . . . . . . . . . . 114\n7.8\nXây dựng chatbot đơn giản sửdụng NLP\n. . . . . . . . . . . . 115\n7.8.1\nMô hình hoạt động cơ bản của chatbot\n. . . . . . . . . 115\n7.8.2\nTiền xửlý văn bản (Text Preprocessing) . . . . . . . . . 115\n7.8.3\nNhận diện ý định (Intent Detection) . . . . . . . . . . . 116\n7.8.4\nSinh câu trảlời (Response Generation)\n. . . . . . . . . 116\n7.8.5\nTích hợp thành chatbot hoàn chỉnh\n. . . . . . . . . . . 117\n7.8.6\nMởrộng: Dùng mô hình GPT\n. . . . . . . . . . . . . . 117\n7.8.7\nTổng kết . . . . . . . . . . . . . . . . . . . . . . . . . . . 118\n8\n"
+    },
+    {
+      "page": 9,
+      "text": "Contents\n7.9\nLLM Agents: Cơ bản và Ứng dụng . . . . . . . . . . . . . . . . 118\n7.9.1\nÝ tưởng chính\n. . . . . . . . . . . . . . . . . . . . . . . 118\n7.9.2\nỨng dụng ví dụ. . . . . . . . . . . . . . . . . . . . . . . 118\n7.9.3\nVí dụmã Python: Agent đơn giản với LangChain\n. . . 119\n7.10 Kết luận . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 119\n8\nComputer Vision\n121\n8.1\nFundamentals of Convolutional Layers . . . . . . . . . . . . . . 121\n8.2\nPooling Techniques (Max, Average) . . . . . . . . . . . . . . . . 124\n8.3\nBasic Image Classification . . . . . . . . . . . . . . . . . . . . . 128\n8.4\nObject Detection Basics (YOLO, SSD) . . . . . . . . . . . . . . 132\n8.5\nImage Segmentation Basics (U-Net)\n. . . . . . . . . . . . . . . 136\n8.6\nTransfer Learning for Image Classification . . . . . . . . . . . . 140\n8.7\nImage Augmentation Techniques\n. . . . . . . . . . . . . . . . . 143\n8.8\nFeature Extraction Using Pre-Trained Models . . . . . . . . . . 146\n8.9\nIntroduction to GANs (Generating Images) . . . . . . . . . . . 149\n8.10 Introduction to Self-Supervised Learning for Vision . . . . . . . 153\n8.11 Vision Transformers (ViT) Basics . . . . . . . . . . . . . . . . . 156\n8.12 CLIP and Multimodal Learning . . . . . . . . . . . . . . . . . . 159\n8.13 Generative Models . . . . . . . . . . . . . . . . . . . . . . . . . 162\n9\n"
+    },
+    {
+      "page": 10,
+      "text": ""
+    },
+    {
+      "page": 11,
+      "text": "Chapter 1\nGiới thiệu vềPython cho Trí tuệ\nNhân tạo\nChương này giới thiệu các kiến thức lập trình cơ bản cần thiết cho các dựán\nTrí tuệNhân tạo (AI), sửdụng Python làm ngôn ngữchính. Chúng ta sẽtìm\nhiểu các khái niệm cơ bản của Python, các thư viện thiết yếu và các bài thực\nhành giúp bạn phát triển mô hình và dựán AI.\nVì bạn đã giỏi C++, chương này tập trung so sánh Python và C++, kèm theo\ncác ví dụbằng mã lệnh Python đểgiúp bạn xây dựng nền tảng vững chắc cho\nhành trình AI của mình.\n1.1 Cơ bản vềPython\nPython là ngôn ngữlập trình cấp cao, linh hoạt, được sửdụng rộng rãi trong\nlĩnh vực AI nhờsựđơn giản và hệsinh thái thư viện phong phú. Trong phần\nnày, chúng ta sẽôn lại các khái niệm thiết yếu của Python.\n1.1.1 Vòng lặp và Cấu trúc điều khiển\nPython hỗtrợcác cấu trúc điều khiển cơ bản như vòng lặp và câu lệnh điều\nkiện, điều bạn đã quen thuộc trong C++. Dưới đây là ví dụvềvòng lặp đơn\ngiản:\n# A simple for loop in Python\nfor i in range(5):\n1\n"
+    },
+    {
+      "page": 12,
+      "text": "Chapter 1 Giới thiệu vềPython cho Trí tuệNhân tạo\nprint(i)\nĐoạn mã trên sẽin ra các sốtừ0 đến 4. Lưu ý hàm range(N) trong Python\ntạo ra dãy sốlên đến N-1, khác với C++ , bạn dùng điều kiện i < N.\nBài tập thực hành:\nViết chương trình Python in ra tất cảcác sốchẵn từ10 đến 50 sửdụng vòng\nlặp for.\n1.1.2 Hàm trong Python\nHàm trong Python được định nghĩa bằng từkhóa def, như ví dụsau:\n# Function that adds two numbers\ndef add_numbers(a, b):\nreturn a + b\n# Function call\nresult = add_numbers(3, 4)\nprint(result)\nHàm add_numbers nhận hai tham sốvà trảvềtổng của chúng. Trong Python,\nta sửdụng từkhóa return đểtrảvềgiá trị.\nBài tập thực hành: Viết hàm Python nhận vào một chuỗi và trảvềchuỗi\nđó được đảo ngược.\n1.2 NumPy và Pandas đểxửlý dữliệu\nDữliệu là nền tảng của AI, và hai thư viện Python được sửdụng rộng rãi\nnhất đểxửlý và thao tác dữliệu là NumPy và Pandas.\n1.2.1 NumPy\nNumPy là thư viện hỗtrợcác mảng nhiều chiều và ma trận. Thư viện cũng\ncung cấp một tập hợp lớn các hàm toán học đểthao tác trên mảng.\nVí dụcách tạo một mảng NumPy đơn giản:\n2\n"
+    },
+    {
+      "page": 13,
+      "text": "1.2 NumPy và Pandas đểxửlý dữliệu\nimport numpy as np\n# Create a 1D array\narr = np.array([1, 2, 3, 4])\nprint(arr)\n# Create a 2D array (Matrix)\nmatrix = np.array([[1, 2], [3, 4]])\nprint(matrix)\nBài tập thực hành: Tạo một mảng NumPy kích thước 3x3 với các sốnguyên\nngẫu nhiên từ1 đến 10. Sau đó tính tổng tất cảcác phần tử.\n1.2.2 Pandas\nPandas được xây dựng trên NumPy, được thiết kếđểlàm việc với dữliệu có\ncấu trúc (dạng bảng). Nó cung cấp hai cấu trúc dữliệu chính: Series (dữ\nliệu 1 chiều) và DataFrame (dữliệu 2 chiều).\nVí dụtạo một DataFrame với Pandas:\nimport pandas as pd\n# Create a simple DataFrame\ndata = {'Name': ['Alice', 'Bob', 'Charlie'], 'Age': [24, 30,\n22]}\ndf = pd.DataFrame(data)\n# Display the DataFrame\nprint(df)\nBài tập thực hành:\nDùng Pandas đểtải một file CSV chứa thông tin sinh viên (tên, điểm, tuổi).\nHiển thịcác dòng có điểm lớn hơn 75.\n3\n"
+    },
+    {
+      "page": 14,
+      "text": "Chapter 1 Giới thiệu vềPython cho Trí tuệNhân tạo\n1.3 Matplotlib và Seaborn đểtrực quan hóa dữ\nliệu\nTrực quan hóa dữliệu là một phần quan trọng trong AI đểhiểu và phân tích\ndữliệu. Trong phần này, chúng ta sẽtìm hiểu cách vẽbiểu đồbằng Matplotlib\nvà Seaborn.\n1.3.1 Matplotlib\nMatplotlib là thư viện vẽđồthịtrong Python. Bạn có thểtạo đồthịđơn giản\nbằng matplotlib.pyplot:\nimport matplotlib.pyplot as plt\n# Sample data\nx = [1, 2, 3, 4]\ny = [1, 4, 9, 16]\n# Create a plot\nplt.plot(x, y)\n# Add titles and labels\nplt.title(\"Example Plot\")\nplt.xlabel(\"X-axis\")\nplt.ylabel(\"Y-axis\")\n# Show the plot\nplt.show()\n1.3.2 Seaborn\nSeaborn là thư viện xây dựng trên Matplotlib, giúp việc vẽbiểu đồthống kê\ntrởnên dễdàng và đẹp mắt hơn.\nVí dụbiểu đồphân tán với Seaborn:\nimport seaborn as sns\n4\n"
+    },
+    {
+      "page": 15,
+      "text": "1.4 Scikit-learn\n# Load the built-in 'iris' dataset\niris = sns.load_dataset(\"iris\")\n# Create a scatter plot\nsns.scatterplot(x='sepal_length', y='sepal_width', data=iris)\nplt.show()\nBài tập thực hành:\nTạo biểu đồcột so sánh độtuổi trung bình của sinh viên các khoa khác nhau\nbằng Pandas và Seaborn.\n1.4 Scikit-learn\nScikit-learn là thư viện nổi tiếng cho học máy. Nó cung cấp các công cụđể\nxây dựng và đánh giá mô hình, từphân loại đơn giản đến hồi quy phức tạp.\n1.4.1 Huấn luyện một mô hình đơn giản\nVí dụhuấn luyện mô hình cây quyết định:\nfrom sklearn.datasets import load_iris\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.tree import DecisionTreeClassifier\nfrom sklearn.metrics import accuracy_score\n# Load dataset\ndata = load_iris()\nX = data.data\ny = data.target\n# Split the data\nX_train , X_test , y_train , y_test = train_test_split(X, y,\ntest_size=0.2)\n# Train a Decision Tree model\nmodel = DecisionTreeClassifier()\n5\n"
+    },
+    {
+      "page": 16,
+      "text": "Chapter 1 Giới thiệu vềPython cho Trí tuệNhân tạo\nmodel.fit(X_train , y_train)\n# Make predictions\ny_pred = model.predict(X_test)\n# Evaluate the model\naccuracy = accuracy_score(y_test, y_pred)\nprint(\"Accuracy:\", accuracy)\nBài tập thực hành:\nHuấn luyện mô hình hồi quy logistic với một tập dữliệu bất kỳvà đánh giá\nđộchính xác.\n1.5 Cơ bản vềPyTorch\nPyTorch là một framework học sâu hỗtrợxây dựng và huấn luyện mạng nơ-\nron. Nó sửdụng biểu đồtính toán động, rất linh hoạt cho cảnghiên cứu và\ntriển khai.\n1.5.1 Giới thiệu vềTensor\nTensor là cấu trúc dữliệu cốt lõi trong PyTorch, tương tựnhư mảng trong\nNumPy, nhưng hỗtrợtính toán tựđộng và GPU.\nVí dụtạo và thao tác với Tensor:\nimport torch\n# Create a tensor\ntensor = torch.tensor([[1, 2], [3, 4]])\n# Perform operations on the tensor\ntensor_add = tensor + 2\nprint(tensor_add)\nBài tập thực hành:\n6\n"
+    },
+    {
+      "page": 17,
+      "text": "1.6 Cơ bản vềtái tạo kết quả\nTạo tensor 3x3 và thực hiện phép nhân ma trận với một tensor khác có kích\nthước phù hợp.\n1.6 Cơ bản vềtái tạo kết quả\nĐảm bảo khảnăng tái tạo kết quảlà điều rất quan trọng trong nghiên cứu\nAI. Điều này bao gồm việc thiết lập seed ngẫu nhiên, chỉđịnh thiết bị(CPU\nhoặc GPU) và đảm bảo mô hình suy luận nhất quán.\n1.6.1 Thiết lập seed\nThiết lập seed giúp bạn có được kết quảgiống nhau qua các lần chạy:\nimport torch\nimport numpy as np\nimport random\n# Set random seeds\ntorch.manual_seed(42)\nnp.random.seed(42)\nrandom.seed(42)\nBài tập thực hành:\nViết chương trình Python tạo sốngẫu nhiên và cho thấy cách seed tạo ra cùng\nmột kết quảởcác lần chạy khác nhau.\n1.7 Huấn luyện mô hình trên CPU và GPU\nPyTorch cho phép bạn huấn luyện mô hình trên cảCPU và GPU, tùy theo\nphần cứng. Kiểm tra GPU và chuyển mô hình:\ndevice = torch.device(\"cuda\" if torch.cuda.is_available() else\n\"cpu\")\n# Create a model\nmodel = torch.nn.Linear(10, 5)\n7\n"
+    },
+    {
+      "page": 18,
+      "text": "Chapter 1 Giới thiệu vềPython cho Trí tuệNhân tạo\n# Move model to GPU\nmodel.to(device)\nBài tập thực hành:\nTạo một mạng nơ-ron đơn giản với PyTorch và huấn luyện trên một tập dữ\nliệu, thửnghiệm trên cảCPU và GPU (nếu có), và so sánh thời gian huấn\nluyện.\n1.8 Sửdụng Weights and Biases đểtheo dõi thực\nnghiệm\nWeights and Biases (W&B) là công cụphổbiến đểtheo dõi quá trình huấn\nluyện mô hình AI. Bạn có thểghi lại siêu tham số, độchính xác, loss và nhiều\nchỉsốkhác.\nVí dụkhởi tạo W&B:\nimport wandb\n# Initialize W&B\nwandb.init(project=\"my-ai-project\")\n# Log a hyperparameter\nwandb.config.learning_rate = 0.001\nBài tập thực hành:\nThiết lập W&B đểtheo dõi quá trình huấn luyện của một mạng nơ-ron đơn\ngiản trên một tập dữliệu tùy chọn.\n1.9 Kết luận\nChương này cung cấp kiến thức nền tảng vềPython cho AI. Chúng ta đã điểm\nqua các thư viện thiết yếu như NumPy, Pandas, Matplotlib, và PyTorch, cũng\nnhư các thực hành tốt vềtái tạo kết quảvà huấn luyện mô hình. Sau chương\n8\n"
+    },
+    {
+      "page": 19,
+      "text": "1.9 Kết luận\nnày, bạn đã sẵn sàng đểbắt đầu xây dựng các dựán AI của riêng mình và đi\nsâu hơn vào các chủđềnhư học máy, thịgiác máy tính và xửlý ngôn ngữtự\nnhiên.\n9\n"
+    },
+    {
+      "page": 20,
+      "text": ""
+    },
+    {
+      "page": 21,
+      "text": "Chapter 2\nHọc có giám sát – Supervised\nLearning\n2.1 Giới thiệu\nHọc có giám sát (Supervised Learning) là một nhánh quan trọng trong học\nmáy (Machine Learning). Ý tưởng cơ bản là: từmột tập dữliệu đã biết đầu\nvào (features) và đầu ra (labels), ta học một mô hình đểdựđoán đầu ra mới\nkhi có dữliệu đầu vào mới.\nHai loại bài toán chính:\n• Regression (Hồi quy): Dựđoán đầu ra là giá trịsốliên tục.\n• Classification (Phân loại): Dựđoán đầu ra là nhãn rời rạc (ví dụ:\n”cat” hay ”dog”).\n2.2 Linear Regression (Hồi quy tuyến tính)\nDùng đểdựđoán giá trịliên tục. Mô hình:\nˆy = wT x + b\n11\n"
+    },
+    {
+      "page": 22,
+      "text": "Chapter 2 Học có giám sát – Supervised Learning\nMục tiêu là tìm w, b đểsai sốnhỏnhất. Sửdụng hàm mất mát bình phương:\nL = 1\nn\nn\n∑\ni=1\n(yi −ˆyi)2\nfrom sklearn.linear_model import LinearRegression\nmodel = LinearRegression()\nmodel.fit(X_train , y_train)\n2.3 Logistic Regression (Hồi quy logistic)\nThường dùng cho bài toán phân loại nhịphân. Mô hình tính xác suất bằng\nhàm sigmoid:\nP(y = 1|x) =\n1\n1 + e−wT x−b\nHàm mất mát: log loss (cross entropy)\nL = −1\nn\n∑\n[yi log(ˆyi) + (1 −yi) log(1 −ˆyi)]\nfrom sklearn.linear_model import LogisticRegression\nmodel = LogisticRegression()\nmodel.fit(X_train , y_train)\n2.4 K-Nearest Neighbors (K-NN)\nKhông có quá trình huấn luyện. Khi dựđoán, ta tìm K điểm gần nhất và lấy\nnhãn phổbiến nhất đểdựđoán.\nƯu điểm: Dễhiểu, dễcài đặt.\nNhược điểm: Tốn bộnhớ, chậm khi dữliệu lớn.\nfrom sklearn.neighbors import KNeighborsClassifier\nmodel = KNeighborsClassifier(n_neighbors=5)\nmodel.fit(X_train , y_train)\n12\n"
+    },
+    {
+      "page": 23,
+      "text": "2.5 Decision Trees (Cây quyết định)\n2.5 Decision Trees (Cây quyết định)\nMô hình này chia nhỏkhông gian đầu vào dựa trên các câu hỏi dạng ”Nếu...\nthì...”. Mỗi nút trong cây là một điều kiện (ví dụ: xj < t), và các nhánh con\nchứa dữliệu được chia.\nÝ tưởng chính: Tìm điều kiện chia giúp nhóm dữliệu trởnên ”thuần” nhất\nvềnhãn.\nHàm đo độthuần:\n• Gini Impurity: G = 1 −∑p2\ni\n• Entropy: H = −∑pi log pi\nƯu điểm: Dễdiễn giải, phù hợp dữliệu rời rạc lẫn liên tục.\nNhược điểm: Dễoverfitting nếu không cắt tỉa (pruning).\nfrom sklearn.tree import DecisionTreeClassifier\nmodel = DecisionTreeClassifier(max_depth=4)\nmodel.fit(X_train , y_train)\n2.6 Random Forests (Rừng ngẫu nhiên)\nLà tổhợp của nhiều cây quyết định. Mỗi cây học trên tập con dữliệu khác\nnhau và chọn ngẫu nhiên đặc trưng.\nLợi ích: Giảm overfitting, tăng độchính xác.\nfrom sklearn.ensemble import RandomForestClassifier\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train , y_train)\n2.7 Gradient Boosting\nTăng cường dần bằng cách huấn luyện các mô hình (thường là cây nông) theo\nthứtự, mỗi mô hình cốgắng sửa lỗi của mô hình trước.\nÝ tưởng: Học sai sốcòn lại (residuals).\n13\n"
+    },
+    {
+      "page": 24,
+      "text": "Chapter 2 Học có giám sát – Supervised Learning\nfrom sklearn.ensemble import GradientBoostingClassifier\nmodel = GradientBoostingClassifier()\nmodel.fit(X_train , y_train)\n2.8 Support Vector Machines (SVM)\nÝ tưởng: Tìm siêu phẳng (hyperplane) phân chia hai lớp với khoảng cách\n(margin) lớn nhất.\nPhương trình siêu phẳng:\nwT x + b = 0\nTối ưu hóa khoảng cách giữa siêu phẳng và các điểm gần nhất:\nmin\nw,b\n1\n2∥w∥2\nVới ràng buộc:\nyi(wT xi + b) ≥1\nSoft margin: Cho phép vi phạm nhẹbằng biến ξi:\nmin 1\n2∥w∥2 + C\n∑\nξi\nKernel trick: Dùng đểphân loại phi tuyến:\n• Linear kernel: K(xi, xj) = xT\ni xj\n• RBF kernel: K(xi, xj) = e−γ∥xi−xj∥2\nƯu điểm: Mạnh với dữliệu nhiều chiều, có khảnăng phân loại tốt khi kết\nhợp kernel.\nfrom sklearn.svm import SVC\nmodel = SVC(kernel='rbf', C=1.0)\nmodel.fit(X_train , y_train)\n14\n"
+    },
+    {
+      "page": 25,
+      "text": "Chapter 3\nHọc không giám sát –\nUnsupervised Learning\nGiới thiệu\nTrong bức tranh rộng lớn của học máy, học không giám sát là một phương\npháp mạnh mẽnhưng thường bịđánh giá thấp. Khác với học có giám sát,\nnơi các thuật toán học từdữliệu đã được gán nhãn, học không giám sát đi\nsâu vào những điều chưa biết — khám phá ra các cấu trúc, mẫu hình và mối\nquan hệẩn trong dữliệu mà không cần đến bất kỳnhãn hay kết quảđịnh sẵn\nnào.\nVềbản chất, học không giám sát nhằm mục đích hiểu dữliệu bằng cách tổ\nchức chúng theo những cách có ý nghĩa. Điều này bao gồm việc gom nhóm\ncác điểm dữliệu tương tựlại với nhau, giảm sốchiều đểđơn giản hóa các bộ\ndữliệu phức tạp, và khám phá các đặc trưng tiềm ẩn có thểnắm bắt được\nbản chất của không gian đầu vào. Những phương pháp này là không thểthiếu\ntrong các tình huống mà việc gán nhãn cho dữliệu là không khảthi, tốn kém\nhoặc thậm chí là bất khảthi.\nChương này sẽcung cấp một cái nhìn tổng quan toàn diện vềhọc không giám\nsát, bắt đầu với các khái niệm nền tảng và tiến đến các kỹthuật phổbiến\nnhất. Chúng ta sẽkhám phá các thuật toán phân cụm như k-means và phân\ncụm phân cấp, đi sâu vào các phương pháp giảm chiều như Phân tích Thành\nphần Chính (PCA), và xem xét các tiếp cận hiện đại bao gồm autoencoder và\ncác mô hình sinh (generative models). Ngoài ra, chúng ta cũng sẽthảo luận\n15\n"
+    },
+    {
+      "page": 26,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\nvềcác ứng dụng thực tiễn, những thách thức, và các chiến lược đánh giá liên\nquan đến các bài toán học không giám sát.\nKết thúc chương này, bạn sẽcó một nền tảng vững chắc vềcách các thuật\ntoán học không giám sát có thểđược tận dụng đểkhám phá cấu trúc ẩn trong\ndữliệu — từđó cho phép xây dựng các hệthống thông minh hơn, linh hoạt\nhơn, có khảnăng học hỏi mà không cần chỉdẫn rõ ràng.\n3.1 Phân cụm K-Means\n3.1.1 Giới thiệu\nHãy tưởng tượng bạn là một người thủthư đang cốgắng sắp xếp hàng ngàn\ncuốn sách mà không biết thểloại của chúng. Sẽra sao nếu bạn có thểtự\nđộng nhóm các cuốn sách tương tựnhau dựa trên mô tảcủa chúng? Đó chính\nlà lúc Thuật toán Phân cụm K-Means phát huy tác dụng — một thuật\ntoán học không giám sát mạnh mẽgiúp tìm ra các nhóm tựnhiên trong dữ\nliệu mà không cần ví dụđã được gán nhãn.\nCốt lõi của K-Means là trảlời một câu hỏi đơn giản:\nChúng ta có thểnhóm các điểm dữliệu này thành K cụm riêng\nbiệt dựa trên mức độtương đồng của chúng không?\nKhác với học có giám sát, nơi chúng ta huấn luyện mô hình với dữliệu đã có\nnhãn, K-Means không yêu cầu bất kỳnhãn nào. Thay vào đó, nó khám\nphá cấu trúc của dữliệu và nhóm các điểm gần nhau trong không gian đặc\ntrưng lại với nhau.\n3.1.2 Thuật toán Hoạt động Như ThếNào\nK-Means hoạt động thông qua một sốbước lặp như sau:\n1. Chọn sốcụm, K.\n2. Khởi tạo ngẫu nhiên K trung tâm cụm (centroid).\n3. Gán mỗi điểm dữliệu cho trung tâm cụm gần nhất.\nKhoảng cách thường được đo bằng khoảng cách Euclid.\n16\n"
+    },
+    {
+      "page": 27,
+      "text": "3.1 Phân cụm K-Means\n4. Cập nhật các trung tâm cụm.\nVới mỗi cụm, tính trung bình của tất cảcác điểm được gán vào cụm đó.\nTrung bình này trởthành trung tâm cụm mới.\n5. Lặp lại bước 3 và 4 cho đến khi hội tụ(tức là các trung tâm cụm\nkhông thay đổi đáng kểnữa).\nQuá trình này thường hội tụnhanh chóng và tạo ra các cụm được phân tách\nrõ ràng.\n3.1.3 Ứng Dụng Thực Tế\nK-Means được sửdụng rộng rãi trong nhiều lĩnh vực:\n• Phân khúc khách hàng: Nhóm khách hàng theo hành vi mua sắm.\n• Phân cụm tài liệu: Sắp xếp bài viết hoặc tài liệu theo chủđề.\n• Nén ảnh: Giảm sốlượng màu trong ảnh (lượng tửhóa màu).\n• Phân tích định vịđịa lý: Xác định cụm hoạt động trong dữliệu\nkhông gian địa lý.\n3.1.4 Cải tiến và Biến thể\nMột sốcải tiến phổbiến bao gồm:\n• K-Means++: Chiến lược khởi tạo thông minh hơn đểcải thiện hiệu\nsuất.\n• Mini-Batch K-Means: Phân cụm nhanh hơn cho các tập dữliệu lớn.\n• Silhouette Score và Elbow Method: Các kỹthuật đểxác định số\ncụm tối ưu.\n• Kernel K-Means: Cho phép ranh giới cụm phi tuyến tính.\n3.1.5 Ví dụPython với scikit-learn\nDưới đây là một ví dụthực tếsửdụng dữliệu tổng hợp:\nfrom sklearn.cluster import KMeans\n17\n"
+    },
+    {
+      "page": 28,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\nfrom sklearn.datasets import make_blobs\nimport matplotlib.pyplot as plt\n# Generate sample data\nX, y = make_blobs(n_samples=300, centers=4, cluster_std=0.6,\nrandom_state=42)\n# Apply K-Means\nkmeans = KMeans(n_clusters=4, random_state=42)\nkmeans.fit(X)\ny_kmeans = kmeans.predict(X)\n# Plot the results\nplt.scatter(X[:, 0], X[:, 1], c=y_kmeans , s=50, cmap='viridis'\n)\nplt.scatter(kmeans.cluster_centers_[:, 0], kmeans.\ncluster_centers_[:, 1], s=200,\nc='red', marker='X', label='Centroids')\nplt.title(\"K-Means Clustering Result\")\nplt.legend()\nplt.show()\n3.2 Phân Tích Thành Phần Chính (PCA)\n3.2.1 Giới thiệu vềPhân Tích Thành Phần Chính (PCA)\nPhân tích thành phần chính (PCA) là một thuật toán học không giám sát\nmạnh mẽ, được sửdụng rộng rãi cho giảm chiều dữliệu, trực quan hóa dữliệu,\nvà lọc nhiễu. Thuật toán này chuyển đổi dữliệu có nhiều chiều thành dạng\ncó ít chiều hơn nhưng vẫn giữlại càng nhiều thông tin (phương sai) càng tốt.\nVềbản chất, PCA xác định các hướng (gọi là các thành phần chính) mà tại\nđó dữliệu thay đổi nhiều nhất. Bằng cách chiếu dữliệu lên những hướng này,\nPCA giúp giảm độphức tạp, loại bỏsựdư thừa và thường cải thiện hiệu suất\ncũng như khảnăng diễn giải của các mô hình sau đó.\nTại sao PCA hữu ích?\n18\n"
+    },
+    {
+      "page": 29,
+      "text": "3.2 Phân Tích Thành Phần Chính (PCA)\n• Dữliệu có nhiều chiều thường chứa các đặc trưng dư thừa hoặc nhiễu.\n• Giảm chiều có thểcải thiện hiệu quảtính toán và hiệu suất mô hình.\n• Trực quan hóa dữliệu nhiều chiều đòi hỏi phải giảm chiều.\n• PCA giúp phát hiện cấu trúc ẩn trong dữliệu.\n3.2.2 Giải thích Thuật toán\nPCA bao gồm các bước chính sau:\n1. Chuẩn hóa dữliệu\nChuẩn hóa các đặc trưng đểcó trung bình bằng 0 và phương sai bằng\n1. Điều này đảm bảo mỗi đặc trưng đóng góp như nhau.\n2. Tính ma trận hiệp phương sai\nTính ma trận hiệp phương sai đểhiểu cách các đặc trưng biến đổi cùng\nnhau:\nC =\n1\nn −1X⊤X\ntrong đó X là ma trận dữliệu đã được chuẩn hóa.\n3. Tính các trịriêng và vector riêng\nPhân tích trịriêng (eigen decomposition) trên ma trận hiệp phương sai.\nCác vector riêng là hướng (các thành phần chính), và các trịriêng đo\nlường lượng phương sai mà mỗi hướng mang lại.\n4. Sắp xếp và chọn các thành phần chính hàng đầu\nSắp xếp các vector riêng theo thứtựgiảm dần của trịriêng tương ứng\nvà chọn k thành phần chính hàng đầu.\n5. Chiếu dữliệu\nBiến đổi dữliệu gốc sang không gian đặc trưng mới:\nXreduced = X · Wk\ntrong đó Wk chứa k vector riêng hàng đầu.\n19\n"
+    },
+    {
+      "page": 30,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\n3.2.3 Ví dụMinh Họa\nHãy xem xét một tập dữliệu 2 chiều đơn giản như chiều cao và cân nặng.\nHai đặc trưng này thường có mối tương quan — người cao hơn thường nặng\nhơn. PCA có thểxác định hướng mà dữliệu thay đổi nhiều nhất (một tổhợp\ntuyến tính của chiều cao và cân nặng), và chiếu dữliệu lên trục mới này.\nDưới đây là ví dụthực tiễn với Python:\nfrom sklearn.decomposition import PCA\nfrom sklearn.preprocessing import StandardScaler\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport pandas as pd\nfrom sklearn.datasets import load_iris\n# Load dataset\niris = load_iris()\nX = iris.data[:, :2]\n# Only first two features\n# Standardize\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)\n# Apply PCA\npca = PCA(n_components=2)\nX_pca = pca.fit_transform(X_scaled)\n# Plot\ndf_pca = pd.DataFrame(X_pca, columns=['PC1', 'PC2'])\ndf_pca['target'] = iris.target\nsns.scatterplot(data=df_pca, x='PC1', y='PC2', hue='target',\npalette='Set1')\nplt.title('PCA on Iris Dataset')\nplt.xlabel('Principal Component 1')\nplt.ylabel('Principal Component 2')\nplt.grid(True)\nplt.show()\n20\n"
+    },
+    {
+      "page": 31,
+      "text": "3.3 t-SNE, MAP, và những cách giảm chiều dữliệu khác\nKết quảlà biểu đồ2D với các trục đại diện cho các hướng biến thiên lớn nhất\ntrong dữliệu gốc.\n3.2.4 Ứng Dụng Thực Tế\nPCA được ứng dụng rộng rãi trong nhiều lĩnh vực:\n• Tiền xửlý dữliệu: Giảm sốchiều trước khi áp dụng các mô hình học\nmáy.\n• Lọc nhiễu: Loại bỏcác thành phần có phương sai thấp — thường là\nnhiễu.\n• Tài chính: Phân tích xu hướng và mối tương quan trong giá cổphiếu\nhoặc chỉsốtài chính.\n• Genomics: Trực quan hóa dữliệu biểu hiện gene nhiều chiều.\n• Thịgiác máy tính: Nhận dạng khuôn mặt với các kỹthuật như\nEigenfaces.\n3.3 t-SNE, MAP, và những cách giảm chiều dữ\nliệu khác\n3.3.1 Giới thiệu\nTrong các tập dữliệu có nhiều chiều, việc nhận diện các mẫu (patterns) có\nthểtrởnên khó khăn. Hãy tưởng tượng bạn đang cốhình dung hành vi khách\nhàng dựa trên một tập dữliệu với hàng chục đặc trưng—từnhân khẩu học\nđến lịch sửduyệt web. Trực giác con người không còn hiệu quảkhi vượt quá\nba chiều, khiến việc lý giải cấu trúc dữliệu trởnên khó khăn.\nCác kỹthuật giảm chiều dữliệu nhằm giải quyết vấn đềnày bằng cách chuyển\ndữliệu nhiều chiều sang dạng ít chiều hơn—thường là hai hoặc ba chiều—trong\nkhi vẫn bảo toàn các cấu trúc quan trọng như cụm (clusters) hoặc lân cận\n(neighborhoods). Điều này đặc biệt hữu ích trong học không giám sát, nơi\nchúng ta thường không có nhãn đểhướng dẫn việc phân tích.\n21\n"
+    },
+    {
+      "page": 32,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\nTrong phần này, chúng ta sẽkhám phá:\n• t-SNE (t-distributed Stochastic Neighbor Embedding)\n• MAP (Manifold Approximation and Projection)\n• Tổng quan ngắn vềcác phương pháp khác như PCA, Isomap, và\nUMAP\nCác phương pháp này là công cụmạnh mẽđểhiểu phân bốdữliệu, trực quan\nhóa các cụm, và thậm chí cải thiện hiệu suất của các mô hình phía sau.\n3.3.2 t-SNE: t-distributed Stochastic Neighbor Embedding\nTổng quan\nt-SNE là một kỹthuật giảm chiều phi tuyến đặc biệt phù hợp cho việc trực\nquan hóa các tập dữliệu nhiều chiều. Được phát triển bởi Laurens van\nder Maaten và Geoffrey Hinton, t-SNE hoạt động bằng cách chuyển đổi sự\ntương đồng giữa các điểm dữliệu thành xác suất kết hợp và tối thiểu hóa độ\nlệch giữa hai phân phối này trong không gian nhiều chiều và ít chiều.\nCách hoạt động\n1. Tính toán mức độtương đồng giữa các cặp điểm trong không gian nhiều\nchiều bằng phân phối Gauss.\n2. Định nghĩa tương đồng trong không gian ít chiều bằng phân phối t của\nStudent.\n3. Tối thiểu hóa độlệch Kullback–Leibler giữa hai phân phối bằng phương\npháp gradient descent.\nKết quảlà một bản đồ2D hoặc 3D trong đó các điểm giống nhau sẽgần nhau,\ncòn các điểm khác biệt sẽcách xa nhau.\nVí dụ\nfrom sklearn.manifold import TSNE\nfrom sklearn.datasets import load_digits\n22\n"
+    },
+    {
+      "page": 33,
+      "text": "3.3 t-SNE, MAP, và những cách giảm chiều dữliệu khác\nimport matplotlib.pyplot as plt\n# Load sample data\ndigits = load_digits()\nX = digits.data\ny = digits.target\n# Apply t-SNE\ntsne = TSNE(n_components=2, random_state=42)\nX_reduced = tsne.fit_transform(X)\n# Visualize\nplt.scatter(X_reduced[:, 0], X_reduced[:, 1], c=y, cmap='tab10\n', s=15)\nplt.title(\"t-SNE on Digits Dataset\")\nplt.colorbar()\nplt.show()\n3.3.3 MAP: Manifold Approximation and Projection\nTổng quan\nMAP (thường được sửdụng đồng nghĩa với UMAP, một cách triển khai\nphổbiến) là một thuật toán giảm chiều hiện đại dựa trên các nguyên lý học\nmanifold. Nó nổi bật với khảnăng nhanh hơn và mởrộng tốt hơn t-SNE,\nđồng thời bảo toàn cảcấu trúc cục bộlẫn toàn cục.\nCách hoạt động\n1. Xây dựng đồthịcó trọng sốcủa các điểm gần nhất trong không gian\nnhiều chiều.\n2. Tối ưu một đồthịít chiều sao cho tương tựvềcấu trúc với đồthịban\nđầu bằng tối ưu hóa ngẫu nhiên.\n3. Sửdụng cấu trúc tô-pô mờ(fuzzy topological structure) đểgiữđược mối\nquan hệcục bộvà toàn cục.\n23\n"
+    },
+    {
+      "page": 34,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\nVí dụ\nimport umap\nimport matplotlib.pyplot as plt\nfrom sklearn.datasets import load_digits\n# Load sample data\ndigits = load_digits()\nX = digits.data\ny = digits.target\n# Apply UMAP\nreducer = umap.UMAP(n_components=2, random_state=42)\nX_umap = reducer.fit_transform(X)\n# Visualize\nplt.scatter(X_umap[:, 0], X_umap[:, 1], c=y, cmap='tab10', s\n=15)\nplt.title(\"UMAP on Digits Dataset\")\nplt.colorbar()\nplt.show()\n3.3.4 Các phương pháp giảm chiều khác\nPCA (Principal Component Analysis): Một kỹthuật tuyến tính chiếu dữ\nliệu theo các hướng có phương sai lớn nhất.\nNhanh và dễdiễn giải,\nnhưng kém trong việc nắm bắt các mẫu phi tuyến phức tạp.\nIsomap: Mởrộng PCA bằng cách sửdụng khoảng cách địa lý (geodesic dis-\ntance) trên đồthịlân cận. Tốt cho việc nắm bắt manifold ẩn, nhưng\ntốn kém vềtính toán.\nAutoencoders: Mạng nơ-ron được huấn luyện đểtái tạo dữliệu đầu vào. Các\nlớp ẩn (latent layers) có thểđược sửdụng đểgiảm chiều, đặc biệt hiệu\nquảvới dữliệu phi tuyến phức tạp.\n24\n"
+    },
+    {
+      "page": 35,
+      "text": "3.4 Phân Cụm DBSCAN\n3.3.5 Ứng dụng thực tiễn\n• Trực quan hóa dữliệu: Phục vụphân tích dữliệu khám phá (EDA),\nt-SNE và UMAP có thểlàm lộra các cụm hoặc mẫu tiềm ẩn.\n• Phát hiện bất thường: Các điểm ngoại lai trởnên rõ ràng hơn trong\nkhông gian ít chiều.\n• Tiền xửlý: Giảm chiều trước khi phân cụm hoặc phân loại có thểcải\nthiện tốc độvà độchính xác.\n• Genomics và y tế: Trực quan hóa biểu hiện gen hoặc chỉsốsức khỏe\ncó nhiều chiều.\n• Hệthống gợi ý: Gán nhãn cho item hoặc người dùng trong không\ngian ngầm (latent space) đểtìm kiếm tương đồng.\n3.4 Phân Cụm DBSCAN\n3.4.1 Giới thiệu\nDBSCAN (Density-Based Spatial Clustering of Applications with\nNoise) là một thuật toán học không giám sát mạnh mẽ, có khảnăng nhóm\ncác điểm dữliệu gần nhau lại với nhau, và đánh dấu các điểm ởvùng thưa\nthớt là ngoại lai (outliers). Không giống như K-Means hay phân cụm phân\ncấp, DBSCAN không yêu cầu xác định trước sốcụm và có thểphát hiện các\ncụm có hình dạng bất kỳ— điều này đặc biệt hữu ích với các tập dữliệu thực\ntế, nơi mà cấu trúc dữliệu không được biết trước.\nÝ tưởng cốt lõi rất trực quan: các điểm trong vùng mật độcao sẽtạo thành\ncụm, trong khi các điểm ởvùng mật độthấp được xem là nhiễu (noise).\n3.4.2 Giải thích thuật toán\nDBSCAN yêu cầu hai tham số:\n• eps (epsilon): khoảng cách tối đa giữa hai điểm đểmột điểm được xem\nlà hàng xóm của điểm kia.\n25\n"
+    },
+    {
+      "page": 36,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\n• min_samples: sốđiểm tối thiểu trong vùng lân cận đểmột điểm được\nxem là điểm lõi.\nDựa trên hai tham sốnày, DBSCAN phân loại mỗi điểm dữliệu như sau:\n1. Điểm lõi (Core Point): Có ít nhất min_samples điểm (bao gồm chính\nnó) nằm trong khoảng cách eps.\n2. Điểm biên (Border Point): Nằm trong khoảng eps của một điểm lõi\nnhưng có ít hơn min_samples điểm lân cận.\n3. Điểm nhiễu (Noise Point): Không phải điểm lõi và cũng không thể\ntiếp cận trực tiếp từđiểm lõi.\nThuật toán hoạt động theo các bước sau:\n1. Chọn một điểm chưa được thăm.\n2. Nếu điểm đó có ít nhất min_samples điểm lân cận trong khoảng eps,\nđánh dấu nó là điểm lõi và bắt đầu một cụm mới.\n3. Mởrộng cụm bằng cách đệquy thăm tất cảcác điểm lõi có thểtiếp cận\nđược.\n4. Các điểm nằm trong khoảng eps của một điểm lõi nhưng không phải\nđiểm lõi sẽđược thêm vào cụm dưới dạng điểm biên.\n5. Các điểm không thểtiếp cận từbất kỳđiểm lõi nào sẽđược gán nhãn\nlà nhiễu.\n6. Lặp lại cho đến khi tất cảcác điểm được thăm.\n3.4.3 Ví dụminh hoạ\nHãy tưởng tượng một biểu đồtán xạ2 chiều của khách hàng trong trung tâm\nthương mại, dựa trên tần suất họghé thăm và sốtiền họchi tiêu. Một số\nkhách hàng tạo thành các nhóm tựnhiên (ví dụnhư người tiêu dùng thường\nxuyên và chi tiêu lớn so với người ghé thăm hiếm hoi), nhưng cũng có những\nngười không phù hợp với bất kỳmẫu cụthểnào.\nDBSCAN có thểtựđộng tìm ra các cụm này mà không cần xác định trước\nsốlượng nhóm. Hơn nữa, nó có thểgán nhãn cho các điểm ngoại lệ— chẳng\nhạn như người chỉghé một lần nhưng chi tiêu rất cao — là nhiễu.\n26\n"
+    },
+    {
+      "page": 37,
+      "text": "3.4 Phân Cụm DBSCAN\nVí dụbằng mã Python\nfrom sklearn.cluster import DBSCAN\nfrom sklearn.datasets import make_moons\nimport matplotlib.pyplot as plt\n# Create synthetic dataset\nX, _ = make_moons(n_samples=300, noise=0.05, random_state=0)\n# Apply DBSCAN\ndbscan = DBSCAN(eps=0.2, min_samples=5)\nlabels = dbscan.fit_predict(X)\n# Plotting the clusters\nplt.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis')\nplt.title(\"DBSCAN Clustering Example\")\nplt.xlabel(\"Feature 1\")\nplt.ylabel(\"Feature 2\")\nplt.show()\nĐoạn mã trên tạo ra tập dữliệu gồm hai hình bán nguyệt lồng vào nhau\n(“moons”), trong đó DBSCAN xác định đúng các cụm, khác với K-Means vốn\nthất bại do cấu trúc không hình cầu của dữliệu.\n3.4.4 Ứng dụng thực tiễn\nDBSCAN rất phù hợp với các bài toán có dữliệu nhiễu và cụm không nhất\nthiết phải hình cầu:\n• Phân tích địa lý (Geospatial Analysis): Phát hiện các điểm nóng\ntrong dữliệu tội phạm hoặc hoạt động địa lý.\n• Phát hiện bất thường: Nhận diện hành vi gian lận hoặc sốđo sai từ\ncảm biến.\n• Xửlý ảnh: Phân vùng các khu vực trong ảnh nhiễu hoặc phức tạp.\n• Phân khúc thịtrường: Nhóm khách hàng theo hành vi mà không\ncần nhãn trước.\n27\n"
+    },
+    {
+      "page": 38,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\n• Thiên văn học: Tìm kiếm cụm sao hoặc cấu trúc thiên hà từdữliệu\nkhông gian.\nKhảnăng gán nhãn cho dữliệu nhiễu giúp DBSCAN đặc biệt hữu ích trong\ncác lĩnh vực thực tếnơi dữliệu không liên quan hoặc bất thường xuất hiện\nthường xuyên.\n3.5 Phân Cụm Phân Cấp (Hierarchical Clustering)\n3.5.1 Giới thiệu\nPhân cụm phân cấp là một kỹthuật học không giám sát được sửdụng để\nnhóm các đối tượng tương tựvào các cụm dựa trên độtương đồng của chúng.\nKhông giống như các phương pháp phân vùng như k-means, phân cụm phân\ncấp không yêu cầu xác định sốlượng cụm trước. Thay vào đó, nó xây dựng\nmột cấu trúc dạng cây gọi là dendrogram, đại diện cho các nhóm dữliệu\nlồng vào nhau và mức độgần gũi của chúng.\nPhương pháp này đặc biệt hữu ích khi cấu trúc dữliệu có tính phân cấp, hoặc\nkhi bạn muốn khám phá các mức độchi tiết khác nhau trong phân cụm. Phân\ncụm phân cấp có tính trực quan, dễhiểu và hoạt động tốt với các tập dữliệu\nnhỏđến vừa, nơi mà mối quan hệgiữa các điểm dữliệu quan trọng hơn là các\nranh giới cụm chính xác.\n3.5.2 Cách Thuật Toán Hoạt Động\nCó hai loại phân cụm phân cấp chính:\n• Agglomerative (Từdưới lên): Bắt đầu với mỗi điểm dữliệu như là\nmột cụm riêng biệt và liên tục hợp nhất các cụm gần nhau cho đến khi\ntất cảcác điểm dữliệu tạo thành một cụm duy nhất.\n• Divisive (Từtrên xuống): Bắt đầu với một cụm lớn chứa tất cảcác\nđiểm dữliệu và chia nó thành các cụm nhỏhơn một cách đệquy.\nPhân cụm agglomerative là phương pháp phổbiến hơn, vì vậy trong phần này\nchúng ta sẽtập trung vào phương pháp đó.\n28\n"
+    },
+    {
+      "page": 39,
+      "text": "3.5 Phân Cụm Phân Cấp (Hierarchical Clustering)\nCác Bước Của Phân Cụm Agglomerative\n1. Tính Ma Trận Khoảng Cách: Tính khoảng cách (hoặc độtương\nđồng) giữa tất cảcác điểm dữliệu bằng một chỉsốthích hợp (ví dụ:\nkhoảng cách Euclid).\n2. Khởi tạo Các Cụm: Xem mỗi điểm dữliệu là một cụm riêng biệt.\n3. Hợp Nhất Các Cụm Gần Nhau Nhất: Xác định hai cụm có khoảng\ncách nhỏnhất và hợp nhất chúng lại.\n4. Cập Nhật Ma Trận Khoảng Cách: Tính lại khoảng cách giữa cụm\nmới và tất cảcác cụm còn lại bằng một phương pháp liên kết (ví dụ:\nphương pháp đơn, đầy đủ, trung bình, hoặc phương pháp Ward).\n5. Lặp lại: Tiếp tục hợp nhất các cụm cho đến khi chỉcòn một cụm duy\nnhất hoặc đạt được sốlượng cụm mong muốn.\n6. Xây dựng Dendrogram: Hiển thịquá trình hợp nhất dưới dạng den-\ndrogram đểxác định sốlượng cụm phù hợp bằng cách ”cắt” cây tại một\nmức độthích hợp.\n3.5.3 Ví dụMinh Họa\nXem xét năm điểm dữliệu 2D và áp dụng phân cụm phân cấp sửdụng phương\npháp liên kết Ward:\nimport numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.cluster.hierarchy import linkage , dendrogram ,\nfcluster\n# Sample data\nX = np.array([[1, 2], [2, 3], [5, 8], [6, 9], [8, 8]])\n# Step 1: Compute linkage matrix\nZ = linkage(X, method='ward')\n# 'ward' minimizes the variance\nwithin clusters\n# Step 2: Plot dendrogram\nplt.figure(figsize=(8, 4))\n29\n"
+    },
+    {
+      "page": 40,
+      "text": "Chapter 3 Học không giám sát – Unsupervised Learning\ndendrogram(Z)\nplt.title(\"Hierarchical Clustering Dendrogram\")\nplt.xlabel(\"Data Points\")\nplt.ylabel(\"Distance\")\nplt.show()\n# Step 3: Form flat clusters (e.g., form 2 clusters)\nclusters = fcluster(Z, t=2, criterion='maxclust')\nprint(\"Cluster assignments:\", clusters)\nTrục dọc của dendrogram đại diện cho khoảng cách mà tại đó các cụm được\nhợp nhất. Bằng cách thiết lập một ngưỡng dọc theo trục này, bạn có thểchọn\nsốlượng cụm phù hợp với dữliệu của mình.\n3.5.4 Ứng Dụng Thực Tiễn\nPhân cụm phân cấp có ứng dụng rộng rãi trong nhiều lĩnh vực:\n• Sinh học thông tin (Bioinformatics): Nhóm các gen hoặc protein\ndựa trên mức độbiểu hiện hoặc sựtương đồng cấu trúc.\n• Phân khúc thịtrường (Market Segmentation): Xác định các\nnhóm khách hàng có hành vi hoặc sởthích tương tự.\n• Phân nhóm tài liệu (Document Clustering): Tổchức các bộtài\nliệu lớn (ví dụ: các bài báo) thành các nhóm chủđề.\n• Phân tích mạng xã hội (Social Network Analysis): Phát hiện\ncộng đồng trong các mạng lưới người hoặc thực thể.\n• Phân đoạn hình ảnh (Image Segmentation): Nhóm các điểm ảnh\ncó đặc trưng tương tựđểđơn giản hóa các tác vụxửlý hình ảnh.\nMột trong những điểm mạnh của phân cụm phân cấp là tính khảdụng của\nnó trong việc giải thích, làm cho nó trởnên lý tưởng cho phân tích dữliệu\nkhám phá khi cấu trúc dữliệu chưa được hiểu rõ.\n30\n"
+    },
+    {
+      "page": 41,
+      "text": "Chapter 4\nĐánh Giá Trong Trí TuệNhân Tạo\n- Evaluation\n4.1 Các ChỉSốĐánh Giá Mô Hình\nĐánh giá hiệu suất của mô hình là rất quan trọng đểxác định mức độmô\nhình có thểtổng quát hóa lên dữliệu chưa thấy trước đó. Dưới đây là một số\nchỉsốcơ bản:\n4.1.1 ĐộChính Xác (Accuracy)\nĐộchính xác là tỷlệgiữa sốmẫu dựđoán đúng trên tổng sốmẫu.\nĐộchính xác =\nTP + TN\nTP + TN + FP + FN\nVí dụPython:\nfrom sklearn.metrics import accuracy_score\ny_true = [1, 0, 1, 1, 0, 1, 0]\ny_pred = [1, 0, 1, 0, 0, 1, 1]\nprint(\"Accuracy:\", accuracy_score(y_true, y_pred))\n31\n"
+    },
+    {
+      "page": 42,
+      "text": "Chapter 4 Đánh Giá Trong Trí TuệNhân Tạo - Evaluation\n4.1.2 ĐộChính Xác Của DựĐoán Dương (Precision)\nPrecision đo lường trong sốcác dựđoán dương thì có bao nhiêu là thực sự\ndương.\nPrecision =\nTP\nTP + FP\nVí dụPython:\nfrom sklearn.metrics import precision_score\nprint(\"Precision:\", precision_score(y_true, y_pred))\n4.1.3 KhảNăng Thu Hồi (Recall)\nRecall là tỷlệcác quan sát dương được dựđoán đúng trên tổng sốquan sát\ndương.\nRecall =\nTP\nTP + FN\nVí dụPython:\nfrom sklearn.metrics import recall_score\nprint(\"Recall:\", recall_score(y_true, y_pred))\n4.1.4 F1-Score\nF1 Score là trung bình điều hòa của Precision và Recall.\nF1 = 2 · Precision · Recall\nPrecision + Recall\nVí dụPython:\nfrom sklearn.metrics import f1_score\nprint(\"F1 Score:\", f1_score(y_true, y_pred))\n32\n"
+    },
+    {
+      "page": 43,
+      "text": "4.2 Hiện Tượng Underfitting và Overfitting\n4.1.5 So Sánh Giữa Các ChỉSố\n• Accuracy tốt khi dữliệu cân bằng, nhưng có thểgây hiểu lầm nếu dữ\nliệu bịlệch.\n• Precision quan trọng khi chi phí của false positive cao (ví dụ: phát\nhiện spam).\n• Recall quan trọng khi chi phí của false negative cao (ví dụ: chẩn đoán\nbệnh).\n• F1-Score hữu ích khi cần cân bằng giữa precision và recall, đặc biệt\ntrong các tập dữliệu mất cân đối.\n—\n4.2 Hiện Tượng Underfitting và Overfitting\n4.2.1 Underfitting\nUnderfitting xảy ra khi mô hình quá đơn giản đểhọc được mẫu ẩn của dữ\nliệu.\nDấu hiệu:\n• Lỗi huấn luyện cao\n• Lỗi kiểm tra cao\n4.2.2 Overfitting\nOverfitting xảy ra khi mô hình học quá kỹdữliệu huấn luyện, bao gồm cả\nnhiễu.\nDấu hiệu:\n• Lỗi huấn luyện thấp\n• Lỗi kiểm tra cao\nVí dụPython: Hồi quy Đa Thức\nfrom sklearn.linear_model import LinearRegression\n33\n"
+    },
+    {
+      "page": 44,
+      "text": "Chapter 4 Đánh Giá Trong Trí TuệNhân Tạo - Evaluation\nfrom sklearn.preprocessing import PolynomialFeatures\nfrom sklearn.pipeline import make_pipeline\nimport numpy as np\nimport matplotlib.pyplot as plt\nX = np.random.rand(100, 1) * 2 - 1\ny = X**3 + np.random.randn(100, 1) * 0.1\n# Underfitting model\nmodel1 = make_pipeline(PolynomialFeatures(1), LinearRegression\n())\n# Overfitting model\nmodel2 = make_pipeline(PolynomialFeatures(15),\nLinearRegression())\nmodel1.fit(X, y)\nmodel2.fit(X, y)\n—\n4.3 Tinh Chỉnh Siêu Tham Số(Hyperparameter\nTuning)\nSiêu tham sốlà các thiết lập cấu hình đểđiều khiển quá trình học. Khác với\ntham sốmô hình được học từdữliệu, siêu tham sốđược thiết lập trước khi\nhuấn luyện.\n4.3.1 Tại Sao Cần Tinh Chỉnh Siêu Tham Số?\n• Cải thiện hiệu suất của mô hình trên dữliệu chưa thấy.\n• Tìm sựcân bằng giữa bias và variance.\n• Tránh underfitting hoặc overfitting.\n• Mỗi bộdữliệu có thểcần cấu hình khác nhau đểđạt kết quảtối ưu.\n34\n"
+    },
+    {
+      "page": 45,
+      "text": "4.3 Tinh Chỉnh Siêu Tham Số(Hyperparameter Tuning)\n4.3.2 Tìm Kiếm Lưới (Grid Search)\nGrid search thửtất cảcác kết hợp của tập giá trịsiêu tham sốđược cung cấp.\nVí dụPython:\nfrom sklearn.model_selection import GridSearchCV\nfrom sklearn.ensemble import RandomForestClassifier\nparam_grid = {\n'n_estimators': [10, 50, 100],\n'max_depth': [None, 10, 20]\n}\nclf = GridSearchCV(RandomForestClassifier(), param_grid , cv=5)\nclf.fit(X_train , y_train)\nprint(\"Best Parameters:\", clf.best_params_)\n4.3.3 Tìm Kiếm Ngẫu Nhiên (Random Search)\nRandom search chọn ngẫu nhiên các kết hợp siêu tham sốđểthử.\nƯu điểm so với Grid Search:\n• Nhanh hơn khi không gian tìm kiếm lớn.\n• Hiệu quảhơn trong việc tìm kết hợp tốt trong thời gian ngắn.\nVí dụPython:\nfrom sklearn.model_selection import RandomizedSearchCV\nfrom scipy.stats import randint\nparam_dist = {\n'n_estimators': randint(10, 200),\n'max_depth': randint(1, 30)\n}\nclf = RandomizedSearchCV(RandomForestClassifier(), param_dist ,\nn_iter=10, cv=5)\nclf.fit(X_train , y_train)\nprint(\"Best Parameters:\", clf.best_params_)\n35\n"
+    },
+    {
+      "page": 46,
+      "text": "Chapter 4 Đánh Giá Trong Trí TuệNhân Tạo - Evaluation\n—\n4.4 Xác Thực Chéo (Cross-Validation)\nXác thực chéo giúp đánh giá mức độtổng quát hóa của mô hình trên dữliệu\nđộc lập.\n4.4.1 K-Fold Cross-Validation\nK-Fold chia dữliệu thành K phần bằng nhau. Mô hình được huấn luyện K\nlần, mỗi lần sửdụng K −1 phần đểhuấn luyện và 1 phần đểkiểm tra.\nLợi ích:\n• Giảm phương sai trong đánh giá mô hình.\n• Ước lượng hiệu suất đáng tin cậy hơn.\n• Mỗi điểm dữliệu đều được dùng đểhuấn luyện và kiểm tra.\nVí dụPython:\nfrom sklearn.model_selection import cross_val_score\nfrom sklearn.linear_model import LogisticRegression\nscores = cross_val_score(LogisticRegression(), X, y, cv=5)\nprint(\"Cross-Validation Scores:\", scores)\nprint(\"Average Score:\", scores.mean())\n—\n4.5 Ma Trận Nhầm Lẫn và Đường Cong ROC\n4.5.1 Ma Trận Nhầm Lẫn\nLà bảng 2x2 cho phân loại nhịphân, biểu diễn giá trịthực tếso với giá trịdự\nđoán.\n36\n"
+    },
+    {
+      "page": 47,
+      "text": "4.5 Ma Trận Nhầm Lẫn và Đường Cong ROC\nCấu trúc:\nDựđoán Dương\nDựđoán Âm\nThực tếDương\nTP\nFN\nThực tếÂm\nFP\nTN\nDiễn giải:\n• TP: Dương thật – Dựđoán đúng\n• TN: Âm thật – Dựđoán đúng\n• FP: Dương giả– Dựđoán sai (Lỗi loại I)\n• FN: Âm giả– Dựđoán sai (Lỗi loại II)\nVí dụPython:\nfrom sklearn.metrics import confusion_matrix\nprint(\"Confusion Matrix:\\n\", confusion_matrix(y_true, y_pred))\n4.5.2 Đường Cong ROC và AUC\nĐường cong ROC vẽtỷlệdương thực (TPR) so với tỷlệdương giả(FPR) ở\ncác ngưỡng khác nhau.\nCông thức:\nTPR =\nTP\nTP + FN\n(Recall)\nFPR =\nFP\nFP + TN\nAUC (Diện tích dưới đường cong):\n• Đo diện tích toàn phần dưới đường cong ROC.\n• Giá trịtừ0 đến 1. AUC cao hơn cho thấy mô hình tốt hơn.\nVí dụPython:\nfrom sklearn.metrics import roc_curve , roc_auc_score\nimport matplotlib.pyplot as plt\nfpr, tpr, thresholds = roc_curve(y_true, y_score)\n37\n"
+    },
+    {
+      "page": 48,
+      "text": "Chapter 4 Đánh Giá Trong Trí TuệNhân Tạo - Evaluation\nplt.plot(fpr, tpr, label='ROC Curve')\nplt.xlabel('False Positive Rate')\nplt.ylabel('True Positive Rate')\nplt.title('ROC Curve')\nplt.legend()\nplt.show()\nprint(\"AUC:\", roc_auc_score(y_true, y_score))\nKhi Nào Dùng ROC Curve:\n• Hữu ích khi quan tâm đến sựđánh đổi giữa TPR và FPR.\n• Đặc biệt hiệu quảvới tập dữliệu mất cân đối.\n38\n"
+    },
+    {
+      "page": 49,
+      "text": "Chapter 5\nNeural Networks\n5.1 Kiến thức cơ bản vềPerceptron\nLý thuyết\nPerceptron là dạng đơn giản nhất của mạng nơ-ron. Nó là một bộphân loại\nnhịphân tuyến tính, nhận nhiều đầu vào, áp dụng trọng sốvà độlệch, sau\nđó truyền qua một hàm kích hoạt.\ny = f\n(∑\nwixi + b\n)\nTrong đó:\n• xi: Đặc trưng đầu vào\n• wi: Trọng số\n• b: Độlệch (bias)\n• f: Hàm kích hoạt (thường là hàm bước)\nMã Python\nimport numpy as np\ndef step_function(x):\nreturn 1 if x >= 0 else 0\n39\n"
+    },
+    {
+      "page": 50,
+      "text": "Chapter 5 Neural Networks\ndef perceptron(inputs, weights , bias):\ntotal = np.dot(inputs , weights) + bias\nreturn step_function(total)\ninputs = np.array([1, 0])\nweights = np.array([0.5, -0.6])\nbias = 0.1\noutput = perceptron(inputs, weights , bias)\nprint(\"Output:\", output)\nTóm tắt\n• Perceptron là một bộphân loại tuyến tính.\n• Phù hợp với dữliệu phân tách tuyến tính.\n• Là khối xây dựng cơ bản của mạng nơ-ron.\n40\n"
+    },
+    {
+      "page": 51,
+      "text": "5.2 Thuật toán Gradient Descent\n5.2 Thuật toán Gradient Descent\nLý thuyết\nGradient descent là một thuật toán tối ưu được sửdụng đểgiảm thiểu hàm\nchi phí. Nó điều chỉnh các tham sốtheo hướng ngược lại của gradient.\nw = w −η∇J(w)\nTrong đó:\n• η: Tốc độhọc (learning rate)\n• ∇J(w): Đạo hàm của hàm chi phí\nMã Python\ndef gradient_descent(w, grad, learning_rate):\nreturn w - learning_rate * grad\nw = 10\nlearning_rate = 0.1\nfor _ in range(100):\ngrad = 2 * w\nw = gradient_descent(w, grad, learning_rate)\nprint(\"Minimum at:\", w)\nTóm tắt\n• Thuật toán tối ưu quan trọng trong huấn luyện mạng nơ-ron.\n• Tốc độhọc ảnh hưởng đến tốc độhội tụvà độổn định.\n• Có ba biến thểchính: toàn bộ, ngẫu nhiên, và mini-batch.\n41\n"
+    },
+    {
+      "page": 52,
+      "text": "Chapter 5 Neural Networks\n5.3 Lan truyền ngược (Backpropagation)\nLý thuyết\nBackpropagation tính toán hiệu quảgradient của hàm mất mát với từng trọng\nsốbằng cách áp dụng quy tắc chuỗi.\nCác bước:\n1. Lan truyền xuôi\n2. Tính toán hàm mất mát\n3. Lan truyền ngược\n4. Cập nhật trọng số\nMã Python\nimport torch\nimport torch.nn as nn\nmodel = nn.Sequential(\nnn.Linear(2, 2),\nnn.ReLU(),\nnn.Linear(2, 1)\n)\ncriterion = nn.MSELoss()\noptimizer = torch.optim.SGD(model.parameters(), lr=0.01)\nx = torch.tensor([[1.0, 2.0]])\ny = torch.tensor([[0.0]])\noutput = model(x)\nloss = criterion(output, y)\nloss.backward()\noptimizer.step()\n42\n"
+    },
+    {
+      "page": 53,
+      "text": "5.3 Lan truyền ngược (Backpropagation)\nTóm tắt\n• Cho phép huấn luyện mạng nơ-ron sâu.\n• Sửdụng quy tắc chuỗi đểtính gradient.\n• Được triển khai trong các thư viện hiện đại (vd: PyTorch, TensorFlow).\n43\n"
+    },
+    {
+      "page": 54,
+      "text": "Chapter 5 Neural Networks\n5.4 Hàm kích hoạt (Activation Functions)\nLý thuyết\nHàm kích hoạt giúp mạng nơ-ron có tính phi tuyến.\nMột sốhàm kích hoạt phổbiến:\n• ReLU: f(x) = max(0, x)\n• Sigmoid: f(x) =\n1\n1+e−x\n• Tanh: f(x) = tanh(x)\nMã Python\nimport torch.nn.functional as F\nimport torch\nx = torch.tensor([-1.0, 0.0, 1.0])\nprint(\"ReLU:\", F.relu(x))\nprint(\"Sigmoid:\", torch.sigmoid(x))\nprint(\"Tanh:\", torch.tanh(x))\nTóm tắt\n• Cần thiết đểtạo ranh giới quyết định phức tạp.\n• ReLU thường dùng trong các lớp ẩn.\n• Lựa chọn hàm kích hoạt tùy thuộc vào hành vi và yêu cầu của mô hình.\n44\n"
+    },
+    {
+      "page": 55,
+      "text": "5.5 Hàm mất mát (Cost Functions)\n5.5 Hàm mất mát (Cost Functions)\nLý thuyết\nHàm mất mát dùng đểđo lường sai sốcủa mô hình.\nMột sốhàm mất mát phổbiến:\n• MSE (Sai sốbình phương trung bình):\n1\nn\n∑(yi −ˆyi)2\n• MAE (Sai sốtuyệt đối trung bình):\n1\nn\n∑|yi −ˆyi|\n• Cross Entropy: −∑y log(ˆy)\nMã Python\nimport torch\nimport torch.nn as nn\ny_true = torch.tensor([[1.0], [0.0]])\ny_pred = torch.tensor([[0.8], [0.3]])\nmse = nn.MSELoss()\nprint(\"MSE:\", mse(y_pred, y_true).item())\ny_true_cls = torch.tensor([1])\ny_pred_cls = torch.tensor([[0.1, 0.9]])\nce = nn.CrossEntropyLoss()\nprint(\"Cross Entropy:\", ce(y_pred_cls , y_true_cls).item())\nTóm tắt\n• MSE và MAE thường dùng cho bài toán hồi quy.\n• Cross Entropy dùng cho bài toán phân loại.\n• Việc lựa chọn hàm mất mát ảnh hưởng đến hiệu quảhọc của mô hình.\n45\n"
+    },
+    {
+      "page": 56,
+      "text": ""
+    },
+    {
+      "page": 57,
+      "text": "Chapter 6\nDeep learning\n6.1 Perceptron Đa Lớp (MLP)\nx1\nx2\nx3\nh1\nh2\nh3\nh4\ny1\ny2\nLớp đầu vào\nLớp ẩn\nLớp đầu ra\nFigure 6.1: Kiến trúc MLP cơ bản với các lớp kết nối đầy đủ(fully connected).\n6.1.1 MLP là gì?\nPerceptron Đa Lớp (Multi-Layer Perceptron - MLP) là:\n• Một loại mạng nơ-ron nhân tạo cơ bản nhất\n• Gồm nhiều lớp nơ-ron kết nối liên tiếp\n• Có khảnăng học mối quan hệphi tuyến giữa dữliệu đầu vào và đầu\n47\n"
+    },
+    {
+      "page": 58,
+      "text": "Chapter 6 Deep learning\nra\n6.1.2 Các thành phần chính\nTầng ẩn (Hidden Layers)\n−3\n−2\n−1\n1\n2\n3\n1\n2\n3\nĐầu vào\nĐầu ra\nHàm kích hoạt ReLU\nFigure 6.2: Hàm kích hoạt ReLU (Rectified Linear Unit) được dùng phổbiến trong\ncác tầng ẩn.\n• Thêm tính phi tuyến vào mạng\n• Các hàm kích hoạt phổbiến:\n– ReLU: f(x) = max(0, x)\n– Sigmoid: f(x) =\n1\n1+e−x\n– Tanh: f(x) = ex−e−x\nex+e−x\nLan truyền tiến (Forward Propagation)\nQuá trình tính toán đầu ra:\nh = σ(W1x + b1)\ny = σ(W2h + b2)\nTrong đó:\n• W1, W2: Trọng số\n• b1, b2: Độchệch (bias)\n48\n"
+    },
+    {
+      "page": 59,
+      "text": "6.1 Perceptron Đa Lớp (MLP)\n• σ: Hàm kích hoạt\n6.1.3 Cài đặt MLP bằng PyTorch\nimport torch\nimport torch.nn as nn\nclass MLP(nn.Module):\ndef __init__(self, input_size=784, hidden_size=128,\nnum_classes=10):\nsuper().__init__()\nself.fc1 = nn.Linear(input_size , hidden_size)\nself.relu = nn.ReLU()\nself.fc2 = nn.Linear(hidden_size , num_classes)\ndef forward(self, x):\nx = x.view(x.size(0), -1)\nout = self.fc1(x)\nout = self.relu(out)\nout = self.fc2(out)\nreturn out\nmodel = MLP(input_size=784, hidden_size=256, num_classes=10)\ncriterion = nn.CrossEntropyLoss()\noptimizer = torch.optim.SGD(model.parameters(), lr=0.01)\n6.1.4 Huấn luyện MLP trên MNIST\nfrom torchvision import datasets , transforms\ntransform = transforms.Compose([transforms.ToTensor()])\ntrain_data = datasets.MNIST(root='data', train=True, transform\n=transform , download=True)\ntrain_loader = torch.utils.data.DataLoader(train_data ,\nbatch_size=64, shuffle=True)\n49\n"
+    },
+    {
+      "page": 60,
+      "text": "Chapter 6 Deep learning\nfor epoch in range(10):\nfor images, labels in train_loader:\noutputs = model(images)\nloss = criterion(outputs , labels)\noptimizer.zero_grad()\nloss.backward()\noptimizer.step()\nprint(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')\n2\n4\n6\n8\n10\n0\n1\n2\nEpoch\nMất mát (Loss)\nQuá trình huấn luyện\nFigure 6.3: Biểu đồmất mát giảm dần qua các epoch khi huấn luyện MLP.\n6.1.5 Tại sao MLP hoạt động?\nĐịnh lý xấp xỉphổquát\nMLP với một tầng ẩn đủlớn có thểxấp xỉbất kỳhàm liên tục nào với độ\nchính xác tùy ý.\nBackpropagation\nThuật toán lan truyền ngược giúp:\n1. Tính toán gradient của hàm mất mát\n50\n"
+    },
+    {
+      "page": 61,
+      "text": "6.1 Perceptron Đa Lớp (MLP)\n2. Cập nhật trọng sốbằng gradient descent\nCông thức cập nhật trọng số:\nWnew = Wold −η · ∂L\n∂W\nvới η là tốc độhọc.\n6.1.6 Mẹo thực hành cho cuộc thi\n• Khởi tạo trọng sốbằng nn.init.kaiming_normal_\n• Thửnhiều hàm kích hoạt khác nhau (ReLU thường tốt nhất)\n• Điều chỉnh sốnơ-ron trong tầng ẩn (thường 64-512)\n• Thêm Batch Normalization đểổn định huấn luyện\n• Sửdụng Dropout đểtránh overfitting\nVí dụđiều chỉnh kiến trúc:\nclass BetterMLP(nn.Module):\ndef __init__(self):\nsuper().__init__()\nself.net = nn.Sequential(\nnn.Linear(784, 512),\nnn.BatchNorm1d(512),\nnn.ReLU(),\nnn.Dropout(0.2),\nnn.Linear(512, 256),\nnn.ReLU(),\nnn.Linear(256, 10)\n)\n6.1.7 Bài tập thực hành\n1. Triển khai MLP nhận diện chữsốMNIST (đạt >98% accuracy)\n2. Thửnghiệm với sốlượng tầng ẩn khác nhau (1-5 tầng)\n3. So sánh các hàm kích hoạt (ReLU vs Sigmoid vs Tanh)\n51\n"
+    },
+    {
+      "page": 62,
+      "text": "Chapter 6 Deep learning\n4. Áp dụng MLP cho bài toán hồi quy (dựđoán giá nhà)\nLưu ý quan trọng: MLP phù hợp cho dữliệu có cấu trúc (tabular data)\nnhưng không hoạt động tốt với ảnh (nên dùng CNN) hoặc chuỗi thời gian\n(nên dung RNN/LSTM).\n6.2 Stochastic Gradient Descent (SGD)\nvà Mini-Batch Gradient Descent\n0\n2\n4\n6\n8\n10\n12\n14\n16\n1\n2\nSốlần cập nhật\nGiá trịhàm mất mát\nSo sánh các phương pháp Gradient Descent\nBatch GD\nMini-Batch GD\nSGD\nFigure 6.4: So sánh tốc độhội tụcủa các biến thểGradient Descent khác nhau.\nBatch GD cập nhật mỗi epoch, Mini-Batch GD cập nhật sau mỗi batch,\nSGD cập nhật liên tục từng điểm dữliệu.\n6.2.1 Tổng quan vềGradient Descent\nGradient Descent (GD) là thuật toán tối ưu cơ bản nhất trong deep learning,\nhoạt động bằng cách:\n• Tính gradient (độdốc) của hàm mất mát\n• Cập nhật tham sốtheo hướng ngược gradient\n52\n"
+    },
+    {
+      "page": 63,
+      "text": "6.2 Stochastic Gradient Descent (SGD)\nvà Mini-Batch Gradient Descent\n• Lặp lại cho đến khi hội tụ\nCông thức cập nhật:\nθt+1 = θt −η · ∇θJ(θ)\nTrong đó:\n• θ: Các tham sốcủa mô hình\n• η: Tốc độhọc (learning rate)\n• ∇θJ(θ): Gradient của hàm mất mát\n6.2.2 Các biến thểchính\nBatch Gradient Descent\n• Tính toán gradient trên TOÀN BỘtập dữliệu\n• Ưu điểm: Hướng cập nhật chính xác\n• Nhược điểm: Chậm với dữliệu lớn\nStochastic Gradient Descent (SGD)\n• Tính toán gradient trên TỪNG điểm dữliệu\n• Ưu điểm:\n– Tốc độnhanh\n– Thoát cực tiểu địa phương tốt\n• Nhược điểm:\n– Nhiễu lớn, dao động mạnh\n– Cần lịch trình learning rate\noptimizer = torch.optim.SGD(model.parameters(), lr=0.01)\nMini-Batch Gradient Descent\n• Cân bằng giữa Batch GD và SGD\n53\n"
+    },
+    {
+      "page": 64,
+      "text": "Chapter 6 Deep learning\n• Tính gradient trên từng batch nhỏ(thường 32-256 mẫu)\n• Phổbiến nhất trong thực tế\nfrom torch.utils.data import DataLoader\ntrain_loader = DataLoader(dataset , batch_size=64, shuffle=True\n)\nfor epoch in range(epochs):\nfor batch_idx , (data, target) in enumerate(train_loader):\noptimizer.zero_grad()\noutput = model(data)\nloss = criterion(output, target)\nloss.backward()\noptimizer.step()\nBatch 1\nBatch 2\nMini-Batch = Nhóm các điểm dữliệu được xửlý cùng lúc\nFigure 6.5: Minh họa Mini-Batch GD: Dữliệu được chia thành các batch nhỏ, mỗi\nlần cập nhật sửdụng 1 batch.\n6.2.3 Lựa chọn batch size\n• Batch nhỏ(1-32):\n– Tốc độhội tụnhanh hơn\n– Tiếng ồn giúp thoát cực tiểu địa phương\n• Batch lớn (256+):\n54\n"
+    },
+    {
+      "page": 65,
+      "text": "6.3 Phương pháp Momentum\n(Adam và AdamW)\n– Tận dụng tốt GPU\n– Gradient ổn định hơn\n6.3 Phương pháp Momentum\n(Adam và AdamW)\n1\n2\n3\n4\n5\n6\n7\n0\n1\n2\nSốbước huấn luyện\nGiá trịhàm mất mát\nSo sánh các phương pháp tối ưu\nSGD\nAdam\nAdamW\nFigure 6.6: So sánh tốc độhội tụcủa các bộtối ưu hóa khác nhau. Adam và\nAdamW thường hội tụnhanh hơn SGD thông thường.\n6.3.1 Tại sao cần phương pháp Momentum?\nCác vấn đềvới SGD thông thường:\n• Dao động nhiều ởcác vùng hẹp\n• Tốc độhội tụchậm\n• Nhạy cảm với learning rate\nMomentum giúp:\n• Giảm dao động bằng cách ”tích lũy” gradient\n55\n"
+    },
+    {
+      "page": 66,
+      "text": "Chapter 6 Deep learning\n• Tăng tốc hội tụởhướng ổn định\n• Vượt qua cực tiểu địa phương tốt hơn\n6.3.2 Các phương pháp Momentum phổbiến\nAdam (Adaptive Moment Estimation)\n• Kết hợp Momentum và RMSprop\n• Tựđộng điều chỉnh learning rate cho từng tham số\n• Công thức cập nhật:\nmt = β1mt−1 + (1 −β1)gt\n(Momentum)\nvt = β2vt−1 + (1 −β2)g2\nt\n(RMSprop)\nˆmt =\nmt\n1 −βt\n1\nˆvt =\nvt\n1 −βt\n2\nθt+1 = θt −η\nˆmt\n√ˆvt + ϵ\noptimizer = torch.optim.Adam(\nmodel.parameters(),\nlr=0.001,\nbetas=(0.9, 0.999),\neps=1e-8\n)\nAdamW (Adam with Weight Decay)\n• Cải tiến của Adam với weight decay đúng cách\n• Giúp mô hình tổng quát hóa tốt hơn\n• Đặc biệt hiệu quảvới Transformer và CNN lớn\n56\n"
+    },
+    {
+      "page": 67,
+      "text": "6.3 Phương pháp Momentum\n(Adam và AdamW)\noptimizer = torch.optim.AdamW(\nmodel.parameters(),\nlr=0.001,\nweight_decay=0.01\n)\nBước huấn luyện\nLearning rate hiệu dụng\nSGD\nAdam (tựđộng điều chỉnh)\nAdam giảm learning rate tựđộng cho các tham sốphổbiến\nFigure 6.7: Adam tựđộng điều chỉnh learning rate khác nhau cho từng tham số.\n6.3.3 Khi nào sửdụng Adam/AdamW?\n• Adam phù hợp khi:\n– Dữliệu có nhiều nhiễu\n– Cần hội tụnhanh\n– Không biết chọn learning rate nào\n• AdamW tốt hơn khi:\n– Mô hình lớn, dễoverfitting\n– Cần regularization mạnh\n– Huấn luyện Transformer\n• Không nên dùng khi:\n– Dữliệu cực kỳnhỏ\n57\n"
+    },
+    {
+      "page": 68,
+      "text": "Chapter 6 Deep learning\n– Cần kết quảtái tạo chính xác\n6.3.4 Thực hành với PyTorch\nimport torch\nfrom torch.optim import Adam, AdamW\nmodel = torch.nn.Sequential(\ntorch.nn.Linear(784, 256),\ntorch.nn.ReLU(),\ntorch.nn.Linear(256, 10)\n)\noptimizer = AdamW(\nmodel.parameters(),\nlr=1e-3,\nbetas=(0.9, 0.999),\neps=1e-8,\nweight_decay=0.01\n)\nfor epoch in range(10):\nfor batch_idx , (data, target) in enumerate(train_loader):\noutputs = model(data)\nloss = criterion(outputs , target)\noptimizer.zero_grad()\nloss.backward()\noptimizer.step()\nprint(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')\n6.3.5 Mẹo thi đấu IOAI\n• Luôn thửAdam/AdamW trước khi dùng SGD\n• Learning rate mặc định 0.001 thường hoạt động tốt\n58\n"
+    },
+    {
+      "page": 69,
+      "text": "6.4 Tốc độhọc thích ứng\n(Adaptive Learning Rates)\n• Giảm learning rate 10 lần nếu loss không giảm\n• Dùng weight decay (0.01-0.1) đểtránh overfitting\n• Đối với bài toán nhỏ, có thểthửSGD + Momentum\n• Ghi lại lịch sửloss đểso sánh các optimizer\nCâu hỏi kiểm tra:\n1. Adam khác SGD như thếnào?\n2. Tại sao AdamW tốt hơn Adam cho mô hình lớn?\n3. Khi nào không nên sửdụng Adam?\nAdam/AdamW\nSGD\n• Tựđộng điều chỉnh\nLR\n• Hội tụnhanh\n• Ít tuning\n• Kiểm soát tốt hơn\n• Kết quảổn định\n• Cần tuning LR\nFigure 6.8: So sánh đặc điểm giữa Adam và SGD.\n6.4 Tốc độhọc thích ứng\n(Adaptive Learning Rates)\n6.4.1 Tại sao cần tốc độhọc thích ứng?\n• Vấn đề:\n– Learning rate cốđịnh có thểquá lớn (dao động) hoặc quá nhỏ\n(chậm hội tụ)\n59\n"
+    },
+    {
+      "page": 70,
+      "text": "Chapter 6 Deep learning\n1\n2\n3\n4\n5\n0\n5 · 10−2\n0.1\nSốepoch\nLearning rate\nSo sánh các phương pháp điều chỉnh learning rate\nCốđịnh\nStep Decay\nLinear Decay\nExponential Decay\nFigure 6.9: Các phương pháp điều chỉnh learning rate phổbiến. Tốc độhọc thích\nứng giúp mô hình hội tụtốt hơn.\n– Độnhạy gradient khác nhau giữa các tham số\n• Giải pháp:\n– Tựđộng điều chỉnh learning rate trong quá trình huấn luyện\n– Áp dụng learning rate khác nhau cho từng tham số\n6.4.2 Các phương pháp chính\nLearning Rate Schedulers\nscheduler = torch.optim.lr_scheduler.StepLR(\noptimizer ,\nstep_size=30,\ngamma=0.1\n)\nscheduler = torch.optim.lr_scheduler.ExponentialLR(\noptimizer ,\ngamma=0.9\n60\n"
+    },
+    {
+      "page": 71,
+      "text": "6.4 Tốc độhọc thích ứng\n(Adaptive Learning Rates)\n)\nscheduler = torch.optim.lr_scheduler.CosineAnnealingLR(\noptimizer ,\nT_max=50\n)\n0\n50\n100\n150\n9.94 · 10−2\n9.96 · 10−2\n9.98 · 10−2\n0.1\nEpoch\nLearning Rate\nCosine Annealing Schedule\nFigure 6.10: Cosine Annealing giúm learning rate giảm dần theo dạng sóng cosine,\nthường cho kết quảtốt hơn cách giảm đều.\nAdaptive Optimizers\n• Adam: Kết hợp momentum và điều chỉnh learning rate theo từng tham\nsố\n• RMSprop: Điều chỉnh dựa trên trung bình động của gradient bình\nphương\n• Adagrad: Thích ứng dựa trên lịch sửgradient\noptimizer = torch.optim.Adam(model.parameters(), lr=0.001)\nscheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(\noptimizer ,\nmode='min',\nfactor=0.1,\n61\n"
+    },
+    {
+      "page": 72,
+      "text": "Chapter 6 Deep learning\npatience=5\n)\n6.4.3 Thực hành với PyTorch\nimport torch\nfrom torch.optim import SGD\nfrom torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau\nmodel = torch.nn.Linear(10, 2)\noptimizer = SGD(model.parameters(), lr=0.1)\nscheduler = StepLR(optimizer , step_size=30, gamma=0.1)\nfor epoch in range(100):\ntrain(...)\nval_loss = validate(...)\nscheduler.step()\nprint(f'Epoch {epoch+1}, LR: {optimizer.param_groups[0][\"\nlr\"]:.6f}, Loss: {val_loss:.4f}')\n6.4.4 Mẹo thi đấu IOAI\n• Luôn bắt đầu với learning rate nhỏ(0.001-0.01) khi dùng Adam\n• ThửCosineAnnealing cho bài toán vision\n• Dùng ReduceLROnPlateau khi loss bị”kẹt”\n• Giám sát learning rate trong quá trình huấn luyện\n• Kết hợp warmup (tăng LR dần) cho mô hình lớn\n• Ghi lại lịch sửLR và loss đểphân tích\nCâu hỏi kiểm tra:\n62\n"
+    },
+    {
+      "page": 73,
+      "text": "6.5 SựHội Tụvà Tốc ĐộHọc\nTham số1\nTham số2\nĐường đi của gradient\nSGD thông thường\nSGD với LR thích ứng\nFigure 6.11: Minh họa đường đi tối ưu với learning rate thích ứng (đỏ) so với SGD\nthông thường (xanh).\n1. Tại sao learning rate thích ứng quan trọng?\n2. Khen nào nên dùng StepLR vs CosineAnnealing?\n3. Làm thếnào đểphát hiện learning rate không phù hợp?\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nLearning rate quá lớn →quá nhỏ\nFigure 6.12: Minh họa phạm vi learning rate từquá lớn (gây dao động) đến quá\nnhỏ(hội tụchậm).\n6.5 SựHội Tụvà Tốc ĐộHọc\n6.5.1 Tốc độhọc là gì?\nTốc độhọc (Learning Rate - LR) là siêu tham sốquan trọng nhất dalam huấn\nluyện mạng nơ-ron, xác định kích thước bước cập nhật trọng số:\nθt+1 = θt −η · ∇J(θt)\n(6.1)\n63\n"
+    },
+    {
+      "page": 74,
+      "text": "Chapter 6 Deep learning\n1\n2\n3\n4\n5\n6\n0\n1\n2\nSốbước huấn luyện\nGiá trịhàm mất mát\nẢnh hưởng của tốc độhọc đến sựhội tụ\nLR tối ưu\nLR quá nhỏ\nLR quá lớn\nFigure 6.13: Biểu đồcho thấy ảnh hưởng của tốc độhọc (Learning Rate - LR) đến\nquá trình hội tụcủa mô hình.\nTrong đó:\n• η: Tốc độhọc\n• ∇J(θt): Gradient của hàm mất mát\n6.5.2 Các vấn đềvềhội tụ\nLR quá lớn\n• Mất mát dao động mạnh\n• Không hội tụđược\n• Có thểbị”nổgradient”\nLR quá nhỏ\n• Huấn luyện chậm\n• Mắc kẹt ởcực tiểu địa phương\n64\n"
+    },
+    {
+      "page": 75,
+      "text": "6.5 SựHội Tụvà Tốc ĐộHọc\n• Không tận dụng được khảnăng tính toán\nw\nJ(w)\nLR tối ưu\nLR quá nhỏ\nLR quá lớn\nFigure 6.14: Minh họa ảnh hưởng của tốc độhọc lên quá trình tối ưu hóa.\n6.5.3 Cách chọn LR phù hợp\nPhương pháp thửnghiệm\nlearning_rates = [1e-5, 1e-4, 1e-3, 1e-2]\nfor lr in learning_rates:\noptimizer = torch.optim.SGD(model.parameters(), lr=lr)\ntrain(model, optimizer)\naccuracy = evaluate(model)\nprint(f\"LR: {lr}, Accuracy: {accuracy:.2f}\")\nLearning Rate Finder\nfrom torch_lr_finder import LRFinder\noptimizer = torch.optim.Adam(model.parameters(), lr=1e-7)\ncriterion = nn.CrossEntropyLoss()\nlr_finder = LRFinder(model, optimizer , criterion)\nlr_finder.range_test(train_loader , end_lr=1, num_iter=100)\nlr_finder.plot()\nlr_finder.reset()\n65\n"
+    },
+    {
+      "page": 76,
+      "text": "Chapter 6 Deep learning\n6.5.4 Theo dõi sựhội tụ\ndef train(model, optimizer , n_epochs=10):\nlosses = []\nfor epoch in range(n_epochs):\nmodel.train()\nfor inputs, targets in train_loader:\noptimizer.zero_grad()\noutputs = model(inputs)\nloss = criterion(outputs , targets)\nloss.backward()\noptimizer.step()\nlosses.append(l loss.item())\nmodel.eval()\nwith torch.no_grad():\naccuracy = evaluate(model, val_loader)\nprint(f\"Epoch {epoch+1}/{n_epochs} | Loss: {loss.item\n():.4f} | Acc: {accuracy:.2f}\")\nplt.plot(losses)\nplt.xlabel('Iteration')\nplt.ylabel('Loss')\nplt.title('Training Convergence')\nplt.show()\n6.5.5 Mẹo thi đấu IOAI\n• Bắt đầu với LR khoảng 0.001-0.01 cho Adam, 0.1 cho SGD\n• Sửdụng learning rate scheduling\n• Theo dõi biểu đồloss đểphát hiện vấn đềsớm\n• Thửnghiệm với nhiều LR khác nhau\n• Sửdụng warmup cho mô hình lớn\n• Ghi lại tất cảthửnghiệm đểso sánh\n66\n"
+    },
+    {
+      "page": 77,
+      "text": "6.5 SựHội Tụvà Tốc ĐộHọc\n2\n4\n6\n8\n10\n0\n1\n2\nEpoch\nLoss\nBiểu đồhội tụlý tưởng\nFigure 6.15: Biểu đồhội tụlý tưởng với loss giảm dần và ổn định.\nDấu hiệu nhận biết vấn đề:\n• Loss không giảm: LR quá nhỏ\n• Loss dao động mạnh: LR quá lớn\n• Loss giảm rồi tăng: LR cần giảm dần\n1\n2\n3\n4\n5\n6\n7\n0.5\n1\n1.5\n2\nCác dạng biểu đồloss thường gặp\nHội tụtốt\nLR quá nhỏ\nLR quá lớn\nFigure 6.16: Nhận biết vấn đềqua biểu đồloss.\n6.6 Điều chuẩn Trọng số\n67\n"
+    },
+    {
+      "page": 78,
+      "text": "Chapter 6 Deep learning\n(Weight Regularization)\n−6\n−4\n−2\n0\n2\n4\n6\n0\n0.2\n0.4\n0.6\nGiá trịtrọng số\nTần suất\nHiệu ứng của điều chuẩn lên phân bốtrọng số\nCó L2 Regularization\nKhông Regularization\nFigure 6.17: Regularization giúp phân bốtrọng sốtập trung quanh 0, ngăn chặn\ngiá trịquá lớn.\n6.6.1 Tại sao cần điều chuẩn trọng số?\n• Vấn đề:\n– Overfitting: Mô hình học thuộc lòng dữliệu huấn luyện\n– Trọng sốcó giá trịquá lớn\n– Hiệu suất kém trên dữliệu mới\n• Giải pháp:\n– Thêm vào hàm mất mát một thành phần phạt trọng sốlớn\n– Đơn giản nhất: L1/L2 Regularization\n6.6.2 Các phương pháp chính\nL2 Regularization (Weight Decay)\nJnew(θ) = J(θ) + λ\nn\n∑\ni=1\nθ2\ni\n(6.2)\n68\n"
+    },
+    {
+      "page": 79,
+      "text": "6.6 Điều chuẩn Trọng số\n(Weight Regularization)\n• Ưu điểm: Giúp trọng sốnhỏđều\n• Nhược điểm: Không đưa về0 hoàn toàn\nL1 Regularization (Lasso)\nJnew(θ) = J(θ) + λ\nn\n∑\ni=1\n|θi|\n(6.3)\n• Ưu điểm: Tạo sựthưa thớt (đưa một sốtrọng sốvề0)\n• Nhược điểm: Không ổn định với features tương quan cao\n−1\n−0.5\n0.5\n1\n−1\n1\niểm tối ưu\nw1\nw2\nSo sánh L1 và L2 Regularization\nL2 (Ridge)\nL1 (Lasso)\nFigure 6.18: L1 (đỏ) có xu hướng giao với trục tọa độ, tạo tính thưa thớt. L2\n(xanh) tạo phân bốđều.\n6.6.3 Cài đặt trong PyTorch\nWeight Decay với Optimizer\noptimizer = torch.optim.SGD(\nmodel.parameters(),\nlr=0.01,\nweight_decay=0.01\n)\nTựimplement Regularization\n69\n"
+    },
+    {
+      "page": 80,
+      "text": "Chapter 6 Deep learning\ndef l2_regularization(model, lambda_l2=0.01):\nreg_loss = 0.0\nfor param in model.parameters():\nreg_loss += torch.norm(param, p=2)\nreturn lambda_l2 * reg_loss\nloss = criterion(outputs , labels) + l2_regularization(model)\n6.6.4 Khi nào nên sửdụng?\nPhương pháp\nTính chất\nỨng dụng\nL1 Regularization\nTạo sựthưa thớt\nFeature selection\nL2 Regularization\nTrọng sốnhỏđều\nNgăn overfitting\nElastic Net\nKết hợp L1 + L2\nDữliệu nhiều features\n0\n2\n4\n6\n8\n10\n0\n50\n100\nMức regularization (λ)\nAccuracy\nHiệu suất với các mức weight decay khác nhau\nValidation Accuracy\nTraining Accuracy\nFigure 6.19: Tác động của mức regularization (λ) lên hiệu suất. Giá trịλ quá lớn\nlàm giảm độchính xác cảtập train và validation.\n6.6.5 Mẹo thi đấu IOAI\n• Bắt đầu với weight_decay = 0.01 và điều chỉnh theo log scale\n• Kết hợp với Dropout và BatchNorm sẽhiệu quảhơn\n70\n"
+    },
+    {
+      "page": 81,
+      "text": "6.7 Dừng Sớm\n(Early Stopping)\n• Kiểm tra phân bốtrọng sốsau huấn luyện\n• ThửL1 nếu muốn làm thưa mô hình\n• Ghi lại λ đã thửđểso sánh hiệu quả\nDấu hiệu nhận biết:\n• Training loss « Validation loss →Cần tăng λ\n• Cảhai loss đều cao →Cần giảm λ\n• Độchính xác tăng rồi giảm khi tăng λ →Chọn λ tại điểm cao nhất trên\nvalidation\ndef plot_weights(model):\nweights = []\nfor param in model.parameters():\nif param.dim() > 1:\nweights.extend(param.view(-1).tolist())\nplt.hist(weights , bins=50)\nplt.title(\"Phan bo trong so sau huan luyen\")\nplt.xlabel(\"Gia tri trong so\")\nplt.ylabel(\"Tan suat\")\nplt.show()\nplot_weights(model)\n6.7 Dừng Sớm\n(Early Stopping)\n6.7.1 Early Stopping là gì?\nEarly Stopping là kỹthuật ngăn chặn overfitting bằng cách:\n• Theo dõi hiệu suất trên tập validation\n• Dừng huấn luyện khi hiệu suất không cải thiện\n• Lưu lại trọng sốtốt nhất\n71\n"
+    },
+    {
+      "page": 82,
+      "text": "Chapter 6 Deep learning\n0\n2\n4\n6\n8\n10\n12\n14\n16\n0.5\n1\n1.5\n2\nm dừng tốt nhất\nEpoch\nLoss\nHiện tượng overfitting và điểm dừng tối ưu\nTập huấn luyện\nTập validation\nFigure 6.20: Khi loss tập validation bắt đầu tăng trong khi loss tập train tiếp tục\ngiảm, đây là dấu hiệu overfitting và cần áp dụng early stopping.\n6.7.2 Tại sao cần Early Stopping?\n• Tiết kiệm thời gian: Không cần huấn luyện quá lâu\n• Ngăn overfitting: Dừng trước khi mô hình học thuộc dữliệu\n• Dễtriển khai: Không cần thay đổi kiến trúc mô hình\n6.7.3 Cài đặt trong PyTorch\nCách 1: Tựimplement\nimport numpy as np\nimport torch\nclass EarlyStopping:\ndef __init__(self, patience=5, delta=0):\nself.patience = patience\nself.delta = delta\nself.counter = 0\nself.best_score = None\n72\n"
+    },
+    {
+      "page": 83,
+      "text": "6.7 Dừng Sớm\n(Early Stopping)\nself.early_stop = False\ndef __call__(self, val_loss , model):\nscore = -val_loss\nif self.best_score is None:\nself.best_score = score\nself.save_checkpoint(val_loss , model)\nelif score < self.best_score + self.delta:\nself.counter += 1\nprint(f'EarlyStopping counter: {self.counter}/{\nself.patience}')\nif self.counter >= self.patience:\nself.early_stop = True\nelse:\nself.best_score = score\nself.save_checkpoint(val_loss , model)\nself.counter = 0\ndef save_checkpoint(self, val_loss , model):\ntorch.save(model.state_dict(), 'checkpoint.pt')\nprint(f'Validation loss decreased ({self.best_score:.6\nf} --> {-val_loss:.6f}). Saving model...')\nCách 2: Sửdụng Callback\nfrom pytorch_lightning.callbacks import EarlyStopping\nearly_stop_callback = EarlyStopping(\nmonitor='val_loss',\npatience=5,\nmode='min',\nverbose=True\n)\ntrainer = Trainer(callbacks=[early_stop_callback])\n73\n"
+    },
+    {
+      "page": 84,
+      "text": "Chapter 6 Deep learning\nBắt đầu epoch\nHuấn luyện\nĐánh giá validation\nCải thiện?\nLưu model\nTăng counter\nCounter ≥Patience?\nDừng\nCó\nKhông\nCó\nKhông\nFigure 6.21: Lưu đồthuật toán Early Stopping. Quá trình sẽdừng khi không cải\nthiện sau một sốepoch nhất định.\n74\n"
+    },
+    {
+      "page": 85,
+      "text": "6.7 Dừng Sớm\n(Early Stopping)\n6.7.4 Cách sửdụng hiệu quả\nChọn tham số\n• Patience: Thường từ5-20 epoch\n• Delta: Ngưỡng cải thiện tối thiểu (ví dụ: 0.001)\n• Theo dõi: Validation loss hoặc độchính xác\nTraining loop với Early Stopping\nearly_stopping = EarlyStopping(patience=7, delta=0.001)\nfor epoch in range(100):\ntrain_loss = train_one_epoch(model, train_loader)\nval_loss = evaluate(model, val_loader)\nearly_stopping(val_loss , model)\nif early_stopping.early_stop:\nprint(\"Early stopping triggered!\")\nbreak\nmodel.load_state_dict(torch.load('checkpoint.pt'))\n6.7.5 Mẹo thi đấu IOAI\n• Luôn sửdụng validation set riêng biệt\n• Theo dõi cảloss và độchính xác\n• Kết hợp với Model Checkpointing\n• Thửnghiệm với các patience khác nhau\n• Vẽbiểu đồloss đểxác định điểm dừng phù hợp\nDấu hiệu nhận biết:\n• Validation loss tăng liên tục trong khi training loss giảm\n75\n"
+    },
+    {
+      "page": 86,
+      "text": "Chapter 6 Deep learning\n• Độchính xác validation không cải thiện sau nhiều epoch\n• Khoảng cách giữa training loss và validation loss lớn\n0\n2\n4\n6\n8\n10\n12\n0.6\n0.8\n1\nDừng sớm quá\nTối ưu\nEpoch\nValidation Loss\nLựa chọn patience phù hợp\nFigure 6.22: Ví dụvềlựa chọn patience. Nếu chọn patience quá nhỏcó thểdừng\nkhi model chưa hội tụtốt.\n6.8 Dropout và Gaussian Noise\n6.8.1 Dropout là gì?\nDropout là kỹthuật regularization:\n• Cách hoạt động: Tắt ngẫu nhiên các neuron trong quá trình huấn\nluyện\n• Tỉlệdropout (p): Xác suất một neuron bịtắt (thường 0.2-0.5)\n• Ưu điểm:\n– Ngăn chặn overfitting\n– Tạo ”ensemble” nhiều mạng con\n– Giảm sựphụthuộc giữa các neuron\nCài đặt Dropout trong PyTorch\n76\n"
+    },
+    {
+      "page": 87,
+      "text": "6.8 Dropout và Gaussian Noise\nInput\nDropout\nOutput\nFigure 6.23: Minh họa Dropout trong mạng nơ-ron. Các neuron bịtắt ngẫu nhiên\n(màu đỏ) trong quá trình huấn luyện.\nimport torch.nn as nn\nclass Net(nn.Module):\ndef __init__(self):\nsuper(Net, self).__init__()\nself.fc1 = nn.Linear(784, 256)\nself.dropout = nn.Dropout(p=0.3)\n# 30% dropout\nself.fc2 = nn.Linear(256, 10)\ndef forward(self, x):\nx = nn.ReLU()(self.fc1(x))\nx = self.dropout(x)\n# Only active during training\nx = self.fc2(x)\nreturn x\n6.8.2 Gaussian Noise\nÝ tưởng cơ bản\n• Thêm nhiễu ngẫu nhiên vào:\n77\n"
+    },
+    {
+      "page": 88,
+      "text": "Chapter 6 Deep learning\n– Đầu vào (input noise)\n– Các lớp ẩn (hidden layer noise)\n• Tác dụng tương tựDropout:\n– Tăng tính tổng quát\n– Giúp mô hình robust hơn\nCài đặt Gaussian Noise\nclass GaussianNoise(nn.Module):\ndef __init__(self, std=0.1):\nsuper().__init__()\nself.std = std\ndef forward(self, x):\nif self.training:\nnoise = torch.randn_like(x) * self.std\nreturn x + noise\nreturn x\nclass NetWithNoise(nn.Module):\ndef __init__(self):\nsuper().__init__()\nself.noise1 = GaussianNoise(0.1)\nself.fc1 = nn.Linear(784, 256)\nself.noise2 = GaussianNoise(0.05)\nself.fc2 = nn.Linear(256, 10)\ndef forward(self, x):\nx = self.noise1(x)\nx = nn.ReLU()(self.fc1(x))\nx = self.noise2(x)\nx = self.fc2(x)\nreturn x\n78\n"
+    },
+    {
+      "page": 89,
+      "text": "6.8 Dropout và Gaussian Noise\n1\n2\n3\n4\n5\n6\n7\n8\n0.4\n0.6\n0.8\n1\n1.2\nEpoch\nLoss\nẢnh hưởng của Dropout và Gaussian Noise\nNo Regularization\nDropout\nGaussian Noise\nFigure 6.24: So sánh quá trình huấn luyện với các phương pháp regularization\nkhác nhau.\n6.8.3 Khi nào sửdụng?\nDropout phù hợp khi\n• Mạng có nhiều lớp (deep networks)\n• Kích thước tập huấn luyện nhỏ\n• Cần giảm overfitting\n• Dùng với Fully Connected Layers\nGaussian Noise tốt hơn khi\n• Làm việc với dữliệu nhiễu (ảnh, âm thanh)\n• Xây dựng Autoencoders\n• Dùng với các kiến trúc nhạy cảm với Dropout (RNN)\n6.8.4 Mẹo thi đấu IOAI\n• Bắt đầu với dropout rate 0.3-0.5 cho FC layers\n• Không dùng dropout sau layer cuối cùng\n79\n"
+    },
+    {
+      "page": 90,
+      "text": "Chapter 6 Deep learning\nMức độRegularization\nHiệu quả\nDropout\nGaussian Noise\nĐiểm tối ưu\nFigure 6.25: Mối quan hệgiữa mức độregularization và hiệu quả.\nQuá nhiều\nregularization có thểlàm giảm hiệu suất.\n• Độlệch chuẩn (std) của Gaussian Noise thường 0.05-0.2\n• Kết hợp với BatchNorm đểđạt hiệu quảtốt hơn\n• Giảm dropout rate khi tăng kích thước mạng\n• Với CNN: Dùng SpatialDropout thay vì Dropout thông thường\n# Spatial Dropout for CNNs (drops entire channels)\nclass CNN(nn.Module):\ndef __init__(self):\nsuper().__init__()\nself.conv1 = nn.Conv2d(3, 32, 3)\nself.dropout = nn.Dropout2d(p=0.2)\n# Spatial Dropout\nself.conv2 = nn.Conv2d(32, 64, 3)\ndef forward(self, x):\nx = self.conv1(x)\nx = self.dropout(x)\nx = self.conv2(x)\nreturn x\nCâu hỏi kiểm tra:\n1. Tại sao không dùng Dropout trong quá trình test?\n2. Khi nào nên dùng Gaussian Noise thay cho Dropout?\n80\n"
+    },
+    {
+      "page": 91,
+      "text": "6.9 Khởi tạo Trọng số\n(Weight Initialization)\n3. Làm thếnào đểchọn dropout rate phù hợp?\n6.9 Khởi tạo Trọng số\n(Weight Initialization)\n−2\n−1\n0\n1\n2\n0.2\n0.4\n0.6\n0.8\nGiá trịtrọng số\nMật độxác suất\nPhân bốtrọng sốvới các phương pháp khác nhau\nXavier Normal\nXavier Uniform\nKaiming Normal\nFigure 6.26: Các phương pháp khởi tạo trọng sốkhác nhau tạo ra phân bốgiá trị\nkhác nhau.\n6.9.1 Tại sao cần khởi tạo đúng cách?\nKhởi tạo trọng sốảnh hưởng lớn đến:\n• Tốc độhội tụcủa mô hình\n• Hiệu suất cuối cùng\n• Vấn đềvanishing/exploding gradients\n6.9.2 Các phương pháp phổbiến\nKhởi tạo ngẫu nhiên đơn giản\n81\n"
+    },
+    {
+      "page": 92,
+      "text": "Chapter 6 Deep learning\nimport torch.nn as nn\nlayer = nn.Linear(100, 50)\nnn.init.uniform_(layer.weight, -0.1, 0.1)\nnn.init.zeros_(layer.bias)\nXavier/Glorot Initialization\n• Phù hợp cho hàm kích hoạt Sigmoid/Tanh\n• Công thức: W ∼U(−\n√\n6\nnin+nout ,\n√\n6\nnin+nout )\n# Xavier Uniform\nnn.init.xavier_uniform_(layer.weight)\n# Xavier Normal\nnn.init.xavier_normal_(layer.weight)\nKaiming/He Initialization\n• Phù hợp cho ReLU và biến thể\n• Công thức: W ∼N(0,\n√\n2\nnin )\n# Kaiming Normal cho ReLU\nnn.init.kaiming_normal_(layer.weight, mode='fan_in',\nnonlinearity='relu')\n# Kaiming Uniform cho LeakyReLU\nnn.init.kaiming_uniform_(layer.weight, mode='fan_out',\nnonlinearity='leaky_relu')\n6.9.3 Thực hành với PyTorch\nclass NeuralNet(nn.Module):\ndef __init__(self, input_size , hidden_size , output_size):\nsuper(NeuralNet , self).__init__()\n82\n"
+    },
+    {
+      "page": 93,
+      "text": "6.9 Khởi tạo Trọng số\n(Weight Initialization)\nself.fc1 = nn.Linear(input_size , hidden_size)\nself.relu = nn.ReLU()\nself.fc2 = nn.Linear(hidden_size , output_size)\n# Khoi tao trong so\nself._initialize_weights()\ndef _initialize_weights(self):\n# Kaiming initialization cho layer co ReLU\nnn.init.kaiming_normal_(self.fc1.weight , mode='fan_in'\n, nonlinearity='relu')\nnn.init.zeros_(self.fc1.bias)\n# Xavier initialization cho output layer\nnn.init.xavier_normal_(self.fc2.weight)\nnn.init.zeros_(self.fc2.bias)\ndef forward(self, x):\nout = self.fc1(x)\nout = self.relu(out)\nout = self.fc2(out)\nreturn out\n# Model co 784 dau vao, 256 nut an, 10 dau ra\nmodel = NeuralNet(784, 256, 10)\n6.9.4 Mẹo thi đấu IOAI\n• Luôn khởi tạo trọng sốthay vì đểmặc định\n• Với ReLU: Dùng Kaiming Normal/Uniform\n• Với Sigmoid/Tanh: Dùng Xavier Normal/Uniform\n• Khởi tạo bias bằng 0 hoặc giá trịnhỏ\n• Kiểm tra phân bốtrọng sốsau khởi tạo\nCâu hỏi kiểm tra:\n1. Tại sao không nên khởi tạo tất cảtrọng sốbằng 0?\n83\n"
+    },
+    {
+      "page": 94,
+      "text": "Chapter 6 Deep learning\n1\n2\n3\n4\n5\n6\n0.5\n1\n1.5\n2\nEpoch\nLoss\nTốc độhội tụvới các phương pháp khởi tạo\nKaiming Normal\nXavier Normal\nUniform [-0.1,0.1]\nFigure 6.27: So sánh tốc độhội tụvới các phương pháp khởi tạo khác nhau. Kaim-\ning thường cho kết quảtốt hơn với ReLU.\n2. Khi nào nên dùng Xavier thay vì Kaiming?\n3. Làm sao đểkhởi tạo một lớp Conv2d trong CNN?\n6.10 Chuẩn hóa theo Batch\n(Batch Normalization)\nHuấn luyện\nĐộchính xác\nKhông BatchNorm\nCó BatchNorm\nFigure 6.28: BatchNorm giúp mô hình hội tụnhanh hơn và ổn định hơn.\n84\n"
+    },
+    {
+      "page": 95,
+      "text": "6.10 Chuẩn hóa theo Batch\n(Batch Normalization)\n6.10.1 BatchNorm là gì?\nBatch Normalization là kỹthuật:\n• Chuẩn hóa đầu vào của mỗi tầng\n• Tính trung bình và phương sai theo từng batch\n• Áp dụng scale (γ) và shift (β) học được\nCông thức:\ny = γ ·\nx −µ\n√\nσ2 + ϵ\n+ β\n(6.4)\n6.10.2 Tại sao cần BatchNorm?\n• Giảm Internal Covariate Shift: Cân bằng phân phối đầu vào giữa\ncác tầng\n• Cho phép learning rate lớn hơn: Huấn luyện ổn định hơn\n• Giảm phụthuộc vào khởi tạo trọng số\n• Hoạt động như regularizer: Giảm overfitting\nInput\nLinear\nBatchNorm\nReLU\nOutput\nThường đặt sau tầng Linear, trước Activation\nFigure 6.29: Vịtrí thường dùng của BatchNorm trong mạng nơ-ron.\n6.10.3 Cài đặt trong PyTorch\nCho mạng Fully Connected\nimport torch.nn as nn\nclass Net(nn.Module):\ndef __init__(self):\nsuper(Net, self).__init__()\nself.fc1 = nn.Linear(784, 256)\n85\n"
+    },
+    {
+      "page": 96,
+      "text": "Chapter 6 Deep learning\nself.bn1 = nn.BatchNorm1d(256)\n# BatchNorm cho 1D\nself.fc2 = nn.Linear(256, 10)\ndef forward(self, x):\nx = self.fc1(x)\nx = self.bn1(x)\nx = nn.ReLU()(x)\nx = self.fc2(x)\nreturn x\nCho mạng CNN\nclass CNN(nn.Module):\ndef __init__(self):\nsuper(CNN, self).__init__()\nself.conv1 = nn.Conv2d(3, 16, 3)\nself.bn1 = nn.BatchNorm2d(16)\n# BatchNorm cho 2D\nself.conv2 = nn.Conv2d(16, 32, 3)\nself.bn2 = nn.BatchNorm2d(32)\ndef forward(self, x):\nx = self.conv1(x)\nx = self.bn1(x)\nx = nn.ReLU()(x)\nx = self.conv2(x)\nx = self.bn2(x)\nx = nn.ReLU()(x)\nreturn x\n6.10.4 Mẹo thi đấu IOAI\n• Luôn dùng BatchNorm với các mạng sâu\n• Đặt BatchNorm sau tầng Linear/Conv, trước Activation\n• Có thểbỏDropout khi dùng BatchNorm\n• Learning rate có thểtăng lên 2-5 lần\n86\n"
+    },
+    {
+      "page": 97,
+      "text": "6.11 Autoencoders và Sparse Encoders\n• Batch size không nên quá nhỏ(ít nhất 32)\n• Không cần quan tâm đến bias trong Linear/Conv khi dùng BatchNorm\nCâu hỏi kiểm tra:\n1. Tại sao không nên dùng BatchNorm với batch size quá nhỏ?\n2. Có nên dùng BatchNorm trong layer cuối cùng không?\n3. BatchNorm khác gì so với LayerNorm?\n6.11 Autoencoders và Sparse Encoders\nInput\nLinear 256\nEncoder\nLinear 128\nLinear 64\nBottleneck 32\nLinear 64\nDecoder\nLinear 128\nLinear 256\nOutput\nFigure 6.30: Kiến trúc Autoencoder cơ bản bao gồm Encoder, Bottleneck và De-\ncoder.\n6.11.1 Autoencoder là gì?\nAutoencoder là mạng nơ-ron:\n• Mục tiêu: Học biểu diễn nén (encoding) của dữliệu\n• Cấu trúc:\n– Encoder: Nén input thành latent representation\n– Bottleneck: Lớp ẩn có kích thước nhỏ\n– Decoder: Tái tạo lại input từlatent representation\n• Ứng dụng: Giảm chiều dữliệu, khửnhiễu, học biểu diễn đặc trưng\n87\n"
+    },
+    {
+      "page": 98,
+      "text": "Chapter 6 Deep learning\nCài đặt cơ bản trong PyTorch\nimport torch.nn as nn\nclass Autoencoder(nn.Module):\ndef __init__(self, input_dim=784, latent_dim=32):\nsuper(Autoencoder , self).__init__()\n# Encoder\nself.encoder = nn.Sequential(\nnn.Linear(input_dim , 256),\nnn.ReLU(),\nnn.Linear(256, 128),\nnn.ReLU(),\nnn.Linear(128, latent_dim)\n# Bottleneck\n)\n# Decoder\nself.decoder = nn.Sequential(\nnn.Linear(latent_dim , 128),\nnn.ReLU(),\nnn.Linear(128, 256),\nnn.ReLU(),\nnn.Linear(256, input_dim),\nnn.Sigmoid()\n# For image data\n)\ndef forward(self, x):\nencoded = self.encoder(x)\ndecoded = self.decoder(encoded)\nreturn decoded\n6.11.2 Sparse Encoders\nÝ tưởng cơ bản\n• Buộc autoencoder học biểu diễn thưa thớt\n88\n"
+    },
+    {
+      "page": 99,
+      "text": "6.11 Autoencoders và Sparse Encoders\n• Chỉvài neuron được kích hoạt tại bottleneck\n• Ưu điểm:\n– Giảm overfitting\n– Học được đặc trưng rõ ràng hơn\nCài đặt với Regularization\nclass SparseAutoencoder(Autoencoder):\ndef __init__(self, input_dim=784, latent_dim=32,\nsparsity_weight=0.01):\nsuper().__init__(input_dim , latent_dim)\nself.sparsity_weight = sparsity_weight\ndef forward(self, x):\nencoded = self.encoder(x)\n# Add sparsity regularization (L1 penalty)\nsparsity_loss = torch.mean(torch.abs(encoded))\ndecoded = self.decoder(encoded)\nreturn decoded , sparsity_loss\ndef compute_loss(self, x, x_hat, sparsity_loss):\nrecon_loss = nn.MSELoss()(x_hat, x)\ntotal_loss = recon_loss + self.sparsity_weight *\nsparsity_loss\nreturn total_loss\n89\n"
+    },
+    {
+      "page": 100,
+      "text": "Chapter 6 Deep learning\n0\n0.5\n1\nNeuron index\nActivation value\nHoạt động neuron tại bottleneck\nSparse Encoding\nStandard Encoding\nFigure 6.31: Sparse encoder chỉkích hoạt một sốít neuron tại bottleneck (màu\nxanh), trong khi autoencoder thông thường kích hoạt đều (màu đỏ).\n6.11.3 Ứng dụng thực tiễn\nKhửnhiễu hình ảnh\nclass DenoisingAE(Autoencoder):\ndef forward(self, x):\n# Add random noise to input\nnoise = torch.randn_like(x) * 0.1\nnoisy_x = x + noise\nreturn super().forward(noisy_x)\nGiảm chiều dữliệu\n# Use encoder for dimensionality reduction\nmodel = Autoencoder()\nencoder = model.encoder\n# Use this to extract features\n# Get 32-dim features from 784-dim input\nfeatures = encoder(input_data)\n90\n"
+    },
+    {
+      "page": 101,
+      "text": "6.11 Autoencoders và Sparse Encoders\nInput (784D)\nLatent (32D)\nOutput (784D)\nEncoder\nDecoder\nVisualization\nFigure 6.32: Quá trình giảm chiều dữliệu từđầu vào 784 chiều (ví dụhình 28x28)\nxuống không gian ẩn 32 chiều.\n6.11.4 Mẹo thi đấu IOAI\n• Autoencoder thường hoạt động tốt khi:\n– Kích thước bottleneck 10-25% input size\n– Dùng kích hoạt ReLU cho encoder, Sigmoid cho decoder (hình ảnh)\n• Sparse encoder cần:\n– Điều chỉnh hệsốsparsity (thử0.001-0.1)\n– Theo dõi hoạt độneuron tại bottleneck\n• So sánh kết quảbằng:\n– Chất lượng tái tạo (MSE/PSNR)\n– Hiệu quảphân cụm sau mã hóa\nInput\nNoisy Input\nReconstruction\nFigure 6.33: Ví dụứng dụng khửnhiễu của Denoising Autoencoder. Mô hình học\ncách loại bỏnhiễu và tái tạo hình ảnh gốc.\n91\n"
+    },
+    {
+      "page": 102,
+      "text": ""
+    },
+    {
+      "page": 103,
+      "text": "Chapter 7\nNLP\n7.1 Word Embedding: Word2VecvàGloVe\n7.1.1 1. Ý tưởng trực quan\nWord Embedding là phương pháp ánh xạmỗi từthành một vector sốthực\ntrong không gian nhiều chiều, sao cho các từcó ngữnghĩa tương đồng sẽcó\nvector gần nhau.\n• Ví dụtrực quan: Tưởng tượng mỗi từlà một điểm trong không gian\n2D/3D, “king” và “queen” sẽnằm gần nhau, còn “king” và “apple” thì\nkhá xa.\n• Tại sao cần? Giúp máy tính hiểu được quan hệngữnghĩa, phục vụ\ncho các bài toán như phân loại văn bản, dịch máy, trảlời câu hỏi, v.v.\n7.1.2 2. Mô hình Word2Vec\n2.1 Skip-gram và CBOW\n• CBOW (Continuous Bag-of-Words): Dựđoán từtrung tâm dựa\ntrên ngữcảnh xung quanh.\n• Skip-gram: Ngược lại, dùng từtrung tâm đểdựđoán các từngữcảnh.\n93\n"
+    },
+    {
+      "page": 104,
+      "text": "Chapter 7 NLP\n2.2 Công thức toán học (Skip-gram)\nCho chuỗi từw1, w2, . . . , wT . Mục tiêu tối đa hóa xác suất:\nT\n∏\nt=1\n∏\n−c≤j≤c,j̸=0\nP(wt+j | wt)\nvới\nP(wO | wI) =\nexp\n(\nv′\nwO\n⊤vwI\n)\n∑|V |\nw=1 exp\n(\nv′w\n⊤vwI\n),\ntrong đó vw là vector input của từw, v′\nw là vector output.\nGiải pháp tối ưu: Dùng Negative Sampling đểthay thếSoftmax toàn phần,\ngiảm độphức tạp tính toán.\n7.1.3 3. Mô hình GloVe\n3.1 Ý tưởng\nGloVe (Global Vectors) dựa trên ma trận tần suất đồng xuất hiện X, với Xij\nđếm sốlần từi và j xuất hiện cùng nhau trong một cửa sổ.\n3.2 Công thức toán học\nMục tiêu tối thiểu hóa:\nJ =\n|V |\n∑\ni,j=1\nf(Xij)\n(\nw⊤\ni ˜wj + bi + ˜bj −log Xij\n)2,\nvới hàm trọng số\nf(x) =\n{\n(x/xmax)α\nnếu x < xmax,\n1\nngược lại.\nThường chọn α = 3/4, xmax = 100.\n94\n"
+    },
+    {
+      "page": 105,
+      "text": "7.1 Word Embedding: Word2VecvàGloVe\n7.1.4 4. Code mẫu\n4.1 Word2Vec với Gensim\nfrom gensim.models import Word2Vec\n# Assume the corpus is already tokenized: list of list of\ntokens\nsentences = [[\"toi\", \"yeu\", \"machine\", \"learning\"], [\"word2vec\n\", \"rat\", \"tuyet\", \"voi\"]]\nmodel = Word2Vec(sentences ,\nvector_size=100,\n# embedding size\nwindow=5,\n# context window size\nmin_count=1,\n# minimum word frequency\nsg=1,\n# 1 = skip-gram, 0 = CBOW\nnegative=5,\n# negative sampling\nepochs=10)\n# Get the vector for a word\nvec = model.wv[\"machine\"]\n# Find most similar words\nprint(model.wv.most_similar(\"machine\"))\n4.2 GloVe đơn giản (Python thuần)\nimport numpy as np\nfrom collections import Counter\nfrom itertools import combinations\n# 1. Build co-occurrence matrix\ndef build_cooccurrence(corpus, window=5):\nvocab = set(word for sent in corpus for word in sent)\nword2id = {w:i for i,w in enumerate(vocab)}\nX = np.zeros((len(vocab), len(vocab)))\nfor sent in corpus:\nfor i, w in enumerate(sent):\n95\n"
+    },
+    {
+      "page": 106,
+      "text": "Chapter 7 NLP\nfor j in range(max(0, i-window), min(len(sent), i+\nwindow+1)):\nif i != j:\nX[word2id[w], word2id[sent[j]]] += 1\nreturn X, word2id\n# 2. Train GloVe\ndef train_glove(X, dims=50, alpha=0.75, xmax=100, lr=0.05,\nepochs=100):\nV = X.shape[0]\nW = np.random.rand(V, dims)\nW_tilde = np.random.rand(V, dims)\nb = np.zeros(V)\nb_tilde = np.zeros(V)\nf = np.vectorize(lambda x: (x/xmax)**alpha if x < xmax\nelse 1)\nX_weight = f(X)\nfor _ in range(epochs):\nfor i,j in zip(*X.nonzero()):\nxij = X[i,j]\nweight = X_weight[i,j]\ndiff = (W[i].dot(W_tilde[j]) + b[i] + b_tilde[j] -\nnp.log(xij))\ngrad = weight * diff\nW[i]\n-= lr * grad * W_tilde[j]\nW_tilde[j]-= lr * grad * W[i]\nb[i]\n-= lr * grad\nb_tilde[j]-= lr * grad\nreturn W + W_tilde\n# final word vector\n# Example\ncorpus = [[\"toi\",\"yeu\",\"nlp\"], [\"nlp\",\"rat\",\"hay\"]]\nX, w2id = build_cooccurrence(corpus)\nembeddings = train_glove(X)\n7.1.5 5. Bài tập thực hành\n1. Huấn luyện Word2Vec:\n96\n"
+    },
+    {
+      "page": 107,
+      "text": "7.2 Cơ bản vềTransformer và Attention Mechanism\n• Sửdụng một tập dữliệu tiếng Việt (VD: kho báo VietNews) để\nhuấn luyện mô hình Word2Vec với tham sốkhác nhau (window\nsize, vector size, negative sampling).\n• So sánh kết quả: tìm top-5 từtương đồng với “học”, “máy”, “ngôn”.\n2. Phân tích ma trận đồng xuất hiện:\n• Xây ma trận đồng xuất hiện cho một tập văn bản nhỏ(tựđịnh\nnghĩa).\n• Quan sát phân bốgiá trịtrong ma trận, vẽheatmap (dùng mat-\nplotlib).\n3. So sánh Word2Vec và GloVe:\n• Huấn luyện cảhai mô hình trên cùng tập dữliệu.\n• Đánh giá chất lượng embedding bằng intrinsic evaluation (word\nanalogy, word similarity).\n7.2 Cơ bản vềTransformer và Attention\nMechanism\n7.2.1 1. Ý tưởng trực quan\nTransformer loại bỏhoàn toàn RNN/CNN, thay vào đó sửdụng cơ chế\nattention đểcho phép mỗi vịtrí trong chuỗi đầu vào tập trung (focus) lên\nnhững vịtrí quan trọng khác khi xây dựng biểu diễn ngữcảnh của nó.\n• Trực quan: Mỗi token tựhỏi “Tôi nên chú ý bao nhiêu đến token kia?”\nvà gán trọng sốtương ứng, giống như bạn lắng nghe nhiều hơn những\ntừquan trọng trong một câu :contentReference[oaicite:0]index=0.\n• Tại sao mạnh mẽ? Cơ chếattention cho phép nắm bắt mối quan hệ\ndài hạn mà không gặp phải hạn chếvềthứtựtính toán tuần tựnhư\nRNN :contentReference[oaicite:1]index=1.\n97\n"
+    },
+    {
+      "page": 108,
+      "text": "Chapter 7 NLP\n7.2.2 2. Scaled Dot‑Product Attention\nCho ma trận Q ∈Rn×dk (queries), K ∈Rm×dk (keys), V ∈Rm×dv (values),\nta tính:\nAttention(Q, K, V) = softmax\n(QK⊤\n√dk\n)\nV.\n• Thước số√dk đểtránh giá trịdot‑product quá lớn gây bão hoà Softmax\n:contentReference[oaicite:2]index=2.\n• Kết quảlà ma trận trọng sốα ∈Rn×m, sau đó nhân với V đểcho ra\nbiểu diễn ngữcảnh.\n7.2.3 3. Multi‑Head Attention\nThay vì chỉdùng một cặp (Q, K, V ), Transformer dùng h heads song song:\nMultiHead(Q, K, V) = Concat(head1, . . . , headh) WO,\nvới\nheadi = Attention(QWQ\ni , KWK\ni , VWV\ni ),\nvà WQ\ni , WK\ni ∈Rdmodel×dk, WV\ni ∈Rdmodel×dv :contentReference[oaicite:3]index=3.\n7.2.4 4. Code mẫu với PyTorch\nimport torch\nimport torch.nn.functional as F\ndef scaled_dot_product_attention(Q, K, V, mask=None):\nd_k = Q.size(-1)\nscores = torch.matmul(Q, K.transpose(-2, -1)) / torch.sqrt\n(torch.tensor(d_k, dtype=torch.float))\nif mask is not None:\nscores = scores.masked_fill(mask == 0, float('-inf'))\nweights = F.softmax(scores, dim=-1)\nreturn torch.matmul(weights , V), weights\n# Ví ụd\n98\n"
+    },
+    {
+      "page": 109,
+      "text": "7.2 Cơ bản vềTransformer và Attention Mechanism\nbatch_size , seq_len , d_model = 2, 5, 16\nQ = torch.rand(batch_size , seq_len , d_model)\nK = torch.rand(batch_size , seq_len , d_model)\nV = torch.rand(batch_size , seq_len , d_model)\noutput, attn_weights = scaled_dot_product_attention(Q, K, V)\nprint(output.shape)\n# (2,5,16)\nimport torch.nn as nn\nclass MultiHeadAttention(nn.Module):\ndef __init__(self, d_model , num_heads):\nsuper().__init__()\nassert d_model % num_heads == 0\nself.d_k = d_model // num_heads\nself.num_heads = num_heads\nself.Wq = nn.Linear(d_model , d_model)\nself.Wk = nn.Linear(d_model , d_model)\nself.Wv = nn.Linear(d_model , d_model)\nself.Wo = nn.Linear(d_model , d_model)\ndef forward(self, x, mask=None):\nB, N, _ = x.size()\nQ = self.Wq(x).view(B, N, self.num_heads , self.d_k).\ntranspose(1,2)\nK = self.Wk(x).view(B, N, self.num_heads , self.d_k).\ntranspose(1,2)\nV = self.Wv(x).view(B, N, self.num_heads , self.d_k).\ntranspose(1,2)\n# attention\nscores = torch.matmul(Q, K.transpose(-2,-1)) / torch.\nsqrt(torch.tensor(self.d_k, dtype=torch.float))\nif mask is not None:\nscores = scores.masked_fill(mask == 0, float('-inf\n'))\nweights = F.softmax(scores, dim=-1)\nout = torch.matmul(weights , V)\n# ếkt ợhp các head\nout = out.transpose(1,2).contiguous().view(B, N, -1)\nreturn self.Wo(out)\n99\n"
+    },
+    {
+      "page": 110,
+      "text": "Chapter 7 NLP\n7.2.5 5. Bài tập thực hành\n1. Visual hóa Attention:\n• Dùng ví dụcâu tiếng Anh, tính attention weights và vẽheatmap\n(matplotlib) đểquan sát mô hình “chú ý” đến từnào.\n2. So sánh Masked vs. Unmasked Attention:\n• Thêm mask causal vào decoder, so sánh kết quảattention weights\ngiữa có mask và không mask.\n3. Xây dựng Transformer nhỏ:\n• Kết hợp Encoder layer (Multi‑Head + Feed‑Forward) và Decoder\nlayer, huấn luyện giải bài toán dịch đơn giản (ví dụ: tiếng Anh →\ntiếng Pháp nhỏ).\n7.3 Thực hành Phân loại Văn bản\n7.3.1 1. Quy trình chung\n1. Thu thập dữliệu: Các tập văn bản có gán nhãn (spam/ham, thểloại\ntin tức, cảm xúc...).\n2. Tiền xửlý:\nLoại bỏký tựđặc biệt, chuyển thường, tokenization,\nstop‑words, stemming/lemmatization.\n3. Trích đặc trưng:\n• Bag‑of‑Words (BoW): Đếm tần suất từ.\n• TF‑IDF:\ntfidf(t, d) = tf(t, d) × log\nN\ndf(t).\n• Word Embedding: Word2Vec/GloVe/Transformer.\n4. Xây dựng mô hình: Logistic Regression, SVM, Naive Bayes, CN-\nN/RNN/Transformer.\n5. Đánh giá: Accuracy, Precision, Recall, F1-score, ROC-AUC.\n100\n"
+    },
+    {
+      "page": 111,
+      "text": "7.3 Thực hành Phân loại Văn bản\n7.3.2 2. Phương pháp cơ bản\n2.1 Bag‑of‑Words + Logistic Regression\nCho ma trận đặc trưng X ∈RN×V (N mẫu, V từvựng), nhãn y ∈{0, 1}N.\nHàm mất mát logistic:\nL(w, b) = −1\nN\nN\n∑\ni=1\n[\nyi log σ(w⊤xi + b) + (1 −yi) log(1 −σ(w⊤xi + b))\n]\n,\nvới σ(z) = 1/(1 + e−z).\n2.2 TF‑IDF + SVM\nSVM tối ưu:\nmin\nw,b\n1\n2∥w∥2 + C\nN\n∑\ni=1\nmax(0, 1 −yi(w⊤xi + b)).\n2.3 Embedding + CNN/RNN\n• CNN cho text: Dùng các filter kích thước khác nhau quét chuỗi em-\nbedding, áp dụng max‑pooling.\n• RNN (LSTM/GRU): Duyệt tuần tự, lấy trạng thái cuối đểphân loại.\n7.3.3 3. Code mẫu\n3.1 Scikit‑learn: BoW + Logistic Regression\nfrom sklearn.feature_extraction.text import CountVectorizer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import classification_report\n# Example data\n101\n"
+    },
+    {
+      "page": 112,
+      "text": "Chapter 7 NLP\ndocs = [\"I love machine learning\", \"Spam: Buy now!\", \"Today's\nnews...\"]\nlabels = [0, 1, 0]\n# 0 = ham, 1 = spam\nX_train , X_test, y_train , y_test = train_test_split(docs,\nlabels, test_size=0.3)\nmodel = Pipeline([\n('bow', CountVectorizer()),\n('clf', LogisticRegression(max_iter=1000))\n])\nmodel.fit(X_train , y_train)\ny_pred = model.predict(X_test)\nprint(classification_report(y_test, y_pred))\n3.2 PyTorch: Embedding + CNN\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nclass TextCNN(nn.Module):\ndef __init__(self, vocab_size , embed_dim , num_classes ,\nkernel_sizes=[3,4,5], num_filters=100):\nsuper().__init__()\nself.embedding = nn.Embedding(vocab_size , embed_dim)\nself.convs = nn.ModuleList([\nnn.Conv2d(1, num_filters , (k, embed_dim)) for k in\nkernel_sizes\n])\nself.fc = nn.Linear(num_filters * len(kernel_sizes),\nnum_classes)\ndef forward(self, x):\n# x: [B, L]\nx = self.embedding(x).unsqueeze(1)\n# [B, 1, L, E]\nconved = [F.relu(conv(x)).squeeze(3) for conv in self.\nconvs]\n# each: [B, num_filters , L-k+1]\n102\n"
+    },
+    {
+      "page": 113,
+      "text": "7.3 Thực hành Phân loại Văn bản\npooled = [F.max_pool1d(c, c.size(2)).squeeze(2) for c\nin conved]\n# [B, num_filters]\ncat = torch.cat(pooled, dim=1)\n# [B, num_filters *\nlen(kernel_sizes)]\nreturn self.fc(cat)\n# Assume there is a DataLoader returning (inputs , labels)\n# model = TextCNN(vocab_size=5000, embed_dim=100, num_classes\n=2)\n# loss_fn = nn.CrossEntropyLoss(); optimizer = torch.optim.\nAdam(model.parameters())\n7.3.4 4. Bài tập thực hành\n1. Spam Detection:\n• Dùng tập dữliệu SpamAssassin đểhuấn luyện Naive Bayes và\nLogistic Regression.\n• So sánh Precision, Recall, F1-score.\n2. Phân loại cảm xúc:\n• Sửdụng tập IMDb movie reviews. Huấn luyện TextCNN và BiL-\nSTM, so sánh accuracy.\n• Vẽlearning curve (train vs. val loss).\n3. Thửnghiệm TF‑IDF + SVM vs. Embedding + RNN:\n• Trên cùng tập dữliệu, so sánh tốc độhuấn luyện, hiệu năng, và\nkích thước mô hình.\n103\n"
+    },
+    {
+      "page": 114,
+      "text": "Chapter 7 NLP\n7.4 Giới thiệu các Mô hình NLP Đã được\nPre‑train: BERT và GPT\n7.4.1 1. Tại sao cần Pre‑trained Models?\nPre‑trained models (mô hình đã được huấn luyện trước) cho phép tái sửdụng\ncác biểu diễn ngôn ngữhọc được học từkhối lượng dữliệu khổng lồ, giúp tiết\nkiệm thời gian huấn luyện và cải thiện hiệu năng trên nhiều tác vụkhác nhau.\nChúng thường bao gồm hai giai đoạn chính: pre‑training trên dữliệu không\ngán nhãn với các nhiệm vụtựgiám sát, sau đó fine‑tuning trên dữliệu gán\nnhãn cho từng tác vụcụthể.\n7.4.2 2. BERT (Bidirectional Encoder Representations from\nTransformers)\n2.1 Ý tưởng chính\nBERT là mô hình chỉgồm phần encoder của Transformer, được huấn luyện\ntheo hai nhiệm vụtựgiám sát: Masked Language Model (MLM) và Next\nSentence Prediction (NSP). Qua đó, BERT học được biểu diễn ngữcảnh hai\nchiều (bidirectional), nghĩa là mỗi token trong câu “nhìn” được cảngữcảnh\nbên trái lẫn bên phải khi tính embedding :contentReference[oaicite:0]index=0.\n2.2 Công thức cơ bản\n• Masked Language Model (MLM): Với xác suất p, một sốtoken đầu\nvào được thay bằng [MASK]. Mục tiêu là tối đa hóa\n∑\ni∈M\nlog P(wi | X\\M),\ntrong đó M là tập chỉsốtoken bịmask, X\\M là chuỗi đầu vào đã mask.\n• Next Sentence Prediction (NSP): Cho cặp câu (A, B), mô hình dự\n104\n"
+    },
+    {
+      "page": 115,
+      "text": "7.4 Giới thiệu các Mô hình NLP Đã được Pre‑train: BERT và GPT\nđoán nhãn “IsNext” hay “NotNext”:\nmax\n∑\nlog P(IsNext | A, B).\n2.3 Ứng dụng và Fine‑tuning\nSau pre‑training, ta chỉcần thêm một lớp phân loại (linear + softmax) lên\nembedding của token [CLS] đểfine‑tune cho các tác vụnhư phân loại văn bản,\nhỏi–đáp, NER… :contentReference[oaicite:1]index=1.\n7.4.3 3. GPT (Generative Pre‑trained Transformer)\n3.1 Ý tưởng chính\nGPT là mô hình chỉgồm phần decoder của Transformer, được huấn luyện\ntheo nhiệm vụLanguage Modeling (LM) tuần tự: tại mỗi bước, dựđoán\ntoken tiếp theo dựa trên toàn bộngữcảnh trước đó. Mô hình sửdụng cơ chế\ncausal (masked) self‑attention đểđảm bảo tính tuần tự.\n3.2 Công thức cơ bản\nCho chuỗi đầu vào w1, w2, . . . , wT , GPT tối đa hóa xác suất:\nT\n∏\nt=1\nP(wt | w<t) =\nT\n∏\nt=1\nexp\n(\nvwt\n⊤ht−1\n)\n∑\nw′∈V exp\n(\nvw′⊤ht−1\n),\ntrong đó ht−1 là trạng thái ẩn được tính qua các lớp self‑attention và feed‑forward,\nvà causal mask ngăn không cho token “nhìn” vềphía tương lai.\n3.3 Ứng dụng\nGPT có khảnăng sinh văn bản, trảlời câu hỏi, tóm tắt, dịch máy, v.v. Khi\nfine‑tuning, ta thêm một đầu ra phù hợp (linear + softmax hoặc head tùy tác\nvụ) và tiếp tục huấn luyện trên dữliệu gán nhãn nhỏhơn.\n105\n"
+    },
+    {
+      "page": 116,
+      "text": "Chapter 7 NLP\n7.4.4 4. Code mẫu\n4.1 Fine‑tuning BERT với Hugging Face Transformers\nfrom transformers import BertForSequenceClassification ,\nBertTokenizerFast , Trainer , TrainingArguments\nimport torch\ntokenizer = BertTokenizerFast.from_pretrained('bert-base-\nuncased')\nmodel = BertForSequenceClassification.from_pretrained('bert-\nbase-uncased', num_labels=2)\n# Example data\ntexts = [\"I love NLP\", \"This is spam\"]\nlabels = [0, 1]\nencodings = tokenizer(texts, truncation=True, padding=True)\ndataset = torch.utils.data.Dataset.from_dict({\n'input_ids': encodings['input_ids'],\n'attention_mask': encodings['attention_mask'],\n'labels': labels\n})\nargs = TrainingArguments(output_dir='./bert-finetuned',\nnum_train_epochs=3,\nper_device_train_batch_size=8)\ntrainer = Trainer(model=model, args=args, train_dataset=\ndataset)\ntrainer.train()\n4.2 Sinh văn bản với GPT-2\nfrom transformers import GPT2LMHeadModel , GPT2Tokenizer\ntokenizer = GPT2Tokenizer.from_pretrained('gpt2')\nmodel = GPT2LMHeadModel.from_pretrained('gpt2')\nprompt = \"Once upon a time\"\n106\n"
+    },
+    {
+      "page": 117,
+      "text": "7.5 Thực hành Question Answering với Mô hình Pre‑trained\ninputs = tokenizer(prompt, return_tensors='pt')\noutputs = model.generate(**inputs, max_length=50, do_sample=\nTrue, top_k=50)\nprint(tokenizer.decode(outputs[0], skip_special_tokens=True))\n7.4.5 5. Bài tập thực hành\n1. Fine‑tune BERT cho cảm xúc:\n• Sửdụng tập IMDb reviews, fine‑tune BERT đểphân loại cảm xúc.\n• So sánh accuracy với Logistic Regression trên TF‑IDF.\n2. Sinh văn bản với GPT:\n• Thửsinh truyện ngắn (prompt dài 100 token) với GPT-2 và GPT-3\n(nếu có API).\n• Đánh giá chất lượng bằng BLEU hoặc human evaluation.\n3. So sánh BERT vs. GPT cho Q&A:\n• Fine‑tune BERT (QA head) và GPT (prefix‑LM) trên SQuAD nhỏ.\n• Đánh giá F1 và Exact Match.\n7.5 Thực hành Question Answering với Mô hình\nPre‑trained\n7.5.1 1. Ý tưởng trực quan\nQuestion Answering (QA) là bài toán: cho trước một đoạn văn bản (context)\nvà một câu hỏi (question), hệthống cần trích xuất (extractive) hoặc sinh\n(generative) câu trảlời.\n• Extractive QA: Mô hình tìm vịtrí bắt đầu và kết thúc của câu trảlời\ntrong đoạn context.\n• Generative QA: Mô hình sinh câu trảlời tựdo dựa trên context và\nquestion.\n107\n"
+    },
+    {
+      "page": 118,
+      "text": "Chapter 7 NLP\nCác mô hình Pre‑trained như BERT đã học biểu diễn ngữcảnh sâu từkhối\nlượng lớn Wikipedia và sách, nhờđó chỉcần fine‑tune nhẹtrên tập QA như\nSQuAD đểđạt hiệu năng cao :contentReference[oaicite:0]index=0.\n7.5.2 2. Công thức toán học nền tảng\nVới Extractive QA, ta thêm hai lớp linear trên embedding cuối của token để\ndựđoán xác suất start và end:\nPstart(i | X) =\nexp(w⊤\ns hi)\n∑n\nj=1 exp(w⊤\ns hj),\nPend(i | X) =\nexp(w⊤\ne hi)\n∑n\nj=1 exp(w⊤\ne hj),\ntrong đó hi là vector embedding của token thứi, ws, we là tham sốhọc được.\nHàm mất mát là tổng cross‑entropy cho cảhai phân phối:\nL = −\n[\nlog Pstart(ys) + log Pend(ye)\n]\n,\nvới ys, ye là vịtrí ground‑truth của start và end :contentReference[oaicite:1]index=1.\n7.5.3 3. Fine‑tuning BERT cho Extractive QA\n1. Chuẩn bịdữliệu: SQuAD 1.1 (question, context, answer_start, an-\nswer_text).\n2. Tokenization: Dùng tokenizer của BERT, nối [CLS] + question + [SEP]\n+ context + [SEP].\n3. Tạo labels: Với mỗi token, xác định index start/end của câu trảlời sau\nkhi tokenize.\n4. Huấn luyện: Dùng mô hình BertForQuestionAnswering và tối ưu\ncross‑entropy như trên.\n7.5.4 4. Code mẫu với Hugging Face & PyTorch\nfrom transformers import BertTokenizerFast ,\nBertForQuestionAnswering , Trainer , TrainingArguments\nfrom datasets import load_dataset , load_metric\n108\n"
+    },
+    {
+      "page": 119,
+      "text": "7.5 Thực hành Question Answering với Mô hình Pre‑trained\n# 1. Load SQuAD\ndatasets = load_dataset(\"squad\")\nmetric = load_metric(\"squad\")\n# 2. Tokenizer and normalization\ntokenizer = BertTokenizerFast.from_pretrained(\"bert-base-\nuncased\")\ndef preprocess(examples):\nquestions = examples[\"question\"]\ncontexts\n= examples[\"context\"]\nanswers\n= examples[\"answers\"]\ninputs = tokenizer(questions , contexts , truncation=True,\npadding=\"max_length\", max_length=384)\nstart_positions = []\nend_positions\n= []\nfor i, ans in enumerate(answers):\nstart = ans[\"answer_start\"][0]\nend\n= start + len(ans[\"text\"][0])\nencoded = inputs.char_to_token(i, start), inputs.\nchar_to_token(i, end-1)\nstart_positions.append(encoded[0])\nend_positions.append(encoded[1])\ninputs[\"start_positions\"] = start_positions\ninputs[\"end_positions\"]\n= end_positions\nreturn inputs\ntokenized = datasets.map(preprocess , batched=True,\nremove_columns=datasets[\"train\"].column_names)\n# 3. Model & Training\nmodel = BertForQuestionAnswering.from_pretrained(\"bert-base-\nuncased\")\nargs = TrainingArguments(\noutput_dir=\"bert-qa\",\nevaluation_strategy=\"epoch\",\nper_device_train_batch_size=8,\n109\n"
+    },
+    {
+      "page": 120,
+      "text": "Chapter 7 NLP\nnum_train_epochs=2,\n)\ntrainer = Trainer(\nmodel=model,\nargs=args,\ntrain_dataset=tokenized[\"train\"],\neval_dataset= tokenized[\"validation\"],\n)\ntrainer.train()\n7.5.5 5. Bài tập thực hành\n1. Đánh giá trên SQuAD:\n• Sau khi fine‑tune, dùng Trainer.predict đểsinh câu trảlời trên\ntập validation, tính EM và F1 với load_metric(\"squad\") :con-\ntentReference[oaicite:2]index=2.\n2. Custom Dataset QA:\n• Tạo tập QA nhỏ(tựviết context và question), fine‑tune mô hình,\nđánh giá kết quả.\n3. So sánh với GPT-based QA:\n• Sửdụng GPT-3/GPT-4 API đểtrảlời cùng câu hỏi trên context,\nso sánh chất lượng (human eval hoặc BLEU).\n4. Visual hóa Attention:\n• Trích attention weights từlayer đầu tiên của BERT khi sinh token\nanswer, vẽheatmap (matplotlib) đểquan sát mô hình “chú ý” vào\nđâu khi trảlời.\n110\n"
+    },
+    {
+      "page": 121,
+      "text": "7.6 Fine-Tuning Mô hình: Phương pháp và Giới hạn (LoRA, Adapters, v.v.)\n7.6 Fine-Tuning Mô hình: Phương pháp và Giới\nhạn (LoRA, Adapters, v.v.)\n7.6.1 1. Giới thiệu\nFine-tuning là quá trình điều chỉnh các mô hình ngôn ngữlớn (LLMs) đã\nđược huấn luyện trước đểphù hợp với các tác vụcụthể. Tuy nhiên, việc\nfine-tune toàn bộmô hình có thểtốn kém vềmặt tính toán và lưu trữ. Do\nđó, các phương pháp fine-tuning hiệu quảvềtham số(PEFT) như LoRA và\nAdapters đã được phát triển đểgiảm sốlượng tham sốcần điều chỉnh, tiết\nkiệm tài nguyên và thời gian huấn luyện.\n7.6.2 2. LoRA: Low-Rank Adaptation\n2.1 Ý tưởng chính\nLoRA (Low-Rank Adaptation) là một phương pháp PEFT trong đó các trọng\nsốcủa mô hình gốc được giữnguyên (đóng băng), và chỉthêm vào các ma\ntrận có hạng thấp đểđiều chỉnh mô hình cho tác vụmới. Điều này giúp giảm\nđáng kểsốlượng tham sốcần huấn luyện và tiết kiệm bộnhớ:contentRefer-\nence[oaicite:8]index=8.\n2.2 Công thức toán học\nGiảsửW ∈Rd×k là ma trận trọng sốtrong mô hình gốc. LoRA thêm vào\nmột nhiễu hạng thấp ∆W = AB, trong đó:\nA ∈Rd×r,\nB ∈Rr×k,\nr ≪min(d, k)\nTrọng sốđược sửdụng trong mô hình là:\nW ′ = W + ∆W = W + AB\nChỉA và B được huấn luyện, trong khi W được giữnguyên.\n111\n"
+    },
+    {
+      "page": 122,
+      "text": "Chapter 7 NLP\n7.6.3 3. Adapters\n3.1 Ý tưởng chính\nAdapters là các mô-đun nhỏđược chèn vào giữa các lớp của mô hình Trans-\nformer.\nThay vì điều chỉnh toàn bộmô hình, chỉcác tham sốtrong các\nmô-đun adapter được huấn luyện. Điều này giúp giảm sốlượng tham sốcần\nđiều chỉnh và cho phép chia sẻmô hình gốc giữa nhiều tác vụ:contentRefer-\nence[oaicite:9]index=9.\n3.2 Cấu trúc Adapter\nMột mô-đun adapter thường bao gồm:\n• Một lớp giảm chiều (down-projection): h ∈Rd →h′ ∈Rr\n• Một hàm kích hoạt phi tuyến tính (ví dụ: ReLU)\n• Một lớp tăng chiều (up-projection): h′ ∈Rr →ˆh ∈Rd\nĐầu ra của adapter được cộng với đầu vào ban đầu (residual connection):\nOutput = h + ˆh\n7.6.4 4. Code mẫu với Hugging Face\n4.1 Fine-Tuning với LoRA\nfrom transformers import AutoModelForSequenceClassification ,\nAutoTokenizer\nfrom peft import get_peft_model , LoraConfig , TaskType\nmodel = AutoModelForSequenceClassification.from_pretrained(\"\nbert-base-uncased\")\ntokenizer = AutoTokenizer.from_pretrained(\"bert-base-uncased\")\nlora_config = LoraConfig(\ntask_type=TaskType.SEQ_CLS ,\nr=8,\nlora_alpha=32,\n112\n"
+    },
+    {
+      "page": 123,
+      "text": "7.6 Fine-Tuning Mô hình: Phương pháp và Giới hạn (LoRA, Adapters, v.v.)\nlora_dropout=0.1,\nbias=\"none\"\n)\nmodel = get_peft_model(model, lora_config)\n# Continue with training as usual\n4.2 Sửdụng Adapters\nfrom transformers import AutoModelWithHeads , AutoTokenizer\nmodel = AutoModelWithHeads.from_pretrained(\"bert-base-uncased\"\n)\ntokenizer = AutoTokenizer.from_pretrained(\"bert-base-uncased\")\nmodel.add_adapter(\"classification_adapter\")\nmodel.train_adapter(\"classification_adapter\")\n# Continue with training as usual\n7.6.5 5. Bài tập thực hành\n1. So sánh hiệu suất: Fine-tune một mô hình BERT trên tập dữliệu\nphân loại văn bản nhỏbằng cảLoRA và Adapters. So sánh độchính\nxác và thời gian huấn luyện.\n2. Kết hợp nhiều adapters: Huấn luyện các adapters riêng biệt cho các\ntác vụkhác nhau (ví dụ: phân loại cảm xúc và phân loại chủđề) và thử\nkết hợp chúng đểcải thiện hiệu suất.\n3. Thửnghiệm với các giá trịr: Trong LoRA, thay đổi giá trịr (hạng\ncủa ma trận) và quan sát ảnh hưởng đến hiệu suất và tài nguyên sử\ndụng.\n113\n"
+    },
+    {
+      "page": 124,
+      "text": "Chapter 7 NLP\n7.7 Giới thiệu vềLarge Language Models (LLMs)\nLarge Language Models (LLMs) là các mô hình học sâu (deep learning models)\ncó kích thước lớn (nhiều tham số) và được huấn luyện trên lượng dữliệu văn\nbản khổng lồ. Một ví dụnổi bật là GPT-4 của OpenAI.\n7.7.1 Ý tưởng chính đằng sau LLMs\nMục tiêu là mô hình có thểhọc được cách dựđoán từtiếp theo trong một câu\ndựa trên các từtrước đó:\nP(wt|w1, w2, . . . , wt−1)\n(7.1)\nTức là xác suất từtiếp theo wt dựa trên ngữcảnh trước đó. Dựa vào cơ chế\nattention và transformer, mô hình có thểxửlý cảđoạn văn dài.\n7.7.2 Transformer và Attention\nTransformer là kiến trúc cơ bản của các LLM hiện đại. Cơ chếattention giúp\nmô hình ”tập trung” vào những phần quan trọng của câu. Self-attention tính\ntoán độliên quan giữa các từ:\nAttention(Q, K, V ) = softmax\n(QKT\n√dk\n)\nV\n(7.2)\nTrong đó:\n• Q: Query\n• K: Key\n• V : Value\n• dk: sốchiều của vector key\n114\n"
+    },
+    {
+      "page": 125,
+      "text": "7.8 Xây dựng chatbot đơn giản sửdụng NLP\n7.8 Xây dựng chatbot đơn giản sửdụng NLP\nChatbot là một chương trình máy tính có thểgiao tiếp với con người qua\nvăn bản hoặc giọng nói. Nhờsựphát triển của Natural Language Processing\n(NLP), việc xây dựng chatbot trởnên dễdàng và hiệu quảhơn bao giờhết.\nTrong phần này, chúng ta sẽtìm hiểu cách xây dựng một chatbot đơn giản sử\ndụng các kỹthuật NLP cơ bản, phù hợp cho người học mới bắt đầu.\n7.8.1 Mô hình hoạt động cơ bản của chatbot\nMột chatbot cơ bản thường hoạt động theo các bước sau:\n1. Nhận đầu vào từngười dùng (câu hỏi, yêu cầu)\n2. Xửlý ngôn ngữtựnhiên (NLP) đểhiểu ý định (intent)\n3. Tìm câu trảlời phù hợp hoặc thực hiện hành động tương ứng\n4. Trảlời người dùng\n7.8.2 Tiền xửlý văn bản (Text Preprocessing)\nĐểchatbot có thểhiểu đầu vào, bước đầu tiên là làm sạch và chuẩn hóa văn\nbản:\n• Lowercasing — Chuyển tất cảthành chữthường\n• Tokenization — Chia câu thành các từhoặc đơn vịnhỏhơn\n• Stopword Removal — Loại bỏcác từkhông mang nhiều ý nghĩa (như\n”là”, ”và”, ...)\nimport nltk\nfrom nltk.tokenize import word_tokenize\nfrom nltk.corpus import stopwords\nsentence = \"I want to go to Hanoi. I heard that there was a\nnuke there yesterday.\"\n# To lower\n115\n"
+    },
+    {
+      "page": 126,
+      "text": "Chapter 7 NLP\nsentence = sentence.lower()\n# Tokenization\nwords = word_tokenize(sentence)\n# Remove stopwords\nstop_words = set(stopwords.words('vietnamese'))\nfiltered = [w for w in words if w not in stop_words]\nprint(filtered)\n7.8.3 Nhận diện ý định (Intent Detection)\nMục tiêu là xác định người dùng muốn làm gì. Ví dụ:\n• ”Tôi muốn đặt vé” ⇒book_ticket\n• ”Thời tiết hôm nay ra sao?” ⇒check_weather\nCó thểdùng mô hình phân loại đơn giản như Logistic Regression hoặc mô\nhình nâng cao như BERT.\nMô hình phân loại cơ bản (Softmax):\nP(y = k|⃗x) =\ne⃗wT\nk⃗x\n∑K\nj=1 e⃗wT\nj⃗x\n(7.3)\n•⃗x: vector biểu diễn câu\n•⃗wk: trọng sốứng với lớp k\n• K: sốlượng lớp\n7.8.4 Sinh câu trảlời (Response Generation)\nCó hai cách chính:\n• Rule-based: Mỗi intent được gán với tập câu trảlời có sẵn\n• Generative: Dùng mô hình đểsinh phản hồi, ví dụGPT\n116\n"
+    },
+    {
+      "page": 127,
+      "text": "7.8 Xây dựng chatbot đơn giản sửdụng NLP\ndef get_response(intent):\nresponses = {\n\"book_ticket\": \"Where do you want to go?\",\n\"check_weather\": \"Where do you want to check the\nweather?\",\n\"greeting\": \"Hello! How can I help you?\"\n}\nreturn responses.get(intent, \"Sorry, I don't understand\nwhat you are saying.\")\n7.8.5 Tích hợp thành chatbot hoàn chỉnh\nwhile True:\nuser_input = input(\"You: \")\nif user_input.lower() in [\"exit\"]:\nprint(\"Goodbye!\")\nbreak\n# Given that the function detect_intent is readily trained\nintent = detect_intent(user_input)\nresponse = get_response(intent)\nprint(\"Bot:\", response)\n7.8.6 Mởrộng: Dùng mô hình GPT\nDưới đây là ví dụsửdụng OpenAI API đểtạo phản hồi động:\nimport openai\nopenai.api_key = \"YOUR_API_KEY\"\ndef ask_gpt(prompt):\nresponse = openai.ChatCompletion.create(\nmodel=\"gpt-3.5-turbo\",\nmessages=[{\"role\": \"user\", \"content\": prompt}]\n)\nreturn response[\"choices\"][0][\"message\"][\"content\"]\n117\n"
+    },
+    {
+      "page": 128,
+      "text": "Chapter 7 NLP\nwhile True:\nuser_input = input(\"You: \")\nif user_input.lower() in [\"exit\"]:\nbreak\nprint(\"Bot:\", ask_gpt(user_input))\n7.8.7 Tổng kết\nChatbot là ứng dụng thiết thực của NLP, có thểxây dựng từrất đơn giản đến\nrất thông minh. Bằng cách hiểu rõ từng bước từtiền xửlý đến sinh phản hồi,\nbạn có thểphát triển chatbot phù hợp với mục tiêu học tập hoặc sản phẩm.\n7.9 LLM Agents: Cơ bản và Ứng dụng\nLLM Agents là hệthống sửdụng mô hình ngôn ngữlớn như một thành phần\nđểthực hiện các chuỗi hành động, như gọi API, truy vấn dữliệu, hoặc giải\nquyết bài toán.\n7.9.1 Ý tưởng chính\nThay vì chỉtrảlời văn bản, LLM có thể”lên kếhoạch” và gọi các công cụhỗ\ntrợ. Một Agent có thểgồm các phần:\n• Planner: lập kếhoạch hành động\n• Executor: thực thi từng bước\n• Memory: lưu lại thông tin giữa các lượt tương tác\n7.9.2 Ứng dụng ví dụ\n• Trợlý lập trình (Code Assistant)\n• Tựđộng xửlý email\n• Tương tác với cơ sởdữliệu qua ngôn ngữtựnhiên\n118\n"
+    },
+    {
+      "page": 129,
+      "text": "7.10 Kết luận\n7.9.3 Ví dụmã Python: Agent đơn giản với LangChain\nfrom langchain.agents import load_tools , initialize_agent\nfrom langchain.llms import OpenAI\nllm = OpenAI(temperature=0)\ntools = load_tools([\"serpapi\"])\nagent = initialize_agent(tools, llm, agent=\"zero-shot-react-\ndescription\")\nresponse = agent.run(\"Find the capital of Vietnam\")\nprint(response)\n7.10 Kết luận\nNLP là lĩnh vực cực kỳthú vịvà đang phát triển nhanh chóng. Các mô hình\nngôn ngữlớn như GPT-4 mởra nhiều khảnăng mới. Việc hiểu rõ cách hoạt\nđộng và giới hạn của các mô hình này giúp chúng ta sửdụng chúng một cách\nhiệu quảvà có trách nhiệm.\n119\n"
+    },
+    {
+      "page": 130,
+      "text": ""
+    },
+    {
+      "page": 131,
+      "text": "Chapter 8\nComputer Vision\n8.1 Fundamentals of Convolutional Layers\n1. Convolutional Layer là gì?\nConvolutional Layer (Lớp tích chập) là thành phần cốt lõi trong mạng nơ-ron\ntích chập (CNN - Convolutional Neural Network). Nó giúp máy tính tựđộng\nhọc các đặc trưng hình ảnh như cạnh, góc, hoạtiết... bằng cách sửdụng một\ntập các bộlọc (filter/kernel).\nHoạt động của Convolution\n• Mỗi filter là một ma trận nhỏ(ví dụ: 3 × 3).\n• Filter sẽquét qua toàn bộảnh và tính toán tích chập giữa filter và từng\nphần nhỏcủa ảnh.\n• Kết quảlà một feature map thểhiện đặc trưng được học.\n2. Tại sao cần Convolutional Layer?\nVì ảnh có rất nhiều pixel, ta không thểxửlý hiệu quảnếu dùng mạng nơ-ron\ntruyền thống. Convolution giúp:\n• Giảm sốlượng tham số\n121\n"
+    },
+    {
+      "page": 132,
+      "text": "Chapter 8 Computer Vision\nFigure 8.1: Hoạt động tích chập giữa ảnh và filter\n• Tập trung vào các đặc trưng quan trọng\n• Duy trì cấu trúc không gian của ảnh\n3. Cách sửdụng Convolution trong PyTorch\nListing 8.1: Ví dụđơn giản dùng Convolutional Layer trong PyTorch\nimport torch\nimport torch . nn as nn\n# ởKhi ạto ộmt ớlp CNN ớvi 1 Convolutional\nLayer\nclass SimpleCNN(nn . Module ) :\ndef __init__( s e l f ) :\nsuper (SimpleCNN ,\ns e l f ) . __init__ ()\ns e l f . conv1 = nn . Conv2d( in_channels =1, out_channels=1,\ndef forward ( s e l f , x ) :\nreturn\ns e l f . conv1 (x)\n# ạTo ảnh đầu vào ảgi\n(1 ảnh xám 5x5 )\ninput_image = torch . randn (1 ,\n1 ,\n5 ,\n5)\n# batch =1, channel =1,\nmodel = SimpleCNN ()\noutput = model ( input_image )\nprint ( output )\n122\n"
+    },
+    {
+      "page": 133,
+      "text": "8.1 Fundamentals of Convolutional Layers\n4. Bài tập thực hành\n1. Viết một mô hình CNN gồm 2 lớp tích chập và 1 lớp fully connected.\n2. Thay đổi kích thước kernel từ3 × 3 sang 5 × 5. Quan sát sựkhác biệt.\n3. Dùng tập dữliệu MNIST và thửphân loại chữsốbằng CNN.\n5. Ghi nhớnhanh\n• Filter là ”mắt thần” giúp mạng học cách phát hiện đặc trưng.\n• Kích thước filter nhỏsẽhọc được chi tiết nhỏ(ví dụcạnh), còn filter\nlớn học được hoạtiết rộng hơn.\n• Convolution giữđược tính cục bộvà không gian trong ảnh.\n123\n"
+    },
+    {
+      "page": 134,
+      "text": "Chapter 8 Computer Vision\n8.2 Pooling Techniques (Max, Average)\n1. Pooling là gì?\nPooling là một kỹthuật được sửdụng trong mạng nơ-ron tích chập (Con-\nvolutional Neural Networks - CNN) đểgiảm kích thước của ảnh đặc trưng\n(feature map). Mục tiêu chính là:\n• Giảm sốlượng tham sốvà tính toán trong mô hình.\n• Kiểm soát quá khớp (overfitting).\n• Giữlại thông tin quan trọng trong khi bỏqua các chi tiết không cần\nthiết.\n2. Các loại Pooling phổbiến\nCó hai kỹthuật phổbiến nhất:\n1. Max Pooling: Lấy giá trịlớn nhất trong vùng lọc (ví dụ: 2x2).\n2. Average Pooling: Tính giá trịtrung bình trong vùng lọc.\n3. Cách hoạt động\nGiảsửta có ma trận đặc trưng đầu vào là:\n\n\n1\n3\n2\n4\n5\n6\n7\n8\n9\n8\n7\n6\n4\n3\n2\n1\n\n\nMax Pooling (với kích thước 2x2, bước nhảy 2)\nChia ma trận thành các vùng 2x2 không chồng lên nhau:\n124\n"
+    },
+    {
+      "page": 135,
+      "text": "8.2 Pooling Techniques (Max, Average)\n\n\n1\n3\n2\n4\n5\n6\n7\n8\n9\n8\n7\n6\n4\n3\n2\n1\n\n⇒max = 6\nTương tựvới các vùng còn lại, ta được đầu ra:\n[\n6\n8\n9\n7\n]\nAverage Pooling (với kích thước 2x2, bước nhảy 2)\nTính trung bình từng vùng:\n[\n1+3+5+6\n4\n2+4+7+8\n4\n9+8+4+3\n4\n7+6+2+1\n4\n]\n=\n[\n3.75\n5.25\n6\n4\n]\n4. Khi nào dùng Max và Average Pooling?\n• Max Pooling thường được sửdụng khi bạn muốn mô hình tập trung\nvào các đặc trưng nổi bật nhất (edges, textures).\n• Average Pooling phù hợp khi bạn muốn lấy thông tin tổng quát và\nmượt mà hơn từảnh.\n5. Cách dùng trong PyTorch (Ví dụđơn giản)\nListing 8.2: Ví dụMax và Avg Pooling trong PyTorch\nimport torch\nimport torch . nn as nn\n# ảGi ửs\ninput\nkích ướthc\n( batch ,\nchannel ,\nheight ,\nwidth )\ninput = torch . tensor ( [ [ [ [ 1 ,\n3 ,\n2 ,\n4] ,\n125\n"
+    },
+    {
+      "page": 136,
+      "text": "Chapter 8 Computer Vision\n[5 ,\n6 ,\n7 ,\n8] ,\n[9 ,\n8 ,\n7 ,\n6] ,\n[4 ,\n3 ,\n2 ,\n1 ] ] ] ] ,\ndtype=torch . float )\nmaxpool = nn . MaxPool2d( kernel_size =2,\ns t r i d e =2)\navgpool = nn . AvgPool2d ( kernel_size =2,\ns t r i d e =2)\nprint ( \"Max␣Pooling :\\ n\" , maxpool ( input ))\nprint ( \" Average␣Pooling :\\ n\" ,\navgpool ( input ))\n6. Bài tập thực hành\nBài tập 1\nCho ma trận 4x4 sau:\n\n\n4\n2\n1\n3\n0\n5\n6\n7\n9\n8\n3\n2\n4\n1\n0\n5\n\n\nHãy tính:\n• Kết quảsau khi áp dụng Max Pooling với kernel 2x2, stride 2.\n• Kết quảsau khi áp dụng Average Pooling với kernel 2x2, stride\n2.\nBài tập 2\nCài đặt lại ví dụtrong PyTorch và thửthay đổi:\n• Kernel size = 3\n• Stride = 1\n• Nhận xét kết quảđầu ra khi so sánh Max và Average Pooling.\n126\n"
+    },
+    {
+      "page": 137,
+      "text": "8.2 Pooling Techniques (Max, Average)\n7. Kết luận\nPooling là công cụquan trọng trong CNN giúp giảm kích thước dữliệu đầu\nvào và làm nổi bật các đặc trưng quan trọng. Hiểu rõ cách dùng Max và\nAverage Pooling sẽgiúp bạn áp dụng hiệu quảhơn vào các bài toán thịgiác\nmáy tính trong cuộc thi AI.\n127\n"
+    },
+    {
+      "page": 138,
+      "text": "Chapter 8 Computer Vision\n8.3 Basic Image Classification\n1. Phân loại ảnh là gì?\nPhân loại ảnh (Image Classification) là quá trình gán nhãn cho một bức\nảnh đầu vào dựa trên nội dung của ảnh đó. Ví dụ:\n• Ảnh mèo →Nhãn: mèo\n• Ảnh chó →Nhãn: chó\nĐây là một trong những bài toán nền tảng nhất của lĩnh vực Thịgiác máy\ntính (Computer Vision).\n2. Luồng xửlý cơ bản\nMột hệthống phân loại ảnh gồm các bước chính:\n1. Tiền xửlý dữliệu (Preprocessing): Chuyển ảnh vềkích thước đồng\nnhất, chuẩn hóa giá trịpixel.\n2. Trích xuất đặc trưng (Feature Extraction): Dùng CNN đểhọc\nđặc trưng từảnh.\n3. Phân loại (Classification): Dùng tầng Fully Connected (FC) + Soft-\nmax đểđưa ra kết quảcuối cùng.\n3. Ví dụđơn giản sửdụng PyTorch\nDưới đây là ví dụphân loại ảnh chữsốtay MNIST với mạng CNN đơn giản.\nListing 8.3: Phân loại ảnh MNIST với CNN trong PyTorch\nimport torch\nimport torch . nn as nn\nimport torchvision\nimport torchvision . transforms as transforms\n128\n"
+    },
+    {
+      "page": 139,
+      "text": "8.3 Basic Image Classification\ntrain_dataset = torchvision . datasets .MNIST( root=' ./ data ' ,\ntrain=True ,\ntransform=transforms . ToTensor () ,\ndownload=True )\ntrain_loader = torch . u t i l s . data . DataLoader ( train_dataset ,\nbatch_s\nclass SimpleCNN(nn . Module ) :\ndef __init__( s e l f ) :\nsuper (SimpleCNN ,\ns e l f ) . __init__ ()\ns e l f . conv = nn . Sequential (\nnn . Conv2d (1 ,\n16 ,\nkernel_size =3, padding =1) ,\nnn .ReLU() ,\nnn . MaxPool2d (2)\n)\ns e l f . fc = nn . Linear (16 ∗14 ∗14 ,\n10)\ndef forward ( s e l f , x ) :\nx = s e l f . conv (x)\nx = x . view (−1, 16 ∗14 ∗14)\nreturn\ns e l f . f c (x)\nmodel = SimpleCNN ()\nc r i t e r i o n = nn . CrossEntropyLoss ()\noptimizer = torch . optim .Adam( model . parameters () ,\nl r =0.001)\nfor epoch in range ( 1 ) :\n# 1 epoch đơn ảgin\nfor images ,\nl a b e l s\nin\ntrain_loader :\noutputs = model ( images )\nl o s s = c r i t e r i o n ( outputs ,\nl a b e l s )\noptimizer . zero_grad ()\nl o s s . backward ()\noptimizer . step ()\nprint ( \"ấHun␣ệluyn␣xong ! \" )\n129\n"
+    },
+    {
+      "page": 140,
+      "text": "Chapter 8 Computer Vision\n4. Một sốứng dụng thực tế\n• Nhận dạng chữviết tay (ví dụ: sốCMND, biển sốxe)\n• Phân loại động vật (mèo, chó, ngựa)\n• Hệthống giám sát an ninh\n5. Các khái niệm quan trọng cần nhớ\n• Epoch: Sốlần toàn bộdữliệu được đưa qua mô hình.\n• Loss Function: Hàm đánh giá sai sốgiữa đầu ra và nhãn thật.\n• Accuracy: Tỉlệdựđoán đúng.\n• Overfitting: Khi mô hình học quá kỹdữliệu huấn luyện và hoạt động\nkém trên dữliệu mới.\n6. Bài tập thực hành\nBài tập 1\nThay đổi mô hình CNN đơn giản ởtrên bằng cách:\n• Thêm một lớp convolution mới với 32 filters\n• Dùng ReLU + MaxPooling sau lớp đó\n• In ra kích thước tensor sau mỗi lớp\n130\n"
+    },
+    {
+      "page": 141,
+      "text": "8.3 Basic Image Classification\nBài tập 2\nThửthay tập dữliệu MNIST bằng CIFAR-10:\n• Tải CIFAR-10 bằng torchvision.datasets.CIFAR10\n• Thay đổi sốkênh đầu vào trong Conv2d (3 thay vì 1)\n• Huấn luyện và tính độchính xác\n7. Kết luận\nPhân loại ảnh là bước đầu tiên quan trọng đểbạn làm quen với Computer\nVision. Hiểu được luồng xửlý cơ bản, biết cách xây dựng một mô hình CNN\nđơn giản là nền tảng đểbạn tham gia hiệu quảhơn trong các cuộc thi AI.\n131\n"
+    },
+    {
+      "page": 142,
+      "text": "Chapter 8 Computer Vision\n8.4 Object Detection Basics (YOLO, SSD)\n1. Object Detection là gì?\nObject Detection (Phát hiện đối tượng) là kỹthuật giúp xác định vịtrí\nvà loại đối tượng trong ảnh bằng cách:\n• Dựđoán tọa độcủa các hộp bao (bounding boxes)\n• Gán nhãn phân loại (class label) cho từng hộp\nVí dụ: Trong một ảnh chụp ngoài đường, mô hình có thểphát hiện “xe hơi”,\n“người đi bộ”, “xe đạp” cùng lúc và khoanh vùng chúng.\n2. Mô hình YOLO và SSD là gì?\n2.1 YOLO (You Only Look Once)\nYOLO là mô hình phát hiện đối tượng rất nhanh, hoạt động như sau:\n• Chia ảnh thành lưới (grid)\n• Mỗi ô lưới dựđoán bounding box và class\n• Toàn bộảnh được xửlý trong một lần nhìn – rất nhanh!\nƯu điểm: Nhanh, phù hợp cho ứng dụng thời gian thực (real-time).\nNhược điểm: Có thểbỏsót các vật nhỏtrong ảnh.\n2.2 SSD (Single Shot Multibox Detector)\nSSD cũng là mô hình một bước (single-shot), hoạt động như sau:\n• Trích xuất đặc trưng từnhiều tầng CNN\n• Dựđoán nhiều bounding box với các tỷlệkhác nhau\nƯu điểm: Cân bằng tốt giữa tốc độvà độchính xác.\nNhược điểm: Chậm hơn YOLO một chút, nhưng nhận dạng vật nhỏtốt\nhơn.\n132\n"
+    },
+    {
+      "page": 143,
+      "text": "8.4 Object Detection Basics (YOLO, SSD)\n3. So sánh YOLO và SSD\nTiêu chí\nYOLO\nSSD\nTốc độ\nRất nhanh\nNhanh\nChính xác\nTrung bình–cao\nCao hơn YOLO\nVật nhỏ\nDễbỏsót\nTốt hơn\nDễdùng\nRất phổbiến\nPhổbiến\n4. Cách sửdụng YOLOv5 (thực hành nhanh)\nListing 8.4: Thửnghiệm YOLOv5 với ảnh thực tế\nimport torch\nfrom PIL import Image\nimport requests\nfrom io import BytesIO\n# ảTi mô hình YOLOv5 ỏnh\nmodel = torch . hub . load ( ' u l t r a l y t i c s / yolov5 ' ,\n' yolov5s ' ,\npretrained\n# Dùng ảnh online\nurl = ' https :// u l t r a l y t i c s . com/images/ zidane . jpg '\nimage = Image . open( BytesIO ( requests . get ( url ) . content ))\n# Phát ệhin\nr e s u l t s = model ( image )\n# ểHin ịth ếkt ảqu\nr e s u l t s . print ()\nr e s u l t s . show ()\n5. Thực hành SSD (dùng thư viện torchvision)\nListing 8.5: Thửnghiệm SSD với torchvision\n133\n"
+    },
+    {
+      "page": 144,
+      "text": "Chapter 8 Computer Vision\nimport torchvision\nimport torchvision . transforms as T\nfrom PIL import Image\nimport matplotlib . pyplot as\nplt\n# Dùng mô hình SSD đã ấhun ệluyn\nmodel = torchvision . models . detection . ssd300_vgg16 ( pretrained=\nmodel . eval ()\n# Ảnh và ềtin ửx\nl ý\nimg = Image . open( ' your_image . jpg ' )\ntransform = T. Compose ( [T. Resize ((300 ,\n300)) , T. ToTensor ( ) ] )\ninput_tensor = transform ( img ) . unsqueeze (0)\n# ựD đoán\nwith torch . no_grad ( ) :\noutput = model ( input_tensor ) [ 0 ]\n# In ếkt ảqu\nprint ( output )\n6. Bài tập thực hành\nBài tập 1: Sửdụng YOLOv5\n• Chạy ví dụYOLOv5 với ảnh có nhiều đối tượng.\n• Thửthay ảnh khác (người, xe, vật nuôi).\n• Đếm sốđối tượng được phát hiện.\n134\n"
+    },
+    {
+      "page": 145,
+      "text": "8.4 Object Detection Basics (YOLO, SSD)\nBài tập 2: So sánh YOLO và SSD\n• Viết đoạn mã so sánh thời gian chạy giữa YOLOv5 và SSD với\ncùng một ảnh.\n• Ghi nhận sựkhác biệt vềkết quảphát hiện và tốc độ.\n7. Kết luận\nYOLO và SSD là hai trong sốcác kỹthuật phát hiện đối tượng phổbiến và\nhiệu quả. Khi bạn hiểu được cách hoạt động và ứng dụng thực tế, bạn sẽcó\nthểáp dụng vào các bài toán AI trong thực tế, như giám sát an ninh, xe tự\nlái, hoặc nhận diện hình ảnh trong cuộc thi.\n135\n"
+    },
+    {
+      "page": 146,
+      "text": "Chapter 8 Computer Vision\n8.5 Image Segmentation Basics (U-Net)\n1. Image Segmentation là gì?\nImage Segmentation (Phân vùng ảnh) là kỹthuật chia ảnh thành nhiều\nvùng có ý nghĩa. Mỗi điểm ảnh (pixel) sẽđược gán vào một lớp cụthể.\n• Mỗi pixel trong ảnh đầu ra tương ứng với một lớp (label): ví dụ“nền”,\n“vật thể”, “người”, “cây cối”.\n• Đây là cấp độchi tiết hơn so với Object Detection (chỉcó bounding\nbox).\nẢnh gốc (trái) – Ground truth (giữa) – Kết quảU-Net (phải)\n2. Mô hình U-Net là gì?\nU-Net là một mạng nơ-ron tích chập (CNN) đặc biệt dùng trong Image\nSegmentation, ban đầu được thiết kếcho ảnh y tế.\nĐặc điểm chính:\n• Có kiến trúc hình chữU: gồm phần thu gọn (encoding) và mởrộng\n(decoding).\n• Giữlại thông tin chi tiết qua kết nối skip connection.\n• Dựđoán từng pixel trong ảnh.\n136\n"
+    },
+    {
+      "page": 147,
+      "text": "8.5 Image Segmentation Basics (U-Net)\n3. Kiến trúc tổng quan của U-Net\n• Encoder (trái): trích xuất đặc trưng bằng convolution + max pooling.\n• Decoder (phải): phục hồi kích thước ảnh + phân lớp từng pixel.\n• Skip connections: nối trực tiếp thông tin từencoder sang decoder để\ntăng độchính xác.\n4. Ví dụthực hành dùng PyTorch U-Net\nCài đặt U-Net đơn giản\nListing 8.6: Kiến trúc đơn giản của U-Net\nimport torch\nimport torch . nn as nn\nclass UNet(nn . Module ) :\ndef __init__( s e l f ) :\nsuper ( ) . __init__ ()\ns e l f . down1 = nn . Sequential (nn . Conv2d (1 ,\n64 ,\n3 , padding =1)\ns e l f . pool = nn . MaxPool2d (2)\ns e l f . up = nn . ConvTranspose2d (64 ,\n64 ,\n2 ,\ns t r i d e =2)\ns e l f . out = nn . Conv2d (64 ,\n1 ,\n1)\ndef forward ( s e l f , x ) :\nx1 = s e l f . down1(x)\nx2 = s e l f . pool ( x1 )\nx3 = s e l f . up( x2 )\nout = s e l f . out ( x3 )\nreturn out\nDữliệu đầu vào và huấn luyện\nVới bài toán segmentation, ta cần:\n137\n"
+    },
+    {
+      "page": 148,
+      "text": "Chapter 8 Computer Vision\n• Ảnh đầu vào (images)\n• Mặt nạđúng (ground truth mask): mỗi pixel có nhãn đúng\nDataset thường dùng: Oxford Pet Dataset, Cityscapes, COCO Stuff\n5. Bài tập thực hành\nBài tập 1: Quan sát đầu ra của U-Net\n• Tải một mô hình U-Net có sẵn (vd: từPyTorch hoặc Hugging-\nFace)\n• Dùng ảnh đơn giản (ví dụảnh đường, ảnh y tế) đểthửnghiệm\n• Hiển thịkết quảsegmentation\nBài tập 2: Tựhuấn luyện U-Net mini\n• Dùng một tập ảnh nhỏ(10–20 ảnh) và mặt nạđểhuấn luyện\nU-Net mini\n• Tính độchính xác bằng Dice coeﬀicient hoặc IoU\n• Vẽảnh đầu vào, ground truth và kết quảdựđoán\n6. Ứng dụng của Segmentation\n• Ảnh y tế: khoanh vùng mô tổn thương\n• Xe tựlái: phân biệt đường, người, xe\n• Nông nghiệp: phát hiện sâu bệnh, cây trồng\n• Game và AR: tách người khỏi nền\n138\n"
+    },
+    {
+      "page": 149,
+      "text": "8.5 Image Segmentation Basics (U-Net)\n7. Kết luận\nSegmentation giúp nhận diện chi tiết từng phần trong ảnh – là bước tiến sâu\nhơn từImage Classification và Object Detection. Với mô hình mạnh như U-\nNet, bạn có thểáp dụng cho nhiều bài toán thực tếtrong cuộc thi AI hoặc\nsản phẩm thực tế.\n139\n"
+    },
+    {
+      "page": 150,
+      "text": "Chapter 8 Computer Vision\n8.6 Transfer Learning for Image Classification\n1. Transfer Learning là gì?\nTransfer Learning (học chuyển giao) là kỹthuật sửdụng một mô hình đã\nđược huấn luyện sẵn trên tập dữliệu lớn (ví dụImageNet) đểgiải quyết một\nbài toán mới.\n• Thay vì huấn luyện mô hình từđầu, ta tận dụng các đặc trưng đã học\nđược.\n• Rất hiệu quảkhi bạn có ít dữliệu hoặc hạn chếvềthời gian huấn luyện.\nVí dụmô hình tiền huấn luyện phổbiến:\n• ResNet: mạnh mẽ, phổbiến trong học sâu\n• MobileNet: nhẹ, phù hợp thiết bịdi động\n2. Khi nào nên dùng Transfer Learning?\n• Khi bạn có tập dữliệu nhỏ(ít hơn vài ngàn ảnh)\n• Khi bạn cần mô hình tốt mà không tốn nhiều thời gian huấn luyện\n• Khi bạn không có GPU mạnh\n3. Cách sửdụng Transfer Learning với PyTorch\nTải mô hình ResNet18 đã huấn luyện sẵn\nListing 8.7: Khởi tạo mô hình ResNet18\nimport torchvision . models as models\nmodel = models . resnet18 ( pretrained=True )\n140\n"
+    },
+    {
+      "page": 151,
+      "text": "8.6 Transfer Learning for Image Classification\nThay thếlớp phân loại cuối cùng\nGiảsửbạn có 3 lớp mới: Cat, Dog, Bird\nimport torch . nn as nn\nnum_classes = 3\nmodel . f c = nn . Linear ( model . f c . in_features ,\nnum_classes )\nFreeze các lớp trích đặc trưng\nfor param in model . parameters ( ) :\nparam . requires_grad = False\n# ỉCh ấhun ệluyn\nlayer ốcui\nfor param in model . f c . parameters ( ) :\nparam . requires_grad = True\n4. Ví dụhuấn luyện mô hình\nListing 8.8: Huấn luyện mô hình với DataLoader\nimport torch\nfrom torch import optim\nc r i t e r i o n = nn . CrossEntropyLoss ()\noptimizer = optim .Adam( model . fc . parameters () ,\nl r =0.001)\nfor epoch in range ( 1 0 ) :\nfor\ninputs ,\nl a b e l s\nin\ndataloader :\noutputs = model ( inputs )\nl o s s = c r i t e r i o n ( outputs ,\nl a b e l s )\noptimizer . zero_grad ()\nl o s s . backward ()\noptimizer . step ()\n141\n"
+    },
+    {
+      "page": 152,
+      "text": "Chapter 8 Computer Vision\n5. MobileNet (dành cho thiết bịnhẹ)\nmobilenet = models . mobilenet_v2 ( pretrained=True )\nmobilenet . c l a s s i f i e r [ 1 ] = nn . Linear ( mobilenet . last_channel ,\nn\nGợi ý: MobileNet phù hợp nếu bạn muốn triển khai trên điện thoại, máy\nnhúng, Raspberry Pi.\n6. Bài tập thực hành\nBài tập 1: Huấn luyện ResNet18\n• Tải bộdữliệu nhỏ(ví dụ: Oxford Pets hoặc Flowers102)\n• Sửdụng ResNet18 làm mô hình nền\n• Thay lớp phân loại và huấn luyện trên tập mới\n• Đánh giá độchính xác\nBài tập 2: So sánh ResNet và MobileNet\n• Dùng cùng 1 tập dữliệu cho cảhai mô hình\n• So sánh: thời gian huấn luyện, độchính xác, kích thước mô hình\n• Trình bày kết quảdưới dạng bảng\n7. Kết luận\nTransfer Learning là một công cụcực kỳmạnh mẽtrong Computer Vision.\nBạn có thểnhanh chóng xây dựng mô hình chính xác cao chỉvới vài dòng\ncode. Việc sửdụng các mô hình như ResNet và MobileNet sẽgiúp bạn tiết\nkiệm thời gian huấn luyện, đặc biệt hữu ích khi tham gia các cuộc thi AI.\n142\n"
+    },
+    {
+      "page": 153,
+      "text": "8.7 Image Augmentation Techniques\n8.7 Image Augmentation Techniques\n1. Image Augmentation là gì?\nImage Augmentation là quá trình tạo ra nhiều biến thểkhác nhau của ảnh\ngốc bằng cách áp dụng các kỹthuật như xoay ảnh, lật ảnh, thay đổi độsáng,\ncắt ảnh, v.v.\nMục tiêu: giúp mô hình học được các đặc trưng tổng quát hơn và tránh\noverfitting khi tập dữliệu huấn luyện nhỏ.\n2. Lợi ích của Image Augmentation\n• Mởrộng tập dữliệu mà không cần thu thập thêm ảnh mới\n• Giúp mô hình học được nhiều tình huống khác nhau\n• Giảm hiện tượng overfitting\n3. Các kỹthuật phổbiến\n• Horizontal Flip (Lật ngang)\n• Rotation (Xoay ảnh)\n• Random Crop (Cắt ngẫu nhiên)\n• Color Jitter (Thay đổi màu sắc)\n• Gaussian Blur (Làm mờ)\n• Random Erasing (Xoá ngẫu nhiên)\n4. Cách sửdụng trong PyTorch\nVí dụdùng torchvision.transforms\n143\n"
+    },
+    {
+      "page": 154,
+      "text": "Chapter 8 Computer Vision\nfrom torchvision import transforms\ntransform = transforms . Compose ( [\ntransforms . RandomHorizontalFlip (p=0.5) ,\ntransforms . RandomRotation ( degrees =15) ,\ntransforms . C ol or J itter ( brightness =0.2 ,\ncontrast =0.2) ,\ntransforms . ToTensor ()\n] )\nSửdụng với Dataset\nfrom torchvision . datasets import ImageFolder\ndataset = ImageFolder ( root=' data/ train ' ,\ntransform=transform )\n5. So sánh ảnh trước và sau khi Augmentation\nẢnh gốc và các phiên bản được tăng cường (xoay, lật, điều chỉnh độsáng).\n144\n"
+    },
+    {
+      "page": 155,
+      "text": "8.7 Image Augmentation Techniques\n6. Bài tập thực hành\nBài tập 1: Thửnghiệm các kỹthuật tăng cường\n• Dùng tập dữliệu CIFAR-10 hoặc Oxford Flowers\n• Áp dụng các kỹthuật: Flip, Rotation, ColorJitter\n• In ảnh gốc và ảnh sau khi transform đểso sánh\nBài tập 2: So sánh độchính xác\n• Huấn luyện mô hình phân loại đơn giản (ResNet18)\n• Một lần không dùng augmentation, một lần dùng augmen-\ntation\n• So sánh độchính xác sau khi huấn luyện\n7. Kết luận\nImage Augmentation là một bước cực kỳquan trọng giúp mô hình Computer\nVision học tốt hơn, đặc biệt là khi bạn không có nhiều dữliệu. Việc làm chủ\ncác kỹthuật augmentation giúp bạn tạo ra mô hình mạnh mẽ, ổn định và dễ\ndàng giành lợi thếtrong các cuộc thi AI.\n145\n"
+    },
+    {
+      "page": 156,
+      "text": "Chapter 8 Computer Vision\n8.8 Feature Extraction Using Pre-Trained Models\n1. Feature Extraction là gì?\nFeature Extraction (Trích xuất đặc trưng) là quá trình lấy ra các đặc điểm\nquan trọng từảnh (như hình dạng, cạnh, họa tiết...) đểphục vụcho việc\nphân loại hoặc xửlý hình ảnh.\nTransfer Learning giúp tận dụng các mô hình đã huấn luyện sẵn như ResNet,\nVGG, MobileNet... đểlấy đặc trưng mà không cần huấn luyện lại toàn bộ\nmạng.\n2. Tại sao dùng Pre-Trained Models?\n• Tiết kiệm thời gian huấn luyện\n• Hoạt động tốt cảvới dữliệu nhỏ\n• Tận dụng được các đặc trưng mạnh mẽđã học từbộdữliệu lớn như\nImageNet\n3. Cách trích xuất đặc trưng với PyTorch\nBước 1: Import mô hình huấn luyện sẵn\nfrom torchvision import models\nresnet = models . resnet18 ( pretrained=True )\nBước 2: Xóa lớp phân loại cuối cùng\n# ỏB ớlp\nf u l l y −connected ốcui\nfeature_extractor = torch . nn . Sequential (∗l i s t ( resnet . children\nfeature_extractor . eval ()\n146\n"
+    },
+    {
+      "page": 157,
+      "text": "8.8 Feature Extraction Using Pre-Trained Models\nBước 3: Trích xuất đặc trưng từảnh đầu vào\nfrom PIL import Image\nfrom torchvision import transforms\nimport torch\nimg = Image . open( \" sample . jpg \" )\ntransform = transforms . Compose ( [\ntransforms . Resize ((224 ,\n224)) ,\ntransforms . ToTensor () ,\n] )\ninput_tensor = transform ( img ) . unsqueeze (0)\nwith torch . no_grad ( ) :\nf e a t u r e s = feature_extractor ( input_tensor )\nprint ( f e a t u r e s . shape )\n# Output :\n[1 ,\n512 , 1 ,\n1]\n4. Hình minh họa quy trình\nMinh họa: Dùng ResNet đểtrích xuất đặc trưng, sau đó đưa vào mô hình\nphân loại riêng.\n5. Ứng dụng của Feature Extraction\n• Phân loại ảnh (Image Classification)\n• Phát hiện đối tượng (Object Detection)\n147\n"
+    },
+    {
+      "page": 158,
+      "text": "Chapter 8 Computer Vision\n• Nhận dạng khuôn mặt (Face Recognition)\n• Tìm kiếm ảnh tương tự\n6. Bài tập thực hành\nBài tập 1: Trích xuất đặc trưng từảnh hoa\n• Tải mô hình MobileNetV2 đã huấn luyện trên ImageNet\n• Dùng ảnh hoa từOxford Flowers Dataset\n• Trích xuất đặc trưng từmỗi ảnh, lưu thành vector\nBài tập 2: Dùng đặc trưng đểphân loại\n• Dùng sklearn.svm.SVC hoặc LogisticRegression\n• Train mô hình từđặc trưng đã trích xuất\n• So sánh độchính xác với mô hình train trực tiếp từảnh\n7. Kết luận\nTrích xuất đặc trưng từmô hình đã huấn luyện sẵn là cách hiệu quảđểáp\ndụng Deep Learning mà không cần nhiều dữliệu hay thời gian huấn luyện.\nKỹthuật này đặc biệt hữu ích cho người mới bắt đầu trong các cuộc thi AI.\n148\n"
+    },
+    {
+      "page": 159,
+      "text": "8.9 Introduction to GANs (Generating Images)\n8.9 Introduction to GANs (Generating Images)\n1. GAN là gì?\nGAN (Generative Adversarial Network) là một loại mạng học sâu được sử\ndụng đểtạo ra dữliệu mới giống với dữliệu huấn luyện. Mạng GAN bao gồm\nhai thành phần chính:\n• Generator (G): Tạo ảnh giảtừnhiễu ngẫu nhiên.\n• Discriminator (D): Phân biệt ảnh thật và ảnh giả.\nChúng cạnh tranh nhau trong một trò chơi đối kháng: Generator cốgắng\n”lừa” Discriminator, trong khi Discriminator cốgắng nhận diện ảnh giả.\n2. Ứng dụng của GANs\n• Tạo khuôn mặt người không có thật\n• Nâng cao độphân giải ảnh (Super-Resolution)\n• Chuyển phong cách (Style Transfer)\n• Tạo dữliệu huấn luyện nhân tạo\n3. Mô hình GAN đơn giản với PyTorch\nCấu trúc cơ bản\nGenerator:\nclass\nGenerator (nn . Module ) :\ndef __init__( s e l f ) :\nsuper ( ) . __init__ ()\ns e l f . main = nn . Sequential (\nnn . Linear (100 ,\n256) ,\nnn .ReLU() ,\n149\n"
+    },
+    {
+      "page": 160,
+      "text": "Chapter 8 Computer Vision\nnn . Linear (256 ,\n784) ,\nnn . Tanh ()\n)\ndef forward ( s e l f ,\nz ) :\nreturn\ns e l f . main ( z )\nDiscriminator:\nclass\nDiscriminator (nn . Module ) :\ndef __init__( s e l f ) :\nsuper ( ) . __init__ ()\ns e l f . main = nn . Sequential (\nnn . Linear (784 ,\n256) ,\nnn . LeakyReLU ( 0 . 2 ) ,\nnn . Linear (256 ,\n1) ,\nnn . Sigmoid ()\n)\ndef forward ( s e l f , x ) :\nreturn\ns e l f . main (x)\n150\n"
+    },
+    {
+      "page": 161,
+      "text": "8.9 Introduction to GANs (Generating Images)\n4. Hình minh họa kiến trúc GAN\nMinh họa: GAN gồm Generator và Discriminator đấu với nhau đểcải thiện\nkết quảtạo ảnh.\n5. Quá trình huấn luyện\n1. Sinh nhiễu ngẫu nhiên z ∼N(0, 1)\n2. Tạo ảnh giảG(z)\n3. Phân biệt ảnh thật và giảbằng D(x), D(G(z))\n4. Tính loss cho cảG và D\n5. Cập nhật tham sốqua Gradient Descent\n151\n"
+    },
+    {
+      "page": 162,
+      "text": "Chapter 8 Computer Vision\n6. Bài tập thực hành\nBài tập 1: Tạo ảnh tay viết sốvới GAN\n• Tải bộdữliệu MNIST (ảnh chữsốviết tay)\n• Xây dựng GAN theo cấu trúc đơn giản như trên\n• Sau khi huấn luyện 10 epochs, sinh 10 ảnh giảvà hiển thị\nBài tập 2: Vẽbiểu đồLoss\n• Ghi lại loss của Generator và Discriminator mỗi epoch\n• Vẽbiểu đồbằng matplotlib\n• Phân tích xem loss có ổn định không\n7. Kết luận\nGANs là công cụmạnh mẽđểtạo ảnh mới và rất hữu ích trong các ứng dụng\nAI sáng tạo. Hiểu cơ bản vềcách hoạt động của GAN sẽgiúp bạn áp dụng\nvào nhiều dựán Computer Vision trong cuộc thi AI.\n152\n"
+    },
+    {
+      "page": 163,
+      "text": "8.10 Introduction to Self-Supervised Learning for Vision\n8.10 Introduction to Self-Supervised Learning for\nVision\n1. Self-Supervised Learning là gì?\nSelf-Supervised Learning (SSL) là phương pháp học máy không cần nhãn\n(label) rõ ràng. Mô hình học từchính dữliệu đầu vào bằng cách tựtạo ra các\nnhãn (pseudo-label) đểhuấn luyện.\nThay vì yêu cầu con người gán nhãn, SSL tựđịnh nghĩa các bài toán như:\n• Dựđoán phần bịche trong ảnh\n• Xác định xem hai ảnh có giống nhau không (augmentation)\n• Dựđoán thứtựcác miếng ảnh\n2. Ứng dụng của SSL trong Thịgiác máy tính\n• Tiết kiệm công sức gán nhãn cho dữliệu\n• Huấn luyện mô hình tiền huấn luyện (pre-trained) trên dữliệu không\ngán nhãn\n• Tăng độchính xác trong các bài toán phân loại, phát hiện vật thể\n3. Ví dụvềkỹthuật SSL: SimCLR\nSimCLR là phương pháp học biểu diễn ảnh bằng contrastive learning:\n1. Áp dụng nhiều augmentation khác nhau lên một ảnh\n2. Encode các ảnh thành vector nhúng\n3. Dùng loss đểđưa vector của cùng một ảnh gần nhau, còn khác ảnh thì\nxa nhau\n153\n"
+    },
+    {
+      "page": 164,
+      "text": "Chapter 8 Computer Vision\nMinh họa: Ảnh được biến đổi (augmentation) và đưa vào encoder đểhọc biểu\ndiễn.\n4. Code Mô Phỏng SSL đơn giản với PyTorch\n# Data augmentation cho SSL\ntransform = transforms . Compose ( [\ntransforms . RandomResizedCrop (224) ,\ntransforms . RandomHorizontalFlip () ,\ntransforms . C ol or J itter ( 0 .4 ,\n0.4 ,\n0.4 ,\n0 . 1 ) ,\ntransforms . RandomGrayscale (p=0.2) ,\ntransforms . ToTensor () ,\n] )\nencoder = torchvision . models . resnet18 ( pretrained=False )\nencoder . f c = nn . Identity ()\n154\n"
+    },
+    {
+      "page": 165,
+      "text": "8.10 Introduction to Self-Supervised Learning for Vision\n5. Bài tập thực hành\nBài tập 1: So sánh biểu diễn ảnh\n• Lấy một ảnh và tạo hai bản sao bằng hai augmentation khác\nnhau\n• Encode cảhai bằng ResNet18\n• Tính cosine similarity giữa hai vector\n• Trảlời: Các vector có gần nhau không?\nBài tập 2: Tập huấn đơn giản với contrastive loss\n• Lấy tập ảnh CIFAR-10 (không dùng nhãn)\n• Huấn luyện mô hình học biểu diễn\n• Vẽloss và biểu đồbiểu diễn bằng PCA hoặc t-SNE\n6. Kết luận\nSelf-Supervised Learning là kỹthuật học sâu hiệu quảkhi không có nhiều dữ\nliệu gán nhãn. Các mô hình như SimCLR, BYOL, DINO đã được áp dụng\nthành công trong nhiều lĩnh vực thịgiác máy tính.\n155\n"
+    },
+    {
+      "page": 166,
+      "text": "Chapter 8 Computer Vision\n8.11 Vision Transformers (ViT) Basics\n1. Vision Transformers (ViT) là gì?\nVision Transformer (ViT) là một mô hình học sâu áp dụng kiến trúc\nTransformer, vốn thành công trong xửlý ngôn ngữtựnhiên (NLP), vào bài\ntoán thịgiác máy tính như phân loại ảnh.\nÝ tưởng chính: biến ảnh thành các “miếng ảnh nhỏ” (patches), giống như\nchuỗi từtrong văn bản, rồi đưa chuỗi này vào Transformer.\n• Mỗi ảnh được chia thành nhiều patches nhỏ(vd: 16x16 pixels).\n• Các patches này được biến đổi thành vector (embedding).\n• Dàn transformer attention sẽhọc mối liên hệgiữa các phần của ảnh.\n2. Kiến trúc tổng quan của ViT\nẢnh minh họa: Một ảnh được chia nhỏthành các patch, rồi đưa qua Trans-\nformer đểhọc đặc trưng.\n156\n"
+    },
+    {
+      "page": 167,
+      "text": "8.11 Vision Transformers (ViT) Basics\n3. Ưu điểm của ViT\n• Không phụthuộc vào CNN truyền thống (không cần convolution).\n• Có khảnăng học mối quan hệxa giữa các vùng ảnh.\n• Kết quảtốt trong các bài toán phân loại ảnh lớn như ImageNet.\n4. Cách sửdụng Vision Transformer trong PyTorch\nViT đã được tích hợp trong thư viện timm (PyTorch Image Models).\nimport timm\nimport torch\nfrom torchvision import transforms\nfrom PIL import Image\n# ảTi model ViT ềtin ấhun ệluyn\nmodel = timm . create_model ( ' vit_base_patch16_224 ' ,\npretrained=True )\nmodel . eval ()\n# ềTin ửx\nl ý ảnh\ntransform = transforms . Compose ( [\ntransforms . Resize ((224 ,\n224)) ,\ntransforms . ToTensor () ,\ntransforms . Normalize (mean =[0.5]∗3 ,\nstd =[0.5]∗3)\n] )\nimg = Image . open( ' example . jpg ' ) . convert ( 'RGB' )\ninput_tensor = transform ( img ) . unsqueeze (0)\n# thêm batch\ndimension\n# ựD đoán\nwith torch . no_grad ( ) :\noutput = model ( input_tensor )\npredicted = torch . argmax ( output , dim=1)\nprint ( 'ựD␣đoán␣ớlp : ' ,\npredicted . item ( ) )\n157\n"
+    },
+    {
+      "page": 168,
+      "text": "Chapter 8 Computer Vision\n5. Bài tập thực hành\nBài tập 1: Dựđoán ảnh với ViT\n• Tải một ảnh bất kỳtừinternet\n• Dùng mô hình ViT tiền huấn luyện đểphân loại ảnh đó\n• So sánh kết quảdựđoán với nội dung thực tếcủa ảnh\nBài tập 2: So sánh CNN và ViT\n• Dựđoán ảnh với ResNet và với ViT\n• So sánh tốc độ, độchính xác và độổn định\n• Viết một đoạn code đểđo thời gian dựđoán\n6. Tổng kết\nVision Transformers là bước tiến lớn trong thịgiác máy tính, mởra khảnăng\nhọc sâu dựa hoàn toàn vào attention. Với sức mạnh từmô hình tiền huấn\nluyện và thư viện như timm, sinh viên có thểdễdàng áp dụng ViT vào các\ncuộc thi AI thực tế.\n158\n"
+    },
+    {
+      "page": 169,
+      "text": "8.12 CLIP and Multimodal Learning\n8.12 CLIP and Multimodal Learning\n1. CLIP là gì?\nCLIP (Contrastive Language–Image Pretraining) là mô hình do Ope-\nnAI phát triển đểkết nối hình ảnh và ngôn ngữ. Nó có khảnăng hiểu hình\nảnh và mô tảvăn bản cùng lúc bằng cách học biểu diễn đa phương thức.\nÝ tưởng chính:\n• CLIP học cách ghép nối đúng giữa ảnh và mô tảcủa ảnh.\n• Ví dụ: Nếu ảnh là “một con mèo” thì mô tả“A cat sitting on a sofa” sẽ\ncó điểm tương đồng cao.\n2. Học Đa Phương Thức (Multimodal Learning)\nMultimodal Learning là phương pháp học từnhiều loại dữliệu khác nhau\n(ví dụ: hình ảnh và văn bản). CLIP là một ví dụnổi bật vềđiều này.\n• Mỗi loại dữliệu có một encoder riêng: Image Encoder và Text En-\ncoder.\n• Cảhai được đưa vào cùng một không gian vector đểso sánh (embedding\nspace).\n3. Cách sửdụng CLIP trong Python\nBạn có thểsửdụng thư viện openai/CLIP hoặc transformers đểdựđoán\nvăn bản tương ứng với ảnh.\nimport torch\nimport c l i p\nfrom PIL import Image\ndevice = \" cuda \"\ni f\ntorch . cuda . is_available ()\nelse\n\" cpu \"\nmodel ,\npreprocess = c l i p . load ( \"ViT−B/32 \" ,\ndevice=device )\n159\n"
+    },
+    {
+      "page": 170,
+      "text": "Chapter 8 Computer Vision\nimage = preprocess ( Image . open( \" cat . jpg \" ) ) . unsqueeze ( 0 ) . to ( dev\ntext = c l i p . tokenize ( [ \"A␣photo␣of ␣a␣cat \" ,\n\"A␣photo␣of ␣a␣dog \" ]\nwith torch . no_grad ( ) :\nimage_features = model . encode_image ( image )\ntext_features = model . encode_text ( text )\nlogits_per_image ,\nlogits_per_text = model ( image ,\ntext )\nprobs = logits_per_image . softmax (dim=−1).cpu ( ) . numpy()\nprint ( \"Xác␣ấsut ␣ựd␣đoán : \" ,\nprobs )\n4. Ứng dụng thực tế\n• Tìm kiếm ảnh bằng văn bản (text-to-image search)\n• Lọc nội dung ảnh theo mô tả\n• Tạo hệthống gợi ý tựđộng dựa trên mô tảngười dùng\n5. Bài tập thực hành\nBài tập 1: Dựđoán mô tảảnh\n• Tải một ảnh bất kỳtừinternet (vd: ảnh con chó).\n• Dùng CLIP đểdựđoán ảnh này giống mô tảnào hơn: \"A photo\nof a dog\" hay \"A photo of a cat\"?\n160\n"
+    },
+    {
+      "page": 171,
+      "text": "8.12 CLIP and Multimodal Learning\nBài tập 2: Tìm ảnh đúng từmô tả\n• Chuẩn bị3 ảnh khác nhau: mèo, xe đạp, laptop.\n• Nhập mô tả: \"A photo of a laptop\".\n• Sửdụng CLIP đểtìm ảnh phù hợp nhất với mô tả.\n6. Tổng kết\nCLIP giúp máy tính hiểu và kết nối giữa hình ảnh và văn bản. Đây là một\ncông cụmạnh mẽtrong thịgiác máy tính hiện đại, đặc biệt hữu ích trong các\ncuộc thi AI yêu cầu xửlý dữliệu đa phương thức.\n161\n"
+    },
+    {
+      "page": 172,
+      "text": "Chapter 8 Computer Vision\n8.13 Generative Models\n1. Generative Models là gì?\nGenerative Models là các mô hình AI có khảnăng tạo ra dữliệu mới\nnhư hình ảnh, âm thanh, hoặc văn bản. Trong lĩnh vực thịgiác máy tính\n(Computer Vision), chúng thường dùng đểsinh ra hình ảnh từmô tảvăn bản.\nVí dụ:\n• Nhập: “A cat wearing sunglasses on the beach”\n• Kết quả: Một bức tranh được AI tạo ra thểhiện chính xác mô tảđó.\n2. Stable Diffusion và DALL·E là gì?\n• DALL·E: Mô hình của OpenAI, có khảnăng sinh ảnh từvăn bản cực\nkỳsáng tạo và phong phú.\n• Stable Diffusion: Mô hình mã nguồn mở, phổbiến nhờkhảnăng tùy\nchỉnh và tốc độxửlý nhanh.\n162\n"
+    },
+    {
+      "page": 173,
+      "text": "8.13 Generative Models\n3. Nguyên lý hoạt động (giản lược)\n• Văn bản được chuyển thành vector (embedding).\n• Mô hình học cách tạo ảnh sao cho phù hợp với mô tả.\n• Với Stable Diffusion, ảnh được sinh ra từnhiễu ngẫu nhiên (noise) và\ndần dần “gỡnhiễu” đểtạo thành ảnh hoàn chỉnh.\n4. Cách sửdụng Generative Models (Python)\nDùng thư viện diffusers từHugging Face\nfrom d i f f u s e r s\nimport S t a b l e D i f f u s i o n P i p e l i n e\nimport torch\npipe = S t a b l e D i f f u s i o n P i p e l i n e . from_pretrained (\n\"CompVis/ stable −d i f f u s i o n −v1−4\" ,\ntorch_dtype=torch . f l o a t 1 6\n) . to ( \" cuda \" )\nprompt = \"A␣f u t u r i s t i c ␣cityscape ␣at␣sunset \"\nimage = pipe ( prompt ) . images [ 0 ]\nimage . save ( \" generated_image . png \" )\n5. Ứng dụng trong thực tế\n• Tạo ảnh minh họa cho sách/truyện/tranh\n• Thiết kếý tưởng nhanh (concept art)\n• Phát triển game và phim hoạt hình\n163\n"
+    },
+    {
+      "page": 174,
+      "text": "Chapter 8 Computer Vision\n6. Bài tập thực hành\nBài tập 1: Sáng tạo hình ảnh từmô tả\nHãy viết mô tả(prompt) cho 3 chủđề:\n• Một con rồng đang bay trong bầu trời đêm\n• Một robot đang chơi đàn piano\n• Một ngôi làng cổtích giữa rừng\nSau đó dùng mô hình Stable Diffusion đểtạo hình ảnh tương ứng.\nBài tập 2: So sánh mô hình\nThửnghiệm tạo cùng một ảnh bằng DALL·E và Stable Diffusion với\nprompt giống nhau. Hãy nhận xét:\n• Hình ảnh nào chân thực hơn?\n• Hình ảnh nào sáng tạo hơn?\n7. Tổng kết\nGenerative Models như DALL·E và Stable Diffusion giúp máy tính không\nchỉnhận biết hình ảnh mà còn có thểsáng tạo ra hình ảnh mới. Đây là\nmột công cụrất mạnh trong các cuộc thi AI và sáng tạo nội dung.\n164\n"
+    }
+  ]
+}

@@ -130,6 +130,12 @@ describe("course workspace", () => {
     expect(workspacePanel).not.toHaveClass("p-6");
   });
 
+  it("renders missing quality measurements honestly", async () => {
+    render(<CourseDashboardPage />);
+    expect(await screen.findByText("Chưa đánh giá chất lượng")).toBeVisible();
+    expect(screen.queryByText(/85\/100|chất lượng cao|sẵn sàng đại học/iu)).not.toBeInTheDocument();
+  });
+
   it("explains provider quota failure without blaming the PDF", async () => {
     vi.mocked(apiGetCourseStatus).mockResolvedValue({
       course_id: "course-1",

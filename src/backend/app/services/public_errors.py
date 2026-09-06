@@ -19,6 +19,9 @@ PROVIDER_CODE_MAP = {
 }
 
 PUBLIC_MESSAGES = {
+    "BOOK_BUDGET_LIMIT": "Tác vụ đã dừng ở giới hạn chi phí an toàn.",
+    "BOOK_SCOPE_INFEASIBLE": "Phạm vi sách đã chọn không thể bao quát đầy đủ trong giới hạn chi phí.",
+    "BOOK_INCOMPLETE_BUDGET": "Chương sách chưa hoàn chỉnh và không được công bố.",
     "AI_CONFIGURATION_ERROR": "Dịch vụ AI chưa được cấu hình hợp lệ. Vui lòng liên hệ quản trị viên.",
     "AI_ACCESS_DENIED": "Dịch vụ AI không có quyền thực hiện yêu cầu này.",
     "AI_QUOTA_EXHAUSTED": "Dịch vụ AI đang tạm dừng vì hạn mức sử dụng.",
@@ -27,6 +30,7 @@ PUBLIC_MESSAGES = {
     "AI_TIMEOUT": "Kết nối dịch vụ AI quá thời gian chờ.",
     "AI_REQUEST_FAILED": "Không thể hoàn thành yêu cầu AI. Vui lòng thử lại.",
     "DOCUMENT_TEXT_EXTRACTION_FAILED": "Không thể đọc văn bản trong tệp.",
+    "DOCUMENT_TEXT_ENCODING_UNSUPPORTED": "Không thể đọc tệp văn bản. Vui lòng lưu lại tệp ở định dạng UTF-8 rồi tải lên lại.",
     "DOCUMENT_SCHEDULING_FAILED": "Không thể bắt đầu xử lý tài liệu. Vui lòng thử lại.",
     "DOCUMENT_PROCESSING_FAILED": "Xử lý tài liệu thất bại.",
     "DOCUMENT_PROCESSING_PERSISTENCE_FAILED": "Không thể lưu kết quả xử lý tài liệu. Vui lòng thử lại.",
@@ -48,6 +52,12 @@ _INTERNAL_RESPONSE_KEYS = frozenset(
         "source",
         "citation",
         "citations",
+        "evidence_ids",
+        "source_plan",
+        "source_plan_revision",
+        "source_plan_digest",
+        "source_plan_model",
+        "source_plan_prompt_revision",
         "debug",
         "technical",
         "technical_error",
