@@ -248,28 +248,30 @@ class Generator:
         return "\n\n".join(context_lines), valid_chunk_ids
 
     _NO_CONTEXT_MSG = (
-        "Không tìm thấy nội dung nào từ tài liệu để tạo học liệu. Tài liệu có thể là bản "
-        "scan/ảnh chưa trích xuất được chữ, hoặc chưa lập chỉ mục thành công. Hãy thử xoá "
-        "và tải lại tài liệu (ưu tiên PDF có lớp văn bản thật, không phải ảnh chụp)."
+        "Không tìm thấy nội dung đã lập chỉ mục để tạo học liệu. Hệ thống hỗ trợ OCR cho "
+        "PDF scan và ảnh trong DOCX; hãy kiểm tra trạng thái xử lý tài liệu rồi tải lại nếu cần."
     )
     _PROCESSING_MSG = (
         "Tài liệu vẫn đang được xử lý (trích xuất và lập chỉ mục nội dung). Việc này có thể "
         "mất khoảng nửa phút với tài liệu dài. Vui lòng đợi giây lát rồi thử lại."
     )
 
-    def _require_course_not_processing(self, course_id: str, db_session_factory=None) -> None:
-        """Guard: refuse to run a generator while the course's document ingestion is still
-        running. Without this, a generate call fired right after upload — before chunking/
-        embedding finishes writing chunk_count — hits the exact same "no chunks found" path
-        as a genuinely broken document, and `_require_context`'s scan/OCR-focused message is
-        actively misleading here since the document is fine, just not indexed yet. Ingestion
-        legitimately takes 10-30+s for large real documents, long enough for a
-        user clicking into a tab right after upload to reliably hit this race."""
+    def _require_course_ready(self, course_id: str, db_session_factory=None) -> None:
+        """Only ready courses may generate artifacts.
+
+        Failed ingestion previously fell through to retrieval and was misreported as an
+        unreadable scan, hiding the real extract/embed failure from the user.
+        """
         db = self._get_db(db_session_factory)
         try:
             course = db.query(Course).filter(Course.id == course_id).first()
             if course and course.status == "processing":
                 raise ValueError(self._PROCESSING_MSG)
+            if course and course.status != "ready":
+                raise ValueError(
+                    "Không thể tạo học liệu vì bước đọc hoặc lập chỉ mục tài liệu đã thất bại. "
+                    "Hãy kiểm tra trạng thái xử lý tài liệu và tải lại sau khi khắc phục."
+                )
         finally:
             db.close()
 
@@ -1031,7 +1033,7 @@ class Generator:
         transaction, artifact_dir = self._start_version_write(course_id, "book", kwargs.get("version_id"))
         try:
             self._set_artifact_status(course_id, "book", "processing", progress=5, db_session_factory=db_session_factory)
-            self._require_course_not_processing(course_id, db_session_factory)
+            self._require_course_ready(course_id, db_session_factory)
 
             book_llm = self._llm_for("book")
             context, base_ids = self._retrieve_context(course_id, k=20, db_session_factory=db_session_factory)
@@ -1102,7 +1104,7 @@ class Generator:
         transaction, artifact_dir = self._start_version_write(course_id, "slides", kwargs.get("version_id"))
         try:
             self._set_artifact_status(course_id, "slides", "processing", progress=10, db_session_factory=db_session_factory)
-            self._require_course_not_processing(course_id, db_session_factory)
+            self._require_course_ready(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
                 course_id, query=resolved_topic, db_session_factory=db_session_factory
@@ -1141,7 +1143,7 @@ class Generator:
         transaction, artifact_dir = self._start_version_write(course_id, "quiz", kwargs.get("version_id"))
         try:
             self._set_artifact_status(course_id, "quiz", "processing", progress=10, db_session_factory=db_session_factory)
-            self._require_course_not_processing(course_id, db_session_factory)
+            self._require_course_ready(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
                 course_id, query=resolved_topic, db_session_factory=db_session_factory
@@ -1189,7 +1191,7 @@ class Generator:
         transaction, artifact_dir = self._start_version_write(course_id, "vid", kwargs.get("version_id"))
         try:
             self._set_artifact_status(course_id, "vid", "processing", progress=10, db_session_factory=db_session_factory)
-            self._require_course_not_processing(course_id, db_session_factory)
+            self._require_course_ready(course_id, db_session_factory)
             resolved_topic = self._resolve_topic(course_id, topic, db_session_factory=db_session_factory)
             context, valid_chunk_ids = self._retrieve_context(
                 course_id, query=resolved_topic, db_session_factory=db_session_factory

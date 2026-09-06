@@ -101,6 +101,8 @@ Copy-Item .env.example .env -Force
 
 Điền `OPENROUTER_API_KEY` (bắt buộc). `OPENROUTER_MODEL` và mọi feature override mặc định đều là `google/gemini-2.5-pro`, để Book, Slide, Quiz, Vid và OCR dùng cùng mức chất lượng. Mỗi content/OCR call dùng trực tiếp model đã cấu hình cho feature đó và retry đúng model một lần nếu provider lỗi hoặc JSON không đúng schema; không chuyển sang model khác.
 
+Đọc tài liệu diễn ra theo từng định dạng: PDF dùng lớp text sẵn có rồi OCR riêng mọi trang ít chữ có nội dung hình; DOCX đọc cả paragraph, bảng, header/footer và OCR ảnh nhúng; TXT tự nhận UTF-8, UTF-16 và Windows-1258. `PDF_OCR_MAX_PAGES=0` và `DOCX_OCR_MAX_IMAGES=0` nghĩa là không giới hạn phạm vi OCR; đặt số dương chỉ khi chủ động muốn giới hạn chi phí cho tài liệu scan rất dài.
+
 Backend chỉ load `.env` ở root repo bằng đường dẫn tuyệt đối. Khởi động lại backend sau khi đổi env để startup log hiển thị content model và embedding model đang active.
 
 ## Backend Runbook

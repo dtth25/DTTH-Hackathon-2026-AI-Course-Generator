@@ -1,5 +1,6 @@
 """Pydantic schemas for Generation Service Skeleton."""
 
+from datetime import datetime
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
@@ -60,6 +61,9 @@ class GenerateResponse(BaseModel):
     message: str = "Generation started..."
     estimated_time: str = "2 minutes"
     version_id: Optional[str] = None
+    job_id: Optional[str] = None
+    queue_position: Optional[int] = Field(default=None, ge=0)
+    queued_at: Optional[datetime] = None
 
 
 class ReadinessData(BaseModel):

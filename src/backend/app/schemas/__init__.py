@@ -15,6 +15,7 @@ from app.schemas.generation import (
     StudyPackData,
     StudyPackStats,
 )
+from app.schemas.job import JobSummary
 
 __all__ = [
     "UserCreate",
@@ -32,4 +33,5 @@ __all__ = [
     "StudyPackResponse",
     "StudyPackData",
     "StudyPackStats",
+    "JobSummary",
 ]

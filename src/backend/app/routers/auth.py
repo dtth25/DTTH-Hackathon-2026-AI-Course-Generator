@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models.course import Course
 from app.models.email_otp import EmailOtpCode
+from app.models.generation_job import GenerationJob
 from app.models.user import User
 from app.schemas.user import (
     DeleteAccountRequest,
@@ -258,6 +259,9 @@ def delete_account(
         processor = get_document_processor()
         for course in courses:
             processor.purge_course_storage(course.id)
+            db.query(GenerationJob).filter(
+                GenerationJob.course_id == course.id
+            ).delete(synchronize_session=False)
             db.delete(course)
 
     db.query(EmailOtpCode).filter(EmailOtpCode.user_id == current_user.id).delete()

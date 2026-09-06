@@ -1,6 +1,164 @@
 """Automated tests for Core Infrastructure, Authentication, and CORS."""
 
-from app.core.config import settings
+import asyncio
+import threading
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import QueuePool, StaticPool
+
+from app.core.config import Settings, settings
+from app.core.security import create_access_token
+from app.services.database import create_database_engine
+from main import app
+
+
+@pytest.fixture
+def base_settings() -> dict[str, object]:
+    """Required settings isolated from the developer's environment."""
+    return {
+        "_env_file": None,
+        "DATABASE_URL": "sqlite:///app.db",
+        "JWT_SECRET": "test-jwt-secret",
+        "OPENROUTER_API_KEY": "test-openrouter-key",
+    }
+
+
+def test_production_rejects_sqlite(base_settings: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="PostgreSQL"):
+        Settings(
+            **{
+                **base_settings,
+                "APP_ENV": "production",
+                "DATABASE_URL": "sqlite:///app.db",
+            }
+        )
+
+
+def test_job_capacity_must_cover_video_capacity(
+    base_settings: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="MAX_ACTIVE_JOBS"):
+        Settings(
+            **{
+                **base_settings,
+                "MAX_ACTIVE_JOBS": 5,
+                "MAX_ACTIVE_VIDEO_JOBS": 6,
+            }
+        )
+
+
+def test_production_accepts_postgresql(base_settings: dict[str, object]) -> None:
+    configured = Settings(
+        **{
+            **base_settings,
+            "APP_ENV": "production",
+            "DATABASE_URL": "postgresql+psycopg://user:password@db/hackagen",
+        }
+    )
+
+    assert configured.APP_ENV == "production"
+
+
+def test_postgresql_engine_uses_bounded_pool_settings(
+    base_settings: dict[str, object],
+) -> None:
+    isolated_settings = Settings(
+        **{
+            **base_settings,
+            "DATABASE_POOL_SIZE": 7,
+            "DATABASE_MAX_OVERFLOW": 9,
+            "DATABASE_POOL_TIMEOUT_SECONDS": 2,
+        }
+    )
+    database_engine = create_database_engine(
+        "postgresql+psycopg://user:password@localhost/hackagen",
+        isolated_settings,
+    )
+    try:
+        assert isinstance(database_engine.pool, QueuePool)
+        assert database_engine.pool.size() == 7
+        assert database_engine.pool._max_overflow == 9
+        assert database_engine.pool.timeout() == 2
+        assert database_engine.pool._recycle == 1800
+        assert database_engine.pool._pre_ping is True
+    finally:
+        database_engine.dispose()
+
+
+def test_sqlite_memory_engine_keeps_static_pool(
+    base_settings: dict[str, object],
+) -> None:
+    isolated_settings = Settings(**base_settings)
+    database_engine = create_database_engine(
+        "sqlite:///:memory:", isolated_settings
+    )
+    try:
+        assert isinstance(database_engine.pool, StaticPool)
+    finally:
+        database_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_blocking_auth_query_does_not_block_liveness(monkeypatch) -> None:
+    """Synchronous ORM work in auth must run outside the event-loop thread."""
+    release_query = threading.Event()
+    query_started = threading.Event()
+    monkeypatch.setattr(settings, "JWT_SECRET", "test-jwt-secret-at-least-32-bytes")
+
+    class BlockingQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            query_started.set()
+            if not release_query.wait(timeout=2):
+                raise AssertionError("Blocking ORM probe was not released")
+            return SimpleNamespace(
+                id="probe-user",
+                email="probe@example.com",
+                full_name="Probe User",
+                is_active=True,
+                is_verified=True,
+                role="user",
+                created_at=None,
+            )
+
+    def blocking_query(_session, _model):
+        return BlockingQuery()
+
+    monkeypatch.setattr(Session, "query", blocking_query)
+    token = create_access_token({"sub": "probe-user"})
+    release_timer = threading.Timer(1, release_query.set)
+    release_timer.start()
+
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            protected_request = asyncio.create_task(
+                async_client.get(
+                    "/api/auth/me",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            )
+            assert await asyncio.to_thread(query_started.wait, 1)
+
+            liveness_response = await async_client.get("/")
+
+            assert liveness_response.status_code == 200
+            assert not release_query.is_set(), (
+                "Liveness only answered after the blocked ORM query was released"
+            )
+            release_query.set()
+            assert (await protected_request).status_code == 200
+    finally:
+        release_query.set()
+        release_timer.cancel()
 
 
 def test_health_check(client):
@@ -165,6 +323,7 @@ def test_delete_account_wrong_password(client):
 def test_delete_account_purges_everything(client):
     from app.models.course import Course
     from app.models.email_otp import EmailOtpCode
+    from app.models.generation_job import ArtifactType, GenerationJob, JobQueue
     from app.models.user import User
     from app.services.database import SessionLocal
 
@@ -179,7 +338,18 @@ def test_delete_account_purges_everything(client):
         user = db.query(User).filter(User.email == "deleteme@example.com").first()
         assert user is not None
         user_id = user.id
-        assert db.query(Course).filter(Course.user_id == user_id).count() == 1
+        course = db.query(Course).filter(Course.user_id == user_id).one()
+        db.add(
+            GenerationJob(
+                course_id=course.id,
+                user_id=user_id,
+                artifact_type=ArtifactType.BOOK.value,
+                version_id="account-delete-version",
+                queue_name=JobQueue.GENERATION.value,
+                payload_json={},
+            )
+        )
+        db.commit()
     finally:
         db.close()
 
@@ -193,6 +363,7 @@ def test_delete_account_purges_everything(client):
         assert db.query(User).filter(User.id == user_id).first() is None
         assert db.query(Course).filter(Course.user_id == user_id).count() == 0
         assert db.query(EmailOtpCode).filter(EmailOtpCode.user_id == user_id).count() == 0
+        assert db.query(GenerationJob).filter(GenerationJob.user_id == user_id).count() == 0
     finally:
         db.close()
 

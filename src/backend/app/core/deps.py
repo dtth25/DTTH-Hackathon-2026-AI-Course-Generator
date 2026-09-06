@@ -14,7 +14,7 @@ from app.services.database import get_db
 security_bearer = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
     db: Session = Depends(get_db),

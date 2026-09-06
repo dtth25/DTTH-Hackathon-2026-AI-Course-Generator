@@ -1,13 +1,18 @@
 """Document processing service for extracting, cleaning, chunking, and embedding documents."""
 
+import hashlib
 import logging
 import os
 import re
 from collections import Counter
 from typing import List, Optional, Tuple
-from pydantic import BaseModel
-import fitz  # PyMuPDF
+
 import docx
+import fitz  # PyMuPDF
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml.ns import qn
+from pydantic import BaseModel
+
 from app.models.course import Course
 from app.services.vector_store import Document, VectorStore
 
@@ -39,6 +44,99 @@ def _evenly_spaced_indices(indices: List[int], limit: int) -> List[int]:
     if limit == 1:
         return [indices[len(indices) // 2]]
     return [indices[round(i * (len(indices) - 1) / (limit - 1))] for i in range(limit)]
+
+
+def _indices_with_optional_limit(indices: List[int], limit: int) -> List[int]:
+    """Return all indices when ``limit`` is zero, otherwise preserve even coverage.
+
+    OCR used to interpret zero as "do nothing" and the default hard cap silently left
+    most long scanned documents unread. Zero now has the conventional configuration
+    meaning of "unlimited"; a positive value remains available as an explicit cost cap.
+    """
+    return indices if limit == 0 else _evenly_spaced_indices(indices, limit)
+
+
+def _text_signal_length(text: str) -> int:
+    """Measure readable text rather than whitespace or decorative punctuation."""
+    return sum(1 for char in text if char.isalnum())
+
+
+def _decode_text_bytes(data: bytes) -> str:
+    """Decode common TXT encodings without turning UTF-16 into NUL-filled garbage."""
+    if not data:
+        return ""
+
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+
+    # UTF-16 files without a BOM still have a strong alternating-NUL signature.
+    nul_ratio = data.count(b"\x00") / len(data)
+    if nul_ratio > 0.1:
+        candidates = []
+        for encoding in ("utf-16-le", "utf-16-be"):
+            try:
+                decoded = data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            control_count = sum(
+                1 for char in decoded if ord(char) < 32 and char not in "\n\r\t"
+            )
+            candidates.append((control_count, -_text_signal_length(decoded), decoded))
+        if candidates:
+            return min(candidates, key=lambda item: (item[0], item[1]))[2]
+
+    # UTF-8 covers the normal path; cp1258 covers legacy Vietnamese Windows text.
+    for encoding in ("utf-8", "cp1258", "cp1252"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _is_probably_text(text: str) -> bool:
+    if not text or "\x00" in text:
+        return False
+    control_count = sum(
+        1 for char in text if ord(char) < 32 and char not in "\n\r\t\f"
+    )
+    return control_count / len(text) <= 0.02
+
+
+def _extract_ooxml_text(root) -> List[str]:
+    """Read paragraph text from an OOXML story, including tables and text boxes."""
+    paragraph_tag = qn("w:p")
+    text_tag = qn("w:t")
+    tab_tag = qn("w:tab")
+    break_tag = qn("w:br")
+    lines: List[str] = []
+
+    for paragraph in root.iter(paragraph_tag):
+        pieces: List[str] = []
+        for node in paragraph.iter():
+            # A text box can contain a nested paragraph. Attribute each run only to its
+            # nearest paragraph so it is not duplicated by the outer drawing paragraph.
+            ancestor = node.getparent()
+            belongs_to_paragraph = True
+            while ancestor is not None and ancestor is not paragraph:
+                if ancestor.tag == paragraph_tag:
+                    belongs_to_paragraph = False
+                    break
+                ancestor = ancestor.getparent()
+            if not belongs_to_paragraph:
+                continue
+            if node.tag == text_tag and node.text:
+                pieces.append(node.text)
+            elif node.tag == tab_tag:
+                pieces.append("\t")
+            elif node.tag == break_tag:
+                pieces.append("\n")
+        line = "".join(pieces).strip()
+        if line:
+            lines.append(line)
+    return lines
 
 
 def _find_split_position(text: str, start: int, end: int, chunk_size: int) -> int:
@@ -193,121 +291,195 @@ class DocumentProcessor:
         pages = []
 
         if ext == ".pdf":
+            from app.core.config import settings
+
             try:
-                from app.core.config import settings
+                pdf = fitz.open(file_path)
+            except Exception as exc:
+                return self._plain_text_fallback(file_path, clean_filename, "PDF", exc)
 
-                with fitz.open(file_path) as doc:
-                    page_texts = [(page.get_text() or "").strip() for page in doc]
-
-                    scan_mode = False
-                    if settings.PDF_ENABLE_OCR and page_texts:
-                        sample_n = min(settings.PDF_SCAN_SAMPLE_PAGES, len(page_texts))
-                        sample_indices = _evenly_spaced_indices(list(range(len(page_texts))), sample_n)
-                        low_text_count = sum(
-                            1 for idx in sample_indices if len(page_texts[idx]) < settings.PDF_TEXT_MIN_CHARS_PER_PAGE
-                        )
-                        scan_mode = low_text_count >= max(1, sample_n // 2)
-
-                    ocr_candidates = [
-                        idx for idx, text in enumerate(page_texts)
-                        if len(text) < settings.PDF_TEXT_MIN_CHARS_PER_PAGE
-                    ]
-                    ocr_page_indices = set(
-                        _evenly_spaced_indices(ocr_candidates, settings.PDF_OCR_MAX_PAGES)
-                        if scan_mode else []
+            with pdf:
+                if pdf.needs_pass:
+                    raise ValueError(
+                        f"PDF {clean_filename} được bảo vệ bằng mật khẩu và không thể trích xuất nội dung."
                     )
-                    for idx, text in enumerate(page_texts):
-                        if idx in ocr_page_indices:
-                            ocr_text = self._ocr_page(doc, idx, settings.PDF_OCR_DPI)
-                            if ocr_text and len(ocr_text) > len(text):
-                                text = ocr_text
-                        if text:
-                            pages.append(
-                                {
-                                    "content": text,
-                                    "page": idx + 1,
-                                    "source_file": clean_filename,
-                                }
-                            )
-            except Exception as e:
-                # Fallback for dummy/test PDF files in unit tests that contain plain text
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                    if text and text.strip():
-                        logger.warning(
-                            f"PDF open failed for {file_path}, fallback to plain text read for testing."
-                        )
+                if pdf.page_count == 0:
+                    raise ValueError(f"PDF {clean_filename} không có trang nào để xử lý.")
+
+                page_texts = [(page.get_text() or "").strip() for page in pdf]
+                visual_candidates = [
+                    idx
+                    for idx, text in enumerate(page_texts)
+                    if _text_signal_length(text) < settings.PDF_TEXT_MIN_CHARS_PER_PAGE
+                    and self._page_has_visual_content(pdf[idx])
+                ]
+                ocr_page_indices = set(
+                    _indices_with_optional_limit(
+                        visual_candidates, settings.PDF_OCR_MAX_PAGES
+                    )
+                    if settings.PDF_ENABLE_OCR
+                    else []
+                )
+                ocr_attempted = 0
+                ocr_succeeded = 0
+
+                for idx, text in enumerate(page_texts):
+                    if idx in ocr_page_indices:
+                        ocr_attempted += 1
+                        ocr_text = self._ocr_page(pdf, idx, settings.PDF_OCR_DPI)
+                        if ocr_text and _text_signal_length(ocr_text) > _text_signal_length(text):
+                            text = ocr_text.strip()
+                            ocr_succeeded += 1
+                    if text:
                         pages.append(
                             {
-                                "content": text.strip(),
-                                "page": 1,
+                                "content": text,
+                                "page": idx + 1,
                                 "source_file": clean_filename,
                             }
                         )
-                    else:
-                        raise e
-                except Exception:
-                    logger.error(f"Error reading PDF {file_path}: {e}")
-                    raise e
+
+            if not pages:
+                if visual_candidates and not settings.PDF_ENABLE_OCR:
+                    raise ValueError(
+                        f"PDF {clean_filename} chỉ chứa ảnh nhưng OCR đang bị tắt."
+                    )
+                if ocr_attempted and not ocr_succeeded:
+                    raise ValueError(
+                        f"Không thể OCR nội dung trong PDF {clean_filename}. "
+                        "Hãy kiểm tra cấu hình OpenRouter hoặc chất lượng bản scan."
+                    )
+                raise ValueError(
+                    f"PDF {clean_filename} không chứa văn bản hoặc hình ảnh có thể đọc được."
+                )
 
         elif ext == ".docx":
+            from app.core.config import settings
+
             try:
-                doc = docx.Document(file_path)
-                full_text = []
-                for para in doc.paragraphs:
-                    if para.text and para.text.strip():
-                        full_text.append(para.text.strip())
-                if full_text:
-                    pages.append(
-                        {
-                            "content": "\n".join(full_text),
-                            "page": 1,
-                            "source_file": clean_filename,
-                        }
+                word_doc = docx.Document(file_path)
+            except Exception as exc:
+                return self._plain_text_fallback(file_path, clean_filename, "DOCX", exc)
+
+            full_text = _extract_ooxml_text(word_doc.element.body)
+            story_parts = [word_doc.part]
+            seen_story_parts = {id(word_doc.part)}
+            for section in word_doc.sections:
+                for story in (section.header, section.footer):
+                    if id(story.part) not in seen_story_parts:
+                        seen_story_parts.add(id(story.part))
+                        story_parts.append(story.part)
+                        full_text.extend(_extract_ooxml_text(story._element))
+
+            image_blobs = []
+            seen_images = set()
+            for part in story_parts:
+                for relationship in part.rels.values():
+                    if relationship.reltype != RELATIONSHIP_TYPE.IMAGE:
+                        continue
+                    blob = relationship.target_part.blob
+                    digest = hashlib.sha256(blob).digest()
+                    if digest not in seen_images:
+                        seen_images.add(digest)
+                        image_blobs.append(blob)
+
+            if settings.DOCX_ENABLE_OCR and image_blobs:
+                image_indices = _indices_with_optional_limit(
+                    list(range(len(image_blobs))), settings.DOCX_OCR_MAX_IMAGES
+                )
+                for image_index in image_indices:
+                    ocr_text = self._ocr_image(image_blobs[image_index])
+                    if ocr_text and ocr_text.strip():
+                        full_text.append(ocr_text.strip())
+
+            text = "\n".join(full_text).strip()
+            if text:
+                pages.append(
+                    {
+                        "content": text,
+                        "page": 1,
+                        "source_file": clean_filename,
+                    }
+                )
+            elif image_blobs:
+                if not settings.DOCX_ENABLE_OCR:
+                    raise ValueError(
+                        f"DOCX {clean_filename} chỉ chứa ảnh nhưng OCR đang bị tắt."
                     )
-            except Exception as e:
-                # Fallback for dummy/test DOCX files in unit tests that contain plain text
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                    if text and text.strip():
-                        logger.warning(
-                            f"DOCX open failed for {file_path}, fallback to plain text read for testing."
-                        )
-                        pages.append(
-                            {
-                                "content": text.strip(),
-                                "page": 1,
-                                "source_file": clean_filename,
-                            }
-                        )
-                    else:
-                        raise e
-                except Exception:
-                    logger.error(f"Error reading DOCX {file_path}: {e}")
-                    raise e
+                raise ValueError(
+                    f"Không thể OCR ảnh trong DOCX {clean_filename}. "
+                    "Hãy kiểm tra cấu hình OpenRouter hoặc chất lượng hình ảnh."
+                )
+            else:
+                raise ValueError(f"DOCX {clean_filename} không chứa nội dung có thể đọc được.")
 
         elif ext == ".txt":
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
-                if text and text.strip():
-                    pages.append(
-                        {
-                            "content": text.strip(),
-                            "page": 1,
-                            "source_file": clean_filename,
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error reading TXT {file_path}: {e}")
+                with open(file_path, "rb") as text_file:
+                    text = _decode_text_bytes(text_file.read()).strip()
+                if not _is_probably_text(text):
+                    raise ValueError(f"TXT {clean_filename} không chứa văn bản hợp lệ.")
+                pages.append(
+                    {
+                        "content": text,
+                        "page": 1,
+                        "source_file": clean_filename,
+                    }
+                )
+            except Exception as exc:
+                logger.error("Error reading TXT %s: %s", file_path, exc)
                 raise
 
         else:
             raise ValueError(f"Unsupported file extension: {ext}")
 
         return pages
+
+    @staticmethod
+    def _plain_text_fallback(
+        file_path: str, clean_filename: str, format_name: str, original_error: Exception
+    ) -> List[dict]:
+        """Keep compatibility with legacy plain-text test fixtures, but never mistake a
+        corrupt real PDF/ZIP container for extracted document text."""
+        with open(file_path, "rb") as source:
+            raw = source.read()
+        if raw.startswith((b"%PDF", b"PK\x03\x04")):
+            logger.error("Error reading %s %s: %s", format_name, file_path, original_error)
+            raise original_error
+        text = _decode_text_bytes(raw).strip()
+        if not _is_probably_text(text):
+            raise original_error
+        logger.warning(
+            "%s open failed for %s; using legacy plain-text fallback.",
+            format_name,
+            file_path,
+        )
+        return [{"content": text, "page": 1, "source_file": clean_filename}]
+
+    @staticmethod
+    def _page_has_visual_content(page: "fitz.Page") -> bool:
+        """Avoid paying for OCR on truly blank separator pages."""
+        try:
+            return bool(page.get_images(full=True) or page.get_drawings())
+        except Exception:
+            # If the structure cannot be inspected, attempting OCR is safer than silently
+            # dropping a potentially scanned page.
+            return True
+
+    def _ocr_image(self, image_bytes: bytes) -> Optional[str]:
+        """Normalize an embedded Word image to PNG and transcribe it with the OCR model."""
+        try:
+            pixmap = fitz.Pixmap(image_bytes)
+            if pixmap.n - pixmap.alpha > 3:
+                pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
+            png_bytes = pixmap.tobytes("png")
+
+            from app.services.llm import LLMService
+
+            return LLMService().ocr_page_image(png_bytes) or None
+        except Exception as exc:
+            logger.warning("OCR fallback failed for embedded DOCX image: %s", exc)
+            return None
 
     def _ocr_page(self, doc: "fitz.Document", page_index: int, dpi: int) -> Optional[str]:
         """Render a PDF page to an image and ask OpenRouter vision to transcribe its text.
@@ -539,6 +711,14 @@ class DocumentProcessor:
             # All newly indexed chunks use the single OpenRouter embedding space.
             embedding_provider = "openrouter"
             self.vector_store.add_documents(all_documents, course_id=course_id, provider=embedding_provider)
+            indexed_count = self.vector_store.get_course_stats(
+                course_id, provider=embedding_provider
+            ).get("chunk_count", 0)
+            if indexed_count < len(all_documents):
+                raise RuntimeError(
+                    "Không thể xác nhận đầy đủ nội dung sau khi lập chỉ mục "
+                    f"({indexed_count}/{len(all_documents)} đoạn)."
+                )
 
             # Calculate quality score (e.g., based on average chunk length and total chunks)
             quality_score = min(100, max(50, len(all_documents) * 5 + 60))

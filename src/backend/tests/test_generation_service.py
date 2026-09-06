@@ -1,6 +1,9 @@
 """Automated tests for Generation Service and AI API completion (Checkpoint 8 / Prompt 5)."""
 
 import os
+
+import pytest
+
 from app.models.course import Course
 from app.services.database import SessionLocal
 from app.services.generator import Generator
@@ -396,6 +399,36 @@ def test_generator_empty_context_guard():
     # No placeholder artifacts were written despite the 'ready' course status.
     for fname in ("book.json", "slides.json", "quiz.json", "vid.json"):
         assert not os.path.exists(os.path.join(art_dir, fname)), f"{fname} must not exist"
+
+
+def test_generator_reports_failed_ingestion_before_attempting_retrieval():
+    db = SessionLocal()
+    try:
+        course_id = "test_failed_ingestion"
+        db.add(
+            Course(
+                id=course_id,
+                user_id="user_failed_ingestion",
+                filenames=["scan.pdf"],
+                status="failed",
+                stage="failed",
+                progress=0,
+                chunk_count=0,
+                embedding_status="failed",
+                quality_score=0,
+                error_message="provider detail that must not be exposed here",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    gen = Generator(get_vector_store(), LLMService())
+
+    with pytest.raises(ValueError, match="lập chỉ mục tài liệu đã thất bại") as exc_info:
+        gen._require_course_ready(course_id)
+
+    assert "provider detail" not in str(exc_info.value)
 
 
 def test_book_api_error_status_envelope(client, monkeypatch):

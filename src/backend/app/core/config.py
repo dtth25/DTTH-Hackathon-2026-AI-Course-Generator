@@ -3,9 +3,11 @@
 import logging
 import sys
 from pathlib import Path
-from typing import List, Union
+from typing import List, Literal, Union
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 logger = logging.getLogger("api")
 logging.basicConfig(
@@ -32,6 +34,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(
         ..., description="Database connection URL (e.g. sqlite:///./app.db)"
     )
+    APP_ENV: Literal["development", "test", "production"] = "development"
+    REDIS_URL: str = "redis://localhost:6379/0"
+    MAX_ACTIVE_JOBS: int = Field(default=20, gt=0)
+    MAX_ACTIVE_VIDEO_JOBS: int = Field(default=6, gt=0)
+    DEFAULT_WORKER_CONCURRENCY: int = Field(default=4, gt=0)
+    VIDEO_WORKER_CONCURRENCY: int = Field(default=3, gt=0)
+    JOB_HEARTBEAT_STALE_SECONDS: int = Field(default=90, gt=0)
+    DATABASE_POOL_SIZE: int = Field(default=20, gt=0)
+    DATABASE_MAX_OVERFLOW: int = Field(default=20, ge=0)
+    DATABASE_POOL_TIMEOUT_SECONDS: int = Field(default=3, gt=0)
     JWT_SECRET: str = Field(
         ..., description="Secret key for JWT encoding and decoding"
     )
@@ -131,11 +143,15 @@ class Settings(BaseSettings):
     DOCUMENT_CHUNK_OVERLAP: int = Field(default=120, description="Overlap in characters between consecutive chunks")
 
     # OCR fallback for scanned PDF pages (rendered page image -> OpenRouter vision text extraction)
-    PDF_ENABLE_OCR: bool = Field(default=True, description="Enable OCR fallback for low-text (scanned) PDF pages")
-    PDF_OCR_MAX_PAGES: int = Field(default=12, description="Hard cap on number of pages OCR'd per document")
-    PDF_OCR_DPI: int = Field(default=120, description="DPI used when rendering a scanned page to an image for OCR")
-    PDF_TEXT_MIN_CHARS_PER_PAGE: int = Field(default=50, description="Below this many extracted chars, a page is considered a scan candidate")
-    PDF_SCAN_SAMPLE_PAGES: int = Field(default=12, description="Number of pages sampled to decide whether a document is scanned")
+    PDF_ENABLE_OCR: bool = Field(default=True, description="Enable OCR fallback for every low-text PDF page with visual content")
+    PDF_OCR_MAX_PAGES: int = Field(default=0, ge=0, description="Maximum PDF pages OCR'd per document; 0 means all candidate pages")
+    PDF_OCR_DPI: int = Field(default=120, gt=0, description="DPI used when rendering a scanned page to an image for OCR")
+    PDF_TEXT_MIN_CHARS_PER_PAGE: int = Field(default=50, gt=0, description="Below this many alphanumeric chars, a PDF page is an OCR candidate")
+    # Retained as a no-op compatibility setting for existing deployments. OCR decisions
+    # are now per-page, so mixed text/scan PDFs cannot be misclassified by sampling.
+    PDF_SCAN_SAMPLE_PAGES: int = Field(default=12, ge=1, description="Deprecated PDF scan sampling setting")
+    DOCX_ENABLE_OCR: bool = Field(default=True, description="OCR images embedded in DOCX files")
+    DOCX_OCR_MAX_IMAGES: int = Field(default=0, ge=0, description="Maximum DOCX images OCR'd per document; 0 means all images")
 
 
     @field_validator("DATABASE_URL", "JWT_SECRET", "OPENROUTER_API_KEY", mode="before")
@@ -190,7 +206,25 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_admin_bootstrap(self) -> "Settings":
+    def validate_cross_field_invariants(self) -> "Settings":
+        if self.APP_ENV == "production":
+            try:
+                database_backend = make_url(self.DATABASE_URL).get_backend_name()
+            except Exception as exc:
+                raise ValueError(
+                    "Production DATABASE_URL must be a valid PostgreSQL URL"
+                ) from exc
+            if database_backend != "postgresql":
+                raise ValueError(
+                    "PostgreSQL is required when APP_ENV=production"
+                )
+
+        if self.MAX_ACTIVE_JOBS < self.MAX_ACTIVE_VIDEO_JOBS:
+            raise ValueError(
+                "MAX_ACTIVE_JOBS must be greater than or equal to "
+                "MAX_ACTIVE_VIDEO_JOBS"
+            )
+
         if self.CREATE_DEFAULT_ADMIN and (not self.ADMIN_EMAIL.strip() or not self.ADMIN_PASSWORD.strip()):
             raise ValueError(
                 "CREATE_DEFAULT_ADMIN=true requires ADMIN_EMAIL and ADMIN_PASSWORD to also be set"

@@ -3,8 +3,12 @@
 import os
 import shutil
 import tempfile
+
 import docx
 import fitz  # PyMuPDF
+import pytest
+
+from app.core.config import settings
 from app.services.document_processor import DocumentProcessor, _evenly_spaced_indices, _is_front_matter
 from app.services.vector_store import Document, VectorStore, get_vector_store
 
@@ -265,3 +269,151 @@ def test_front_matter_classifier_and_ocr_sampling_preserve_later_lesson_pages():
     assert _is_front_matter("出版社 审定 版权")
     assert not _is_front_matter("Bài học giải thích cách cộng và trừ các số tự nhiên.")
     assert _evenly_spaced_indices(list(range(30)), 12) == [0, 3, 5, 8, 11, 13, 16, 18, 21, 24, 26, 29]
+
+
+def test_pdf_ocr_is_page_aware_for_mixed_text_and_scan_content(tmp_path, monkeypatch):
+    """A scanned page inside an otherwise text-based PDF must not be skipped merely
+    because most pages have a native text layer."""
+    pdf_path = tmp_path / "mixed.pdf"
+    pdf = fitz.open()
+    first = pdf.new_page()
+    first.insert_text((50, 50), "Native text on the first page is long enough for extraction." * 2)
+    scanned = pdf.new_page()
+    scanned.draw_rect(fitz.Rect(40, 40, 500, 760), color=(0, 0, 0))
+    last = pdf.new_page()
+    last.insert_text((50, 50), "Native text on the final page is also available directly." * 2)
+    pdf.save(pdf_path)
+    pdf.close()
+
+    monkeypatch.setattr(settings, "PDF_ENABLE_OCR", True)
+    monkeypatch.setattr(settings, "PDF_OCR_MAX_PAGES", 0)
+    monkeypatch.setattr(settings, "PDF_TEXT_MIN_CHARS_PER_PAGE", 50)
+    ocr_calls = []
+
+    def fake_ocr(_doc, page_index, _dpi):
+        ocr_calls.append(page_index)
+        return "Scanned lesson recovered by OCR with enough meaningful words for indexing."
+
+    processor = DocumentProcessor(vector_store=None)
+    monkeypatch.setattr(processor, "_ocr_page", fake_ocr)
+
+    pages = processor.extract_text_from_file(str(pdf_path))
+
+    assert ocr_calls == [1]
+    assert [page["page"] for page in pages] == [1, 2, 3]
+    assert "Scanned lesson recovered" in pages[1]["content"]
+
+
+def test_pdf_ocr_zero_limit_covers_every_scanned_page(tmp_path, monkeypatch):
+    """The default zero OCR limit means unlimited coverage, not disabled OCR."""
+    pdf_path = tmp_path / "all-scanned.pdf"
+    pdf = fitz.open()
+    for _ in range(14):
+        page = pdf.new_page()
+        page.draw_rect(fitz.Rect(40, 40, 500, 760), color=(0, 0, 0))
+    pdf.save(pdf_path)
+    pdf.close()
+
+    monkeypatch.setattr(settings, "PDF_ENABLE_OCR", True)
+    monkeypatch.setattr(settings, "PDF_OCR_MAX_PAGES", 0)
+    monkeypatch.setattr(settings, "PDF_TEXT_MIN_CHARS_PER_PAGE", 50)
+    processor = DocumentProcessor(vector_store=None)
+    ocr_calls = []
+
+    def fake_ocr(_doc, page_index, _dpi):
+        ocr_calls.append(page_index)
+        return f"Recovered educational content from scanned page number {page_index + 1}."
+
+    monkeypatch.setattr(processor, "_ocr_page", fake_ocr)
+
+    pages = processor.extract_text_from_file(str(pdf_path))
+
+    assert ocr_calls == list(range(14))
+    assert len(pages) == 14
+
+
+def test_docx_extracts_table_and_embedded_scan_content(tmp_path, monkeypatch):
+    """Word files often store all useful content in tables or pasted screenshots."""
+    png_path = tmp_path / "scan.png"
+    image_pdf = fitz.open()
+    image_page = image_pdf.new_page(width=300, height=200)
+    image_page.insert_text((30, 80), "image fixture")
+    image_page.get_pixmap(alpha=False).save(png_path)
+    image_pdf.close()
+
+    docx_path = tmp_path / "table-and-scan.docx"
+    word_doc = docx.Document()
+    table = word_doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Lesson"
+    table.cell(0, 1).text = "Neural networks"
+    table.cell(1, 0).text = "Goal"
+    table.cell(1, 1).text = "Learn robust document extraction"
+    word_doc.add_picture(str(png_path))
+    word_doc.save(docx_path)
+
+    monkeypatch.setattr(settings, "DOCX_OCR_MAX_IMAGES", 0)
+    processor = DocumentProcessor(vector_store=None)
+    monkeypatch.setattr(
+        processor,
+        "_ocr_image",
+        lambda _image: "Text recovered from the embedded screenshot.",
+    )
+
+    pages = processor.extract_text_from_file(str(docx_path))
+
+    assert len(pages) == 1
+    assert "Neural networks" in pages[0]["content"]
+    assert "Learn robust document extraction" in pages[0]["content"]
+    assert "Text recovered from the embedded screenshot" in pages[0]["content"]
+
+
+def test_txt_extracts_utf16_without_nul_garbage(tmp_path):
+    txt_path = tmp_path / "utf16.txt"
+    expected = "Bài học trí tuệ nhân tạo có nội dung tiếng Việt."
+    txt_path.write_text(expected, encoding="utf-16")
+
+    pages = DocumentProcessor(vector_store=None).extract_text_from_file(str(txt_path))
+
+    assert pages[0]["content"] == expected
+    assert "\x00" not in pages[0]["content"]
+
+
+def test_image_only_pdf_reports_ocr_failure_instead_of_silently_indexing_nothing(
+    tmp_path, monkeypatch
+):
+    pdf_path = tmp_path / "unreadable-scan.pdf"
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.draw_rect(fitz.Rect(40, 40, 500, 760), color=(0, 0, 0))
+    pdf.save(pdf_path)
+    pdf.close()
+
+    monkeypatch.setattr(settings, "PDF_ENABLE_OCR", True)
+    monkeypatch.setattr(settings, "PDF_OCR_MAX_PAGES", 0)
+    processor = DocumentProcessor(vector_store=None)
+    monkeypatch.setattr(processor, "_ocr_page", lambda *_args: None)
+
+    with pytest.raises(ValueError, match="OCR"):
+        processor.extract_text_from_file(str(pdf_path))
+
+
+def test_process_course_never_marks_ready_when_index_write_drops_chunks(tmp_path):
+    class DroppingVectorStore:
+        def add_documents(self, *_args, **_kwargs):
+            return None
+
+        def get_course_stats(self, *_args, **_kwargs):
+            return {"chunk_count": 0}
+
+    source = tmp_path / "lesson.txt"
+    source.write_text(
+        "Artificial intelligence lesson content with enough words to create a valid indexed chunk.",
+        encoding="utf-8",
+    )
+    processor = DocumentProcessor(vector_store=DroppingVectorStore())
+    processor._update_course_db = lambda *_args, **_kwargs: None
+
+    result = processor.process_course("course-with-dropped-index", [str(source)])
+
+    assert result.status == "failed"
+    assert "lập chỉ mục" in (result.error or "")
